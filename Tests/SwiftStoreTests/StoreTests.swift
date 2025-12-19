@@ -6,14 +6,14 @@ import Foundation
 struct StoreTests {
     @Test("Initialize store")
     func testInitialize() throws {
-        let store = try Store()
+        let store = try createTestStore()
         // Just verify we can create a store without throwing
         _ = store
     }
 
     @Test("Register and migrate entities")
     func testMigration() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.register(TestTag.self)
         try store.register(TestUserTags.self)
@@ -22,7 +22,7 @@ struct StoreTests {
 
     @Test("Insert and fetch entity")
     func testInsertAndFetch() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -48,7 +48,7 @@ struct StoreTests {
 
     @Test("Update entity")
     func testUpdate() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -76,7 +76,7 @@ struct StoreTests {
 
     @Test("Delete entity")
     func testDelete() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -99,7 +99,7 @@ struct StoreTests {
 
     @Test("Query with predicates")
     func testQuery() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -135,7 +135,7 @@ struct StoreTests {
 
     @Test("Transaction support")
     func testTransaction() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -170,7 +170,7 @@ struct StoreTests {
 
     @Test("Relation entities")
     func testRelations() throws {
-        let store = try Store()
+        let store = try createTestStore()
         try store.register(TestUser.self)
         try store.register(TestTag.self)
         try store.register(TestUserTags.self)

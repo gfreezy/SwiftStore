@@ -149,4 +149,23 @@ public final class SQLiteStatement: @unchecked Sendable {
         }
         return String(cString: name)
     }
+
+    /// Get column value as SQLiteValue
+    public func sqliteValue(_ index: Int32) -> SQLiteValue {
+        let type = sqlite3_column_type(statement, index)
+        switch type {
+        case SQLITE_INTEGER:
+            return .integer(columnInt64(index))
+        case SQLITE_FLOAT:
+            return .real(columnDouble(index))
+        case SQLITE_TEXT:
+            return .text(columnString(index) ?? "")
+        case SQLITE_BLOB:
+            return .blob(columnData(index) ?? Data())
+        case SQLITE_NULL:
+            return .null
+        default:
+            return .null
+        }
+    }
 }

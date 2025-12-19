@@ -1,6 +1,15 @@
 import Foundation
 @testable import SwiftStore
 
+// MARK: - Test Store Helper
+
+/// Create a temporary store for testing
+/// The database file is automatically created in the temp directory
+func createTestStore() throws -> Store {
+    let tempPath = NSTemporaryDirectory() + "swiftstore_test_\(UUID().uuidString).sqlite"
+    return try Store(path: tempPath)
+}
+
 // MARK: - Test Helper Types
 
 struct Address: Codable, Sendable {

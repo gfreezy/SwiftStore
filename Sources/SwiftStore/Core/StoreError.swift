@@ -13,6 +13,7 @@ public enum StoreError: Error, Sendable {
     case transactionFailed(String)
     case syncNotEnabled
     case invalidPayload(String)
+    case timeOutOfSync(offsetMs: Int64, toleranceMs: Int64)
 }
 
 extension StoreError: LocalizedError {
@@ -40,6 +41,8 @@ extension StoreError: LocalizedError {
             return "Sync is not enabled. Call enableSync(deviceId:) first."
         case .invalidPayload(let message):
             return "Invalid payload: \(message)"
+        case .timeOutOfSync(let offsetMs, let toleranceMs):
+            return "Local time is out of sync with NTP. Offset: \(offsetMs)ms, tolerance: \(toleranceMs)ms"
         }
     }
 }
