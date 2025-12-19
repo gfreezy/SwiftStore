@@ -1,4 +1,5 @@
 import Foundation
+import SwiftStoreCore
 
 /// Change operation type
 public enum ChangeOperation: String, Codable, Sendable {
@@ -19,7 +20,29 @@ public struct ChangeLog: EntityProtocol, SQLiteCodable, Codable, Sendable {
     public let createdAt: Date
     public let updatedAt: Date
 
-    public static var tableName: String { Store.changeLogTable }
+    public init(
+        id: UUIDV4 = UUIDV4(),
+        entityType: String,
+        entityId: UUIDV4,
+        operation: ChangeOperation,
+        payload: String? = nil,
+        deviceId: String,
+        logicalClock: Int64,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.entityType = entityType
+        self.entityId = entityId
+        self.operation = operation
+        self.payload = payload
+        self.deviceId = deviceId
+        self.logicalClock = logicalClock
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    public static var tableName: String { ChangeTracker.changeLogTable }
 
     public static var columns: [ColumnDefinition] {
         [
@@ -65,8 +88,8 @@ public struct ChangeLog: EntityProtocol, SQLiteCodable, Codable, Sendable {
             payload: stmt.columnString(4),
             deviceId: stmt.columnString(5) ?? "",
             logicalClock: stmt.columnInt64(6),
-            createdAt: stmt.columnDate(7),
-            updatedAt: stmt.columnDate(8)
+            createdAt: Date(timeIntervalSince1970: stmt.columnDouble(7)),
+            updatedAt: Date(timeIntervalSince1970: stmt.columnDouble(8))
         )
     }
 }

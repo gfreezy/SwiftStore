@@ -1,13 +1,64 @@
 import Foundation
+import SwiftStoreProtocols
 @testable import SwiftStoreCore
 
 // MARK: - Test Store Helper
 
+/// Test store wrapper that provides connection and migration functionality
+struct TestStore {
+    let connection: SQLiteConnection
+    let migrationManager: MigrationManager
+    let dbPath: String
+
+    // Track registered entities for planMigrations
+    private var registeredEntities: [any EntityProtocol.Type] = []
+
+    init(path: String) throws {
+        self.dbPath = path
+        var options = SQLiteConnection.Options()
+        options.walMode = true
+        self.connection = try SQLiteConnection(path: path, options: options)
+        self.migrationManager = MigrationManager(connection: connection)
+    }
+
+    mutating func register<E: EntityProtocol>(_ type: E.Type) throws {
+        registeredEntities.append(type)
+    }
+
+    func migrate(entities: [any EntityProtocol.Type]) throws {
+        try migrationManager.createSystemTables()
+        for entityType in entities {
+            try migrationManager.createTableForAnyType(entityType)
+        }
+        try migrationManager.createDeleteTriggers(for: entities.map { $0.tableName })
+    }
+
+    func migrate() throws {
+        try migrate(entities: registeredEntities)
+    }
+
+    func fetch<E: EntityProtocol>(_ type: E.Type) -> Query<E> {
+        Query(E.self)
+    }
+
+    func planMigration<E: EntityProtocol>(for type: E.Type) throws -> MigrationPlan {
+        try migrationManager.planMigration(for: type)
+    }
+
+    func planMigrations() throws -> MigrationPlan {
+        try migrationManager.planMigrations(for: registeredEntities)
+    }
+
+    func generateCreateTableSQL<E: EntityProtocol>(for type: E.Type) -> String {
+        migrationManager.generateCreateTableSQL(for: type)
+    }
+}
+
 /// Create a temporary store for testing
 /// The database file is automatically created in the temp directory
-func createTestStore() throws -> Store {
+func createTestStore() throws -> TestStore {
     let tempPath = NSTemporaryDirectory() + "swiftstore_test_\(UUID().uuidString).sqlite"
-    return try Store(path: tempPath)
+    return try TestStore(path: tempPath)
 }
 
 func createTestConnectionAndMigrate() throws -> SQLiteConnection {
@@ -67,7 +118,7 @@ struct TestUser: EntityProtocol, SQLiteCodable {
         return result
     }
 
-    static func sqliteDecode(from statement: SQLiteStatement) throws -> TestUser {
+    static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> TestUser {
         let id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
         let name = statement.columnString(Int32(1)) ?? ""
         let email = statement.columnString(Int32(2)) ?? ""
@@ -106,7 +157,7 @@ struct TestTag: EntityProtocol, SQLiteCodable {
         return result
     }
 
-    static func sqliteDecode(from statement: SQLiteStatement) throws -> TestTag {
+    static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> TestTag {
         let id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
         let name = statement.columnString(Int32(1)) ?? ""
         let createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
@@ -164,7 +215,7 @@ struct TestUserTags: EntityProtocol, RelationMarker, SQLiteCodable {
         return result
     }
 
-    static func sqliteDecode(from statement: SQLiteStatement) throws -> TestUserTags {
+    static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> TestUserTags {
         let id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
         let userId = UUIDV4(data: statement.columnData(Int32(1)) ?? Data()) ?? UUIDV4()
         let tagId = UUIDV4(data: statement.columnData(Int32(2)) ?? Data()) ?? UUIDV4()

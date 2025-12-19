@@ -3,3 +3,4 @@
 
 @_exported import Foundation
 @_exported import SwiftStoreMacros
+@_exported import SwiftStoreProtocols

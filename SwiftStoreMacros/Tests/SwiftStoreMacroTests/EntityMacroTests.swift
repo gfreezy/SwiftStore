@@ -62,7 +62,7 @@ struct EntityMacroTests {
                     return result
                 }
 
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _email = statement.columnString(Int32(2)) ?? ""
@@ -146,7 +146,7 @@ struct EntityMacroTests {
                     return result
                 }
 
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
                     let _bio = statement.columnString(Int32(1)) ?? ""
                     let _settings = {
@@ -215,7 +215,7 @@ struct EntityMacroTests {
                     return result
                 }
 
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(1)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
@@ -237,239 +237,4 @@ struct EntityMacroTests {
         )
     }
 
-    @Test("Entity macro with @RawValue String enum generates rawValue encode/decode")
-    func testEntityWithRawValueStringEnum() {
-        assertMacroExpansion(
-            """
-            @Entity
-            struct Task {
-                let id: UUIDV4
-                var title: String
-                @RawValue var status: TaskStatus
-                let createdAt: Date
-                let updatedAt: Date
-            }
-            """,
-            expandedSource: """
-            struct Task {
-                let id: UUIDV4
-                var title: String
-                var status: TaskStatus
-                let createdAt: Date
-                let updatedAt: Date
-
-                public static var tableName: String {
-                    "task"
-                }
-
-                public static var columns: [ColumnDefinition] {
-                    [
-                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
-                        ColumnDefinition(name: "title", type: .text),
-                        ColumnDefinition(name: "status", type: .text),
-                        ColumnDefinition(name: "created_at", type: .real),
-                        ColumnDefinition(name: "updated_at", type: .real)
-                    ]
-                }
-
-                public func sqliteEncode() throws -> [String: SQLiteValue] {
-                    var result: [String: SQLiteValue] = [:]
-                    result["id"] = .blob(self.id.data)
-                    result["title"] = .text(self.title)
-                    result["status"] = .text(self.status.rawValue)
-                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
-                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
-                    return result
-                }
-
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
-                    let _title = statement.columnString(Int32(1)) ?? ""
-                    let _status = {
-                            guard let rawValue = statement.columnString(Int32(2)),
-                                  let value = TaskStatus(rawValue: rawValue) else {
-                                throw StoreError.decodingFailed("Failed to decode TaskStatus from column 2")
-                            }
-                            return value
-                        }()
-                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
-                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
-                    return Self(
-                        id: _id,
-                        title: _title,
-                        status: _status,
-                        createdAt: _createdAt,
-                        updatedAt: _updatedAt
-                    )
-                }
-            }
-
-            extension Task: EntityProtocol {
-            }
-
-            extension Task: SQLiteCodable {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
-    @Test("Entity macro with @RawValue Integer enum generates rawValue encode/decode")
-    func testEntityWithRawValueIntegerEnum() {
-        assertMacroExpansion(
-            """
-            @Entity
-            struct Item {
-                let id: UUIDV4
-                var name: String
-                @RawValue(rawType: .integer) var priority: Priority
-                let createdAt: Date
-                let updatedAt: Date
-            }
-            """,
-            expandedSource: """
-            struct Item {
-                let id: UUIDV4
-                var name: String
-                var priority: Priority
-                let createdAt: Date
-                let updatedAt: Date
-
-                public static var tableName: String {
-                    "item"
-                }
-
-                public static var columns: [ColumnDefinition] {
-                    [
-                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
-                        ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "priority", type: .integer),
-                        ColumnDefinition(name: "created_at", type: .real),
-                        ColumnDefinition(name: "updated_at", type: .real)
-                    ]
-                }
-
-                public func sqliteEncode() throws -> [String: SQLiteValue] {
-                    var result: [String: SQLiteValue] = [:]
-                    result["id"] = .blob(self.id.data)
-                    result["name"] = .text(self.name)
-                    result["priority"] = .integer(Int64(self.priority.rawValue))
-                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
-                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
-                    return result
-                }
-
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
-                    let _name = statement.columnString(Int32(1)) ?? ""
-                    let _priority = {
-                            let rawValue = Int(statement.columnInt64(Int32(2)))
-                            guard let value = Priority(rawValue: rawValue) else {
-                                throw StoreError.decodingFailed("Failed to decode Priority from column 2")
-                            }
-                            return value
-                        }()
-                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
-                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
-                    return Self(
-                        id: _id,
-                        name: _name,
-                        priority: _priority,
-                        createdAt: _createdAt,
-                        updatedAt: _updatedAt
-                    )
-                }
-            }
-
-            extension Item: EntityProtocol {
-            }
-
-            extension Item: SQLiteCodable {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
-    @Test("Entity macro with optional @RawValue enum")
-    func testEntityWithOptionalRawValueEnum() {
-        assertMacroExpansion(
-            """
-            @Entity
-            struct Order {
-                let id: UUIDV4
-                @RawValue var status: OrderStatus?
-                let createdAt: Date
-                let updatedAt: Date
-            }
-            """,
-            expandedSource: """
-            struct Order {
-                let id: UUIDV4
-                var status: OrderStatus?
-                let createdAt: Date
-                let updatedAt: Date
-
-                public static var tableName: String {
-                    "order"
-                }
-
-                public static var columns: [ColumnDefinition] {
-                    [
-                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
-                        ColumnDefinition(name: "status", type: .text, nullable: true),
-                        ColumnDefinition(name: "created_at", type: .real),
-                        ColumnDefinition(name: "updated_at", type: .real)
-                    ]
-                }
-
-                public func sqliteEncode() throws -> [String: SQLiteValue] {
-                    var result: [String: SQLiteValue] = [:]
-                    result["id"] = .blob(self.id.data)
-                    result["status"] = {
-                            if let value = self.status {
-                                return .text(value.rawValue)
-                            } else {
-                                return .null
-                            }
-                        }()
-                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
-                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
-                    return result
-                }
-
-                public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
-                    let _status = {
-                            if statement.isNull(Int32(1)) {
-                                return nil
-                            }
-                            return {
-                            guard let rawValue = statement.columnString(Int32(1)),
-                                  let value = OrderStatus(rawValue: rawValue) else {
-                                throw StoreError.decodingFailed("Failed to decode OrderStatus from column 1")
-                            }
-                            return value
-                        }()
-                        }()
-                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
-                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
-                    return Self(
-                        id: _id,
-                        status: _status,
-                        createdAt: _createdAt,
-                        updatedAt: _updatedAt
-                    )
-                }
-            }
-
-            extension Order: EntityProtocol {
-            }
-
-            extension Order: SQLiteCodable {
-            }
-            """,
-            macros: testMacros
-        )
-    }
 }

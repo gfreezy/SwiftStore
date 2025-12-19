@@ -10,6 +10,5 @@ struct SwiftStoreMacrosPlugin: CompilerPlugin {
         OneToManyMacro.self,
         ManyToOneMacro.self,
         ManyToManyMacro.self,
-        RawValueMacro.self,
     ]
 }

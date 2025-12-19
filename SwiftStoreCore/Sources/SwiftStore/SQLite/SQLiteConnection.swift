@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import OSLog
+import SwiftStoreProtocols
 
 /// Update operation type from sqlite3_update_hook
 public enum SQLiteUpdateOperation: Int32, Sendable {
@@ -22,7 +23,7 @@ public protocol SQLiteUpdateHookHandler: AnyObject {
 }
 
 /// SQLite database connection wrapper
-public final class SQLiteConnection: @unchecked Sendable {
+public final class SQLiteConnection {
     private var db: OpaquePointer?
     private let path: String
 
@@ -38,6 +39,8 @@ public final class SQLiteConnection: @unchecked Sendable {
 
     /// Connection options for performance tuning
     public struct Options: Sendable {
+        /// Open database in read-only mode
+        public var readonly: Bool = false
         /// Enable WAL mode for better concurrent performance
         public var walMode: Bool = true
         /// Synchronous mode: 0=OFF (fastest, risky), 1=NORMAL (balanced), 2=FULL (safest, slowest)
@@ -57,7 +60,12 @@ public final class SQLiteConnection: @unchecked Sendable {
     public init(path: String, options: Options = Options()) throws {
         self.path = path
 
-        let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
+        let flags: Int32
+        if options.readonly {
+            flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        } else {
+            flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
+        }
         let result = sqlite3_open_v2(path, &db, flags, nil)
 
         guard result == SQLITE_OK else {
@@ -164,7 +172,7 @@ public final class SQLiteConnection: @unchecked Sendable {
     }
 
     /// Prepare a SQL statement
-    public func prepare(_ sql: String) throws -> SQLiteStatement {
+    public func prepare(_ sql: String) throws -> SQLiteStatementImpl {
         var stmt: OpaquePointer?
         let result = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
 
@@ -173,7 +181,7 @@ public final class SQLiteConnection: @unchecked Sendable {
             throw StoreError.queryFailed("Failed to prepare statement: \(message)\nSQL: \(sql)")
         }
 
-        return SQLiteStatement(statement: statement)
+        return SQLiteStatementImpl(statement: statement)
     }
 
     /// Get the last insert row id
@@ -288,7 +296,7 @@ public final class SQLiteConnection: @unchecked Sendable {
     }
 
     /// Get prepared statement for a row by rowid
-    public func prepareRowById(_ tableName: String, rowId: Int64) throws -> SQLiteStatement {
+    public func prepareRowById(_ tableName: String, rowId: Int64) throws -> SQLiteStatementImpl {
         let sql = "SELECT * FROM \(tableName) WHERE rowid = ?"
         let stmt = try prepare(sql)
         try stmt.bind(1, rowId)
@@ -298,7 +306,7 @@ public final class SQLiteConnection: @unchecked Sendable {
     // MARK: - Query Execution
 
     /// Prepare statement and bind values
-    public func prepareAndBind(_ sql: String, values: [SQLiteValue]) throws -> SQLiteStatement {
+    public func prepareAndBind(_ sql: String, values: [SQLiteValue]) throws -> SQLiteStatementImpl {
         let stmt = try prepare(sql)
         for (index, value) in values.enumerated() {
             try value.bind(to: stmt, at: Int32(index + 1))

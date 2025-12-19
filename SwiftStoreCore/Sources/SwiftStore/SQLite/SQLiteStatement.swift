@@ -1,8 +1,9 @@
 import Foundation
 import SQLite3
+import SwiftStoreProtocols
 
-/// SQLite prepared statement wrapper
-public final class SQLiteStatement {
+/// SQLite prepared statement wrapper - concrete implementation
+public final class SQLiteStatementImpl: SQLiteStatementProtocol {
     private var statement: OpaquePointer?
 
     init(statement: OpaquePointer) {

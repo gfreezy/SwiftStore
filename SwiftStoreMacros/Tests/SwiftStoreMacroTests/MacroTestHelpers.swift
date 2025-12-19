@@ -8,5 +8,4 @@ nonisolated(unsafe) let testMacros: [String: Macro.Type] = [
     "OneToMany": OneToManyMacro.self,
     "ManyToOne": ManyToOneMacro.self,
     "ManyToMany": ManyToManyMacro.self,
-    "RawValue": RawValueMacro.self,
 ]

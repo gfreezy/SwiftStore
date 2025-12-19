@@ -1,30 +1,15 @@
 // SwiftStoreMacros - Macro declarations for SwiftStore
 
 @_exported import Foundation
+@_exported import SwiftStoreProtocols
 
 // MARK: - Entity Macro
 
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
 @attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode))
-@attached(extension, names: arbitrary)
+@attached(extension, conformances: EntityProtocol, SQLiteCodable)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
-
-// MARK: - RawValue Macro
-
-/// RawValue marker to indicate a property is a RawRepresentable enum
-/// Use this on enum properties with String or Int raw values
-/// Example:
-///   @RawValue var status: Status
-///   @RawValue(rawType: .integer) var priority: Priority
-@attached(peer)
-public macro RawValue(rawType: RawValueType = .string) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "RawValueMacro")
-
-/// Raw value storage type for enums
-public enum RawValueType: Sendable {
-    case string
-    case integer
-}
 
 // MARK: - Index Macro
 

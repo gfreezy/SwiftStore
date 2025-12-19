@@ -150,43 +150,23 @@ enum MacroHelpers {
     }
 }
 
-/// Raw value storage type for RawRepresentable enums
-enum RawType {
-    case string
-    case integer
-    case none  // Not a RawRepresentable
-}
-
 /// Property information extracted from struct
 struct PropertyInfo {
     let name: String
     let type: String
     let isOptional: Bool
     let isLet: Bool
-    let rawType: RawType
 
     var columnName: String {
         MacroHelpers.camelToSnakeCase(name)
     }
 
     var sqliteType: String {
-        // If marked as RawValue, use appropriate type
-        switch rawType {
-        case .string:
-            return "text"
-        case .integer:
-            return "integer"
-        case .none:
-            return MacroHelpers.sqliteType(for: type)
-        }
+        MacroHelpers.sqliteType(for: type)
     }
 
     var isPrimitive: Bool {
         MacroHelpers.isPrimitive(type)
-    }
-
-    var isRawRepresentable: Bool {
-        rawType != .none
     }
 }
 
@@ -199,9 +179,6 @@ extension StructDeclSyntax {
             if let varDecl = member.decl.as(VariableDeclSyntax.self) {
                 let isLet = varDecl.bindingSpecifier.tokenKind == .keyword(.let)
 
-                // Check for @RawValue attribute
-                let rawType = extractRawValueType(from: varDecl.attributes)
-
                 for binding in varDecl.bindings {
                     if let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
                        let typeAnnotation = binding.typeAnnotation {
@@ -213,8 +190,7 @@ extension StructDeclSyntax {
                             name: name,
                             type: type,
                             isOptional: isOptional,
-                            isLet: isLet,
-                            rawType: rawType
+                            isLet: isLet
                         ))
                     }
                 }
@@ -222,33 +198,5 @@ extension StructDeclSyntax {
         }
 
         return properties
-    }
-
-    /// Extract RawValueType from @RawValue attribute
-    private func extractRawValueType(from attributes: AttributeListSyntax) -> RawType {
-        for attribute in attributes {
-            guard case .attribute(let attr) = attribute else { continue }
-
-            let attrName = attr.attributeName.description.trimmingCharacters(in: .whitespaces)
-            if attrName == "RawValue" {
-                // Check for rawType parameter
-                if let arguments = attr.arguments,
-                   case .argumentList(let argList) = arguments {
-                    for arg in argList {
-                        if let memberAccess = arg.expression.as(MemberAccessExprSyntax.self) {
-                            let rawTypeName = memberAccess.declName.baseName.text
-                            if rawTypeName == "integer" {
-                                return .integer
-                            } else if rawTypeName == "string" {
-                                return .string
-                            }
-                        }
-                    }
-                }
-                // Default to string if no rawType specified
-                return .string
-            }
-        }
-        return .none
     }
 }

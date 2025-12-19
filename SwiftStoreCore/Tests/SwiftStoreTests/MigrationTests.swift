@@ -6,7 +6,7 @@ import Foundation
 struct MigrationDryRunTests {
     @Test("Plan migration for new table")
     func testPlanMigrationNewTable() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
         try store.register(TestUser.self)
 
         let plan = try store.planMigration(for: TestUser.self)
@@ -28,7 +28,7 @@ struct MigrationDryRunTests {
 
     @Test("Plan migration for existing table with no changes")
     func testPlanMigrationNoChanges() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
         try store.register(TestUser.self)
         try store.migrate()
 
@@ -40,7 +40,7 @@ struct MigrationDryRunTests {
 
     @Test("Plan migration for existing table with new column")
     func testPlanMigrationNewColumn() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
 
         // Create a minimal table first
         try store.connection.execute("""
@@ -67,7 +67,7 @@ struct MigrationDryRunTests {
 
     @Test("Plan migration generates correct script")
     func testPlanMigrationScript() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
         try store.register(TestTag.self)
 
         let plan = try store.planMigration(for: TestTag.self)
@@ -79,7 +79,7 @@ struct MigrationDryRunTests {
 
     @Test("Plan migrations for multiple entities")
     func testPlanMigrationsMultiple() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
         try store.register(TestUser.self)
         try store.register(TestTag.self)
 
@@ -108,7 +108,7 @@ struct MigrationDryRunTests {
 
     @Test("Plan migration with missing index")
     func testPlanMigrationMissingIndex() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
 
         // Create table without the index
         try store.connection.execute("""
@@ -135,7 +135,7 @@ struct MigrationDryRunTests {
 
     @Test("Dry run does not modify database")
     func testDryRunNoModification() throws {
-        let store = try createTestStore()
+        var store = try createTestStore()
         try store.register(TestUser.self)
 
         // Run dry run

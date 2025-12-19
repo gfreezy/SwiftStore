@@ -10,7 +10,7 @@ public struct IndexMacro: MemberMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+        guard let _ = declaration.as(StructDeclSyntax.self) else {
             throw MacroError.message("@Index can only be applied to structs")
         }
 

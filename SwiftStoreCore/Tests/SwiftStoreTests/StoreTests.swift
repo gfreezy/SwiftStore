@@ -14,17 +14,13 @@ struct StoreTests {
     @Test("Register and migrate entities")
     func testMigration() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.register(TestTag.self)
-        try store.register(TestUserTags.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self, TestTag.self, TestUserTags.self])
     }
 
     @Test("Insert and fetch entity")
     func testInsertAndFetch() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -49,8 +45,7 @@ struct StoreTests {
     @Test("Update entity")
     func testUpdate() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self])
 
         var user = TestUser(
             id: UUIDV4(),
@@ -77,8 +72,7 @@ struct StoreTests {
     @Test("Delete entity")
     func testDelete() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -100,8 +94,7 @@ struct StoreTests {
     @Test("Query with predicates")
     func testQuery() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -136,8 +129,7 @@ struct StoreTests {
     @Test("Transaction support")
     func testTransaction() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -171,10 +163,7 @@ struct StoreTests {
     @Test("Relation entities")
     func testRelations() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.register(TestTag.self)
-        try store.register(TestUserTags.self)
-        try store.migrate()
+        try store.migrate(entities: [TestUser.self, TestTag.self, TestUserTags.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -212,9 +201,9 @@ struct StoreTests {
         try store.connection.insert(relation1)
         try store.connection.insert(relation2)
 
-        // Query relations
+        // Query relations using filter instead of where
         let userTags = try store.fetch(TestUserTags.self)
-            .where(\.userId == user.id)
+            .filter(\TestUserTags.userId == user.id)
             .all(store.connection)
 
         #expect(userTags.count == 2)

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftStoreProtocols
 
 /// Encodes Swift values to SQLite compatible values
 public struct SQLiteEncoder: Sendable {
@@ -93,16 +94,12 @@ public struct SQLiteEncoder: Sendable {
     }
 }
 
-/// SQLite value types
-public enum SQLiteValue: Sendable, Equatable {
-    case null
-    case integer(Int64)
-    case real(Double)
-    case text(String)
-    case blob(Data)
+// SQLiteValue is now defined in SwiftStoreProtocols
+// This extension adds bind functionality for the concrete SQLiteStatement
 
+extension SQLiteValue {
     /// Bind this value to a statement at the given index
-    public func bind(to statement: SQLiteStatement, at index: Int32) throws {
+    public func bind(to statement: SQLiteStatementImpl, at index: Int32) throws {
         switch self {
         case .null:
             try statement.bindNull(index)
@@ -134,7 +131,7 @@ extension String {
         return result
     }
 
-    func snakeCaseToCamelCase() -> String {
+    public func snakeCaseToCamelCase() -> String {
         let parts = self.split(separator: "_")
         guard let first = parts.first else { return self }
 

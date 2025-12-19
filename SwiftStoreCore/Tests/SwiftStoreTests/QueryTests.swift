@@ -7,8 +7,8 @@ struct QueryBuilderTests {
     @Test("Order by clause")
     func testOrderBy() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -44,8 +44,8 @@ struct QueryBuilderTests {
     @Test("Limit and offset")
     func testLimitOffset() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         for i in 0..<5 {
             let user = TestUser(
@@ -77,8 +77,8 @@ struct QueryBuilderTests {
     @Test("First query")
     func testFirst() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -100,8 +100,8 @@ struct QueryBuilderTests {
     @Test("Exists query")
     func testExists() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let existsBefore = try Query(TestUser.self).exists(store.connection)
         #expect(existsBefore == false)
@@ -125,8 +125,8 @@ struct QueryBuilderTests {
     @Test("UpdateAll with KeyPath assignments")
     func testUpdateAll() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -209,8 +209,8 @@ struct QueryBuilderTests {
     @Test("DeleteAll")
     func testDeleteAll() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         for i in 0..<5 {
             let user = TestUser(
@@ -239,8 +239,8 @@ struct QueryBuilderTests {
     @Test("Filter alias for where")
     func testFilterAlias() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -273,8 +273,8 @@ struct QueryBuilderTests {
     @Test("Filter with && and || operators")
     func testFilterLogicalOperators() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -337,8 +337,8 @@ struct QueryBuilderTests {
     @Test("SQL interpolation with values")
     func testSQLInterpolation() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -379,8 +379,8 @@ struct QueryBuilderTests {
     @Test("SQL interpolation with different types")
     func testSQLInterpolationTypes() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let userId = UUIDV4()
         let user = TestUser(
@@ -423,8 +423,8 @@ struct QueryBuilderTests {
     @Test("SQL raw interpolation")
     func testSQLRawInterpolation() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         for i in 0..<3 {
             let user = TestUser(
@@ -452,8 +452,8 @@ struct QueryBuilderTests {
     @Test("SQL queryOne and queryScalar")
     func testSQLQueryMethods() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
             id: UUIDV4(),
@@ -471,7 +471,7 @@ struct QueryBuilderTests {
         let name = "Charlie"
         let row = try store.connection.queryOne("SELECT * FROM \(TestUser.self) WHERE \(\TestUser.name) = \(name)" as SQL)
         #expect(row != nil)
-        #expect(row?["name"] == .text("Charlie"))
+        #expect(row?["name"] == SQLiteValue.text("Charlie"))
 
         // Test queryScalar (COUNT returns Int64)
         let count: Int64? = try store.connection.queryScalar("SELECT COUNT(*) FROM \(TestUser.self)" as SQL)
@@ -495,8 +495,8 @@ struct QueryBuilderTests {
     @Test("Filter with multiple KeyPath conditions")
     func testFilterMultipleKeyPathConditions() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
             id: UUIDV4(),
@@ -562,8 +562,8 @@ struct QueryBuilderTests {
     @Test("Row with KeyPath subscript")
     func testRowKeyPathSubscript() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         let userId = UUIDV4()
         let user = TestUser(
@@ -622,8 +622,8 @@ struct QueryBuilderTests {
     @Test("Distinct query")
     func testDistinct() throws {
         let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
+        // Replaced by migrate
+        try store.migrate(entities: [TestUser.self])
 
         // Insert users with same age
         for i in 0..<3 {
@@ -646,5 +646,201 @@ struct QueryBuilderTests {
 
         let (sql, _) = query.buildSQL()
         #expect(sql.contains("DISTINCT"))
+    }
+
+    // MARK: - EntityProtocol Query Extension Tests
+
+    @Test("EntityProtocol.query() creates Query")
+    func testEntityProtocolQuery() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        let user = TestUser(
+            id: UUIDV4(),
+            name: "Alice",
+            email: "alice@example.com",
+            age: 25,
+            address: Address(street: "123 Main St", city: "Shanghai", zipCode: "200000"),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(user)
+
+        // Test query() method
+        let result = try TestUser.query().all(store.connection)
+        #expect(result.count == 1)
+        #expect(result.first?.name == "Alice")
+    }
+
+    @Test("EntityProtocol.filter() with predicate")
+    func testEntityProtocolFilter() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        let user1 = TestUser(
+            id: UUIDV4(),
+            name: "Alice",
+            email: "alice@example.com",
+            age: 25,
+            address: Address(street: "123 Main St", city: "Shanghai", zipCode: "200000"),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        let user2 = TestUser(
+            id: UUIDV4(),
+            name: "Bob",
+            email: "bob@example.com",
+            age: 30,
+            address: Address(street: "456 Oak Ave", city: "Beijing", zipCode: "100000"),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
+
+        // Test filter with KeyPath predicate
+        let result1 = try TestUser.filter(\.name == "Alice").all(store.connection)
+        #expect(result1.count == 1)
+        #expect(result1.first?.name == "Alice")
+
+        // Test filter with closure syntax
+        let result2 = try TestUser.filter { $0.age >= 30 }.all(store.connection)
+        #expect(result2.count == 1)
+        #expect(result2.first?.name == "Bob")
+    }
+
+    @Test("EntityProtocol.filter(id:) by primary key")
+    func testEntityProtocolFilterById() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        let userId = UUIDV4()
+        let user = TestUser(
+            id: userId,
+            name: "Alice",
+            email: "alice@example.com",
+            age: 25,
+            address: Address(street: "123 Main St", city: "Shanghai", zipCode: "200000"),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(user)
+
+        // Test filter by id
+        let result = try TestUser.filter(id: userId).first(store.connection)
+        #expect(result != nil)
+        #expect(result?.name == "Alice")
+
+        // Test with non-existent id
+        let nonExistent = try TestUser.filter(id: UUIDV4()).first(store.connection)
+        #expect(nonExistent == nil)
+    }
+
+    @Test("EntityProtocol.filter(ids:) by multiple primary keys")
+    func testEntityProtocolFilterByIds() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        let id1 = UUIDV4()
+        let id2 = UUIDV4()
+        let id3 = UUIDV4()
+
+        let user1 = TestUser(id: id1, name: "Alice", email: "alice@example.com", age: 25,
+            address: Address(street: "1", city: "A", zipCode: "1"), createdAt: Date(), updatedAt: Date())
+        let user2 = TestUser(id: id2, name: "Bob", email: "bob@example.com", age: 30,
+            address: Address(street: "2", city: "B", zipCode: "2"), createdAt: Date(), updatedAt: Date())
+        let user3 = TestUser(id: id3, name: "Charlie", email: "charlie@example.com", age: 35,
+            address: Address(street: "3", city: "C", zipCode: "3"), createdAt: Date(), updatedAt: Date())
+
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
+        try store.connection.insert(user3)
+
+        // Test filter by multiple ids
+        let result = try TestUser.filter(ids: [id1, id3]).all(store.connection)
+        #expect(result.count == 2)
+        #expect(result.contains { $0.name == "Alice" })
+        #expect(result.contains { $0.name == "Charlie" })
+    }
+
+    @Test("EntityProtocol.order() and orderDesc()")
+    func testEntityProtocolOrder() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        for i in 0..<3 {
+            let user = TestUser(
+                id: UUIDV4(),
+                name: "User\(2 - i)",  // User2, User1, User0
+                email: "user\(i)@example.com",
+                age: 20 + i,
+                address: Address(street: "\(i)", city: "City", zipCode: "1000\(i)"),
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            try store.connection.insert(user)
+        }
+
+        // Test order ascending
+        let ascResult = try TestUser.order(by: \TestUser.name).all(store.connection)
+        #expect(ascResult.first?.name == "User0")
+        #expect(ascResult.last?.name == "User2")
+
+        // Test order descending
+        let descResult = try TestUser.orderDesc(by: \TestUser.age).all(store.connection)
+        #expect(descResult.first?.age == 22)
+        #expect(descResult.last?.age == 20)
+    }
+
+    @Test("EntityProtocol.limit()")
+    func testEntityProtocolLimit() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        for i in 0..<5 {
+            let user = TestUser(
+                id: UUIDV4(),
+                name: "User\(i)",
+                email: "user\(i)@example.com",
+                age: 20 + i,
+                address: Address(street: "\(i)", city: "City", zipCode: "1000\(i)"),
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            try store.connection.insert(user)
+        }
+
+        let result = try TestUser.limit(2).all(store.connection)
+        #expect(result.count == 2)
+    }
+
+    @Test("EntityProtocol chained query methods")
+    func testEntityProtocolChainedMethods() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [TestUser.self])
+
+        for i in 0..<10 {
+            let user = TestUser(
+                id: UUIDV4(),
+                name: "User\(i)",
+                email: "user\(i)@example.com",
+                age: 20 + i,
+                address: Address(street: "\(i)", city: "City", zipCode: "1000\(i)"),
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            try store.connection.insert(user)
+        }
+
+        // Chain multiple methods: filter -> order -> limit
+        let result = try TestUser
+            .filter { $0.age >= 25 }
+            .orderDesc(by: \TestUser.age)
+            .limit(3)
+            .all(store.connection)
+
+        #expect(result.count == 3)
+        #expect(result.first?.age == 29)  // Highest age >= 25
+        #expect(result.last?.age == 27)   // Third highest
     }
 }

@@ -19,6 +19,7 @@ public struct MigrationPlan: Sendable {
 /// Manages database schema migrations
 final class MigrationManager {
     private let connection: SQLiteConnection
+    public let pendingDeletesTable: String = "__swiftstore_pending_deletes"
 
     init(connection: SQLiteConnection) {
         self.connection = connection
@@ -105,7 +106,8 @@ final class MigrationManager {
                     continue
                 }
 
-                var alterSQL = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
+                var alterSQL =
+                    "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
                 if !column.nullable {
                     if let defaultValue = column.defaultValue {
                         alterSQL += " NOT NULL DEFAULT \(defaultValue)"
@@ -241,7 +243,8 @@ final class MigrationManager {
                     continue
                 }
 
-                var alterSQL = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
+                var alterSQL =
+                    "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
                 if !column.nullable {
                     if let defaultValue = column.defaultValue {
                         alterSQL += " NOT NULL DEFAULT \(defaultValue)"
@@ -281,7 +284,8 @@ final class MigrationManager {
                     continue
                 }
 
-                var alterSQL = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
+                var alterSQL =
+                    "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
                 if !column.nullable {
                     if let defaultValue = column.defaultValue {
                         alterSQL += " NOT NULL DEFAULT \(defaultValue)"
@@ -323,7 +327,39 @@ final class MigrationManager {
 
     /// Create system tables (pending_deletes, etc.)
     public func createSystemTables() throws {
-        try connection.execute(PendingDelete.ddl)
+        let sql = """
+            CREATE TABLE IF NOT EXISTS \(pendingDeletesTable) (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                table_name TEXT NOT NULL,
+                entity_id BLOB NOT NULL
+            )
+            """
+        try connection.execute(sql)
+    }
+
+    /// Create delete triggers for sync (captures deletes before they happen)
+    public func createDeleteTriggers(for entityTypes: [String]) throws {
+        for tableName in entityTypes {
+            let triggerName = "__swiftstore_delete_\(tableName)"
+            let sql = """
+                CREATE TRIGGER IF NOT EXISTS \(triggerName)
+                BEFORE DELETE ON \(tableName)
+                FOR EACH ROW
+                BEGIN
+                    INSERT INTO \(pendingDeletesTable) (table_name, entity_id)
+                    VALUES ('\(tableName)', OLD.id);
+                END
+                """
+            try connection.execute(sql)
+        }
+    }
+
+    /// Drop delete triggers for all entity types
+    public func dropDeleteTriggers(for entityTypes: [String]) {
+        for tableName in entityTypes {
+            let triggerName = "__swiftstore_delete_\(tableName)"
+            _ = try? connection.execute("DROP TRIGGER IF EXISTS \(triggerName)")
+        }
     }
 
     private func defaultValueForType(_ type: SQLiteType) -> String {

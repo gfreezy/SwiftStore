@@ -17,12 +17,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../SwiftStoreMacros"),
+        .package(path: "../SwiftStoreProtocols"),
     ],
     targets: [
         .target(
             name: "SwiftStoreCore",
             dependencies: [
                 .product(name: "SwiftStoreMacros", package: "SwiftStoreMacros"),
+                .product(name: "SwiftStoreProtocols", package: "SwiftStoreProtocols"),
             ],
             path: "Sources/SwiftStore"
         ),

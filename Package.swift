@@ -28,13 +28,17 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "./SwiftStoreCore"),
+        .package(path: "./SwiftStoreSync"),
+        .package(path: "./SwiftStoreConnectionQueue"),
     ],
     targets: [
-        // Re-export SwiftStore from SwiftStoreCore
+        // Re-export all SwiftStore sub-packages
         .target(
             name: "SwiftStore",
             dependencies: [
                 .product(name: "SwiftStoreCore", package: "SwiftStoreCore"),
+                .product(name: "SwiftStoreSync", package: "SwiftStoreSync"),
+                .product(name: "SwiftStoreConnectionQueue", package: "SwiftStoreConnectionQueue"),
             ]
         ),
     ]

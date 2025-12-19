@@ -103,33 +103,33 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let propName = prop.name
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
+        // Check if encoding needs try (JSON encoded types - all non-primitive types except UUIDV4)
+        let needsTry = !prop.isPrimitive && baseType != "UUIDV4"
+
         if prop.isOptional {
+            // For optional types, the outer closure needs try if inner code throws
+            let outerTry = needsTry ? "try " : ""
+            // Inner return also needs try if it's a throwing expression
+            let innerTry = needsTry ? "try " : ""
             return """
-                {
+                \(outerTry){
                         if let value = self.\(propName) {
-                            return \(encodeValue(name: "value", type: baseType, rawType: prop.rawType))
+                            return \(innerTry)\(encodeValue(name: "value", type: baseType))
                         } else {
                             return .null
                         }
                     }()
                 """
         } else {
-            return encodeValue(name: "self.\(propName)", type: baseType, rawType: prop.rawType)
+            if needsTry {
+                return "try \(encodeValue(name: "self.\(propName)", type: baseType))"
+            }
+            return encodeValue(name: "self.\(propName)", type: baseType)
         }
     }
 
     /// Generate the value encoding expression for a given type
-    private static func encodeValue(name: String, type: String, rawType: RawType = .none) -> String {
-        // Handle RawRepresentable enums
-        switch rawType {
-        case .string:
-            return ".text(\(name).rawValue)"
-        case .integer:
-            return ".integer(Int64(\(name).rawValue))"
-        case .none:
-            break
-        }
-
+    private static func encodeValue(name: String, type: String) -> String {
         switch type {
         case "String":
             return ".text(\(name))"
@@ -197,7 +197,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let constructorCode = constructorArgs.joined(separator: ",\n            ")
 
         return """
-            public static func sqliteDecode(from statement: SQLiteStatement) throws -> Self {
+            public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                 \(raw: decodingCode)
                 return Self(
                     \(raw: constructorCode)
@@ -210,48 +210,34 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     private static func generateDecodeExpression(for prop: PropertyInfo, index: Int) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
+        // Check if decoding needs try (JSON types - all non-primitive types except UUIDV4)
+        let needsTry = !prop.isPrimitive && baseType != "UUIDV4"
+
         if prop.isOptional {
+            // For optional types:
+            // - The inner closure call needs try if it throws
+            // - The outer closure call also needs try because it contains a throwing call
+            let innerTry = needsTry ? "try " : ""
+            let outerTry = needsTry ? "try " : ""
             return """
-                {
+                \(outerTry){
                         if statement.isNull(Int32(\(index))) {
-                            return nil
+                            return Optional<\(baseType)>.none
                         }
-                        return \(decodeValue(type: baseType, index: index, rawType: prop.rawType))
+                        return \(innerTry)\(decodeValue(type: baseType, index: index))
                     }()
                 """
         } else {
-            return decodeValue(type: baseType, index: index, rawType: prop.rawType)
+            // For non-optional types, we need try directly
+            if needsTry {
+                return "try \(decodeValue(type: baseType, index: index))"
+            }
+            return decodeValue(type: baseType, index: index)
         }
     }
 
     /// Generate the value decoding expression for a given type
-    private static func decodeValue(type: String, index: Int, rawType: RawType = .none) -> String {
-        // Handle RawRepresentable enums
-        switch rawType {
-        case .string:
-            return """
-                {
-                        guard let rawValue = statement.columnString(Int32(\(index))),
-                              let value = \(type)(rawValue: rawValue) else {
-                            throw StoreError.decodingFailed("Failed to decode \(type) from column \(index)")
-                        }
-                        return value
-                    }()
-                """
-        case .integer:
-            return """
-                {
-                        let rawValue = Int(statement.columnInt64(Int32(\(index))))
-                        guard let value = \(type)(rawValue: rawValue) else {
-                            throw StoreError.decodingFailed("Failed to decode \(type) from column \(index)")
-                        }
-                        return value
-                    }()
-                """
-        case .none:
-            break
-        }
-
+    private static func decodeValue(type: String, index: Int) -> String {
         switch type {
         case "String":
             return "statement.columnString(Int32(\(index))) ?? \"\""
@@ -302,6 +288,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 """
         }
     }
+
+    // MARK: - ExtensionMacro
 
     public static func expansion(
         of node: AttributeSyntax,

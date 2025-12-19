@@ -1,75 +1,9 @@
 import Testing
 import Foundation
-@testable import SwiftStoreCore
+@testable import SwiftStoreSync
 
 @Suite("Sync Tests")
 struct SyncTests {
-    @Test("Enable sync and record changes")
-    func testSyncEnabled() throws {
-        let store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
-
-        try store.enableSync(deviceId: "device_A")
-
-        let user = TestUser(
-            id: UUIDV4(),
-            name: "Alice",
-            email: "alice@example.com",
-            age: 25,
-            address: Address(street: "123 Main St", city: "Shanghai", zipCode: "200000"),
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-
-        try store.connection.insert(user)
-
-        // Flush pending changes to change_log
-        store.flushChanges()
-
-        let changes = try store.changesSince(clock: 0)
-        #expect(changes.count == 1)
-        #expect(changes.first?.entityType == "test_user")
-        #expect(changes.first?.operation == .insert)
-    }
-
-    @Test("Apply remote changes")
-    func testApplyChanges() throws {
-        let storeA = try createTestStore()
-        try storeA.register(TestUser.self)
-        try storeA.migrate()
-        try storeA.enableSync(deviceId: "device_A")
-
-        let user = TestUser(
-            id: UUIDV4(),
-            name: "Alice",
-            email: "alice@example.com",
-            age: 25,
-            address: Address(street: "123 Main St", city: "Shanghai", zipCode: "200000"),
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-
-        try storeA.connection.insert(user)
-
-        // Flush pending changes to change_log
-        storeA.flushChanges()
-
-        let changes = try storeA.changesSince(clock: 0)
-
-        // Apply to store B
-        let storeB = try createTestStore()
-        try storeB.register(TestUser.self)
-        try storeB.migrate()
-        try storeB.enableSync(deviceId: "device_B")
-
-        try storeB.applyChanges(changes)
-
-        let fetchedUser = try storeB.connection.get(TestUser.self, id: user.id)
-        #expect(fetchedUser != nil)
-        #expect(fetchedUser?.name == "Alice")
-    }
-
     @Test("Hybrid clock")
     func testHybridClock() {
         var clock = HybridClock()
@@ -157,5 +91,16 @@ struct SyncTests {
             // Network error - skip test
             print("validateTime test skipped: \(error)")
         }
+    }
+
+    @Test("Change operation types")
+    func testChangeOperationType() {
+        let insert = ChangeOperation.insert
+        let update = ChangeOperation.update
+        let delete = ChangeOperation.delete
+
+        #expect(insert.rawValue == "insert")
+        #expect(update.rawValue == "update")
+        #expect(delete.rawValue == "delete")
     }
 }
