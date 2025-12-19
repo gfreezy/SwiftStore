@@ -7,15 +7,23 @@
 
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode))
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes))
 @attached(extension, conformances: EntityProtocol, SQLiteCodable)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
 
-/// Index macro for creating database indexes
-@attached(member)
-public macro Index(_ keyPaths: Any..., unique: Bool = false) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "IndexMacro")
+/// Freestanding declaration macro for defining indexes inside struct body
+/// Usage:
+///   @Entity
+///   struct User {
+///       #Index(\.email, unique: true)
+///       #Index(\.firstName, \.lastName, name: "custom_name")
+///       var email: String
+///       ...
+///   }
+@freestanding(declaration)
+public macro Index<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., unique: Bool = false, name: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "IndexMacro")
 
 // MARK: - Relation Macros (without 'from' - on Entity directly)
 

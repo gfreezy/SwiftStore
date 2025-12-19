@@ -123,7 +123,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     }
 
     /// Serialize entity row to JSON string
-    private func serializeEntity(stmt: SQLiteStatement, entityType: any EntityProtocol.Type) throws -> String {
+    private func serializeEntity(stmt: SQLiteStatementImpl, entityType: any EntityProtocol.Type) throws -> String {
         var dict: [String: Any] = [:]
 
         for (index, column) in entityType.columns.enumerated() {

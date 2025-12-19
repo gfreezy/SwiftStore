@@ -74,7 +74,35 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Generate sqliteDecode(from:) method
         let decodeDecl = try generateSqliteDecode(properties: properties, structName: structName)
 
-        return [tableNameDecl, columnsDecl, encodeDecl, decodeDecl]
+        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl]
+
+        // Parse #Index markers from struct body and generate indexes
+        let indexInfos = IndexMarkerParser.parse(from: structDecl.memberBlock.members, tableName: tableName)
+        if !indexInfos.isEmpty {
+            var indexDefStrings: [String] = []
+            for idx in indexInfos {
+                let columnsStr = idx.columns.map { "\"\($0)\"" }.joined(separator: ", ")
+                // Use custom name if provided, otherwise generate from table and columns
+                let indexName = idx.name ?? "idx_\(tableName)_\(idx.columns.joined(separator: "_"))"
+                var def = "IndexDefinition(name: \"\(indexName)\", columns: [\(columnsStr)]"
+                if idx.unique {
+                    def += ", unique: true"
+                }
+                def += ")"
+                indexDefStrings.append(def)
+            }
+            let indexesArray = indexDefStrings.joined(separator: ",\n            ")
+            let indexesDecl: DeclSyntax = """
+                public static var indexes: [IndexDefinition] {
+                    [
+                        \(raw: indexesArray)
+                    ]
+                }
+                """
+            result.append(indexesDecl)
+        }
+
+        return result
     }
 
     /// Generate the sqliteEncode() method

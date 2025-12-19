@@ -71,7 +71,7 @@ public final class ChangeTrackerReader {
         return 0
     }
 
-    private func decodeEntry(from stmt: SQLiteStatement) -> ChangeLog? {
+    private func decodeEntry(from stmt: SQLiteStatementImpl) -> ChangeLog? {
         guard let idData = stmt.columnData(0),
               let id = UUIDV4(data: idData),
               let entityType = stmt.columnString(1),
