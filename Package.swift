@@ -1,7 +1,17 @@
 // swift-tools-version: 6.0
 import PackageDescription
-import CompilerPluginSupport
 
+/// SwiftStore - A type-safe SQLite ORM for Swift with macro support
+///
+/// This is the root package that re-exports the sub-packages:
+/// - SwiftStoreMacros: Entity and relation macros
+/// - SwiftStoreCore: Main library with Store, Query, Sync functionality
+///
+/// Usage:
+/// ```swift
+/// .package(url: "https://github.com/user/swift-store.git", from: "1.0.0")
+/// ```
+/// Then depend on "SwiftStore" to get both macros and core library.
 let package = Package(
     name: "SwiftStore",
     platforms: [
@@ -17,41 +27,15 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-syntax.git", from: "600.0.0"),
+        .package(path: "./SwiftStoreCore"),
     ],
     targets: [
-        // Main library target
+        // Re-export SwiftStore from SwiftStoreCore
         .target(
             name: "SwiftStore",
-            dependencies: ["SwiftStoreMacros"],
-            path: "Sources/SwiftStore"
-        ),
-
-        // Macro implementation target
-        .macro(
-            name: "SwiftStoreMacros",
             dependencies: [
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-            ],
-            path: "Sources/SwiftStoreMacros"
-        ),
-
-        // Test target for Store functionality
-        .testTarget(
-            name: "SwiftStoreTests",
-            dependencies: ["SwiftStore"],
-            path: "Tests/SwiftStoreTests"
-        ),
-
-        // Test target for Macros
-        .testTarget(
-            name: "SwiftStoreMacroTests",
-            dependencies: [
-                "SwiftStoreMacros",
-                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
-            ],
-            path: "Tests/SwiftStoreMacroTests"
+                .product(name: "SwiftStoreCore", package: "SwiftStoreCore"),
+            ]
         ),
     ]
 )
