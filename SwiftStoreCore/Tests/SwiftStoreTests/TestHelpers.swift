@@ -10,6 +10,11 @@ func createTestStore() throws -> Store {
     return try Store(path: tempPath)
 }
 
+func createTestConnectionAndMigrate() throws -> SQLiteConnection {
+    let tempPath = NSTemporaryDirectory() + "swiftstore_test_\(UUID().uuidString).sqlite"
+    return try SQLiteConnection(path: tempPath)
+}
+
 // MARK: - Test Helper Types
 
 struct Address: Codable, Sendable {

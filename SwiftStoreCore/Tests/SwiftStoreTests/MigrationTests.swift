@@ -43,7 +43,7 @@ struct MigrationDryRunTests {
         let store = try createTestStore()
 
         // Create a minimal table first
-        try store.execute("""
+        try store.connection.execute("""
             CREATE TABLE test_user (
                 id blob PRIMARY KEY,
                 name text NOT NULL,
@@ -111,7 +111,7 @@ struct MigrationDryRunTests {
         let store = try createTestStore()
 
         // Create table without the index
-        try store.execute("""
+        try store.connection.execute("""
             CREATE TABLE test_user (
                 id blob PRIMARY KEY,
                 name text NOT NULL,

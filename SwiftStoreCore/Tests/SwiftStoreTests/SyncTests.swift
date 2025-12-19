@@ -22,7 +22,7 @@ struct SyncTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Flush pending changes to change_log
         store.flushChanges()
@@ -50,7 +50,7 @@ struct SyncTests {
             updatedAt: Date()
         )
 
-        try storeA.insert(user)
+        try storeA.connection.insert(user)
 
         // Flush pending changes to change_log
         storeA.flushChanges()
@@ -65,7 +65,7 @@ struct SyncTests {
 
         try storeB.applyChanges(changes)
 
-        let fetchedUser = try storeB.get(TestUser.self, id: user.id)
+        let fetchedUser = try storeB.connection.get(TestUser.self, id: user.id)
         #expect(fetchedUser != nil)
         #expect(fetchedUser?.name == "Alice")
     }
@@ -134,34 +134,28 @@ struct SyncTests {
         }
     }
 
-    @Test("Store verify time method")
-    func testStoreVerifyTime() async throws {
-        let store = try createTestStore()
-
+    @Test("NTP verify time with tolerance")
+    func testNTPVerifyTimeWithTolerance() async throws {
         do {
-            let result = try await store.verifyTime(toleranceMs: 30000)
+            let result = try await NTPClient.verifyTime(toleranceMs: 30000)
             #expect(result.server.isEmpty == false)
         } catch {
             // Network may not be available
-            print("Store verifyTime test skipped: \(error)")
+            print("NTP verifyTime test skipped: \(error)")
         }
     }
 
-    @Test("Store validate time for sync - valid time")
-    func testValidateTimeForSyncValid() async throws {
-        let store = try createTestStore()
-
+    @Test("NTP validate time - valid time")
+    func testValidateTimeValid() async throws {
         do {
             // With large tolerance, should pass
-            try await store.validateTimeForSync(toleranceMs: 60000)  // 60 seconds
-        } catch let error as StoreError {
-            // If time is really out of sync, this would fail
-            if case .timeOutOfSync(let offset, let tolerance) = error {
-                print("Time out of sync: offset=\(offset)ms, tolerance=\(tolerance)ms")
+            let result = try await NTPClient.verifyTime(toleranceMs: 60000)  // 60 seconds
+            if !result.isValid {
+                print("Time out of sync: offset=\(result.offsetMs)ms")
             }
         } catch {
             // Network error - skip test
-            print("validateTimeForSync test skipped: \(error)")
+            print("validateTime test skipped: \(error)")
         }
     }
 }

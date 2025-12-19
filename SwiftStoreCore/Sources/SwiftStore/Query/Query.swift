@@ -3,7 +3,6 @@ import Foundation
 /// Query builder for fetching entities
 /// Inspired by GRDB's query interface
 public struct Query<T: EntityProtocol> {
-    private let store: Store
     private var predicates: [Predicate<T>] = []
     private var orderBys: [(column: String, ascending: Bool)] = []
     private var limitValue: Int?
@@ -11,11 +10,9 @@ public struct Query<T: EntityProtocol> {
     private var isDistinct: Bool = false
     private var selectedColumns: [String]?
 
-    init(store: Store) {
-        self.store = store
-    }
-
     // MARK: - Filtering
+    public init(_ type: T.Type) {
+    }
 
     /// Add a WHERE predicate (GRDB-style alias for `where`)
     public func filter(_ predicate: Predicate<T>) -> Query<T> {
@@ -158,30 +155,30 @@ public struct Query<T: EntityProtocol> {
     // MARK: - Execution
 
     /// Execute query and return all results
-    public func all() throws -> [T] {
+    public func all(_ connection: SQLiteConnection) throws -> [T] {
         let (sql, values) = buildSQL()
-        return try store.executeQuery(sql: sql, values: values, type: T.self)
+        return try connection.executeQuery(sql: sql, values: values, type: T.self)
     }
 
     /// Execute query and return all results (GRDB-style alias)
-    public func fetchAll() throws -> [T] {
-        try all()
+    public func fetchAll(_ connection: SQLiteConnection) throws -> [T] {
+        try all(connection)
     }
 
     /// Execute query and return first result
-    public func first() throws -> T? {
+    public func first(_ connection: SQLiteConnection) throws -> T? {
         let query = self.limit(1)
-        let results = try query.all()
+        let results = try query.all(connection)
         return results.first
     }
 
     /// Execute query and return first result (GRDB-style alias)
-    public func fetchOne() throws -> T? {
-        try first()
+    public func fetchOne(_ connection: SQLiteConnection) throws -> T? {
+        try first(connection)
     }
 
     /// Execute query and return count
-    public func count() throws -> Int {
+    public func count(_ connection: SQLiteConnection) throws -> Int {
         var sql = "SELECT COUNT(\(isDistinct ? "DISTINCT *" : "*")) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
 
@@ -191,23 +188,23 @@ public struct Query<T: EntityProtocol> {
             values = predicates.flatMap { $0.values }
         }
 
-        return try store.queryScalar(sql, values: values, type: Int.self) ?? 0
+        return try connection.queryScalar(sql, values: values, type: Int.self) ?? 0
     }
 
     /// Check if any records exist matching the query
-    public func exists() throws -> Bool {
-        try count() > 0
+    public func exists(_ connection: SQLiteConnection) throws -> Bool {
+        try count(connection) > 0
     }
 
     /// Check if no records exist matching the query
-    public func isEmpty() throws -> Bool {
-        try count() == 0
+    public func isEmpty(_ connection: SQLiteConnection) throws -> Bool {
+        try count(connection) == 0
     }
 
     // MARK: - Batch Operations
 
     /// Delete all records matching the query
-    public func deleteAll() throws -> Int {
+    public func deleteAll(_ connection: SQLiteConnection) throws -> Int {
         var sql = "DELETE FROM \(T.tableName)"
         var values: [SQLiteValue] = []
 
@@ -217,11 +214,11 @@ public struct Query<T: EntityProtocol> {
             values = predicates.flatMap { $0.values }
         }
 
-        return try store.executeUpdate(sql: sql, values: values)
+        return try connection.execute(sql, values: values)
     }
 
     /// Update all records matching the query with given values (raw SQL values)
-    public func updateAll(_ assignments: [String: SQLiteValue]) throws -> Int {
+    public func updateAll( _ connection: SQLiteConnection, _ assignments: [String: SQLiteValue]) throws -> Int {
         guard !assignments.isEmpty else { return 0 }
 
         let setClause = assignments.keys.map { "\($0) = ?" }.joined(separator: ", ")
@@ -234,12 +231,12 @@ public struct Query<T: EntityProtocol> {
             values += predicates.flatMap { $0.values }
         }
 
-        return try store.executeUpdate(sql: sql, values: values)
+        return try connection.execute(sql, values: values)
     }
 
     /// Update all records matching the query using KeyPath assignments
     /// Example: `query.updateAll([\.status <- "active", \.updatedAt <- Date()])`
-    public func updateAll(_ assignments: [ColumnAssignment<T>]) throws -> Int {
+    public func updateAll(_ connection: SQLiteConnection, _ assignments: [ColumnAssignment<T>]) throws -> Int {
         guard !assignments.isEmpty else { return 0 }
 
         let setClause = assignments.map { $0.sql }.joined(separator: ", ")
@@ -252,13 +249,13 @@ public struct Query<T: EntityProtocol> {
             values += predicates.flatMap { $0.values }
         }
 
-        return try store.executeUpdate(sql: sql, values: values)
+        return try connection.execute(sql, values: values)
     }
 
     /// Update all records matching the query using result builder syntax
     /// Example: `query.updateAll { $0.score += 100 }`
-    public func updateAll(@AssignmentBuilder<T> _ buildAssignments: (Columns<T>) -> [ColumnAssignment<T>]) throws -> Int {
-        try updateAll(buildAssignments(Columns()))
+    public func updateAll(_ connection: SQLiteConnection, @AssignmentBuilder<T> _ buildAssignments: (Columns<T>) -> [ColumnAssignment<T>]) throws -> Int {
+        try updateAll(connection, buildAssignments(Columns()))
     }
 }
 

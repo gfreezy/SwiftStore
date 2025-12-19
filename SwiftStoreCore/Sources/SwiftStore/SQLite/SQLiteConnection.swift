@@ -33,6 +33,8 @@ public final class SQLiteConnection: @unchecked Sendable {
     // Transaction nesting support
     private var transactionDepth: Int = 0
     private var savepointCounter: Int = 0
+    private let encoder: SQLiteEncoder = SQLiteEncoder()
+    private let decoder: SQLiteDecoder = SQLiteDecoder()
 
     /// Connection options for performance tuning
     public struct Options: Sendable {
@@ -291,5 +293,187 @@ public final class SQLiteConnection: @unchecked Sendable {
         let stmt = try prepare(sql)
         try stmt.bind(1, rowId)
         return stmt
+    }
+
+    // MARK: - Query Execution
+
+    /// Prepare statement and bind values
+    public func prepareAndBind(_ sql: String, values: [SQLiteValue]) throws -> SQLiteStatement {
+        let stmt = try prepare(sql)
+        for (index, value) in values.enumerated() {
+            try value.bind(to: stmt, at: Int32(index + 1))
+        }
+        return stmt
+    }
+
+    /// Execute SQL with values and return affected row count
+    @discardableResult
+    public func execute(_ sql: String, values: [SQLiteValue]) throws -> Int {
+        if values.isEmpty {
+            return try execute(sql)
+        }
+        try prepareAndBind(sql, values: values).step()
+        return changes
+    }
+
+    /// Execute type-safe SQL
+    @discardableResult
+    public func execute(_ sql: SQL) throws -> Int {
+        try execute(sql.sql, values: sql.values)
+    }
+
+    /// Execute SQL and return entities (used by Query builder)
+    func executeQuery<E: EntityProtocol>(sql: String, values: [SQLiteValue], type: E.Type) throws -> [E] {
+        try decoder.decodeAll(E.self, from: prepareAndBind(sql, values: values))
+    }
+
+    /// Query using raw SQL string and return rows
+    public func query(_ sql: String, values: [SQLiteValue] = []) throws -> [Row] {
+        let stmt = try prepareAndBind(sql, values: values)
+        var results: [Row] = []
+        let columnCount = stmt.columnCount
+
+        while try stmt.step() {
+            var data: [String: SQLiteValue] = [:]
+            for i in 0..<columnCount {
+                if let name = stmt.columnName(i) {
+                    data[name] = stmt.sqliteValue(i)
+                }
+            }
+            results.append(Row(data))
+        }
+        return results
+    }
+
+    /// Query using type-safe SQL
+    public func query(_ sql: SQL) throws -> [Row] {
+        try query(sql.sql, values: sql.values)
+    }
+
+    /// Query single row using raw SQL string
+    public func queryOne(_ sql: String, values: [SQLiteValue] = []) throws -> Row? {
+        let stmt = try prepareAndBind(sql, values: values)
+        let columnCount = stmt.columnCount
+
+        guard try stmt.step() else { return nil }
+
+        var data: [String: SQLiteValue] = [:]
+        for i in 0..<columnCount {
+            if let name = stmt.columnName(i) {
+                data[name] = stmt.sqliteValue(i)
+            }
+        }
+        return Row(data)
+    }
+
+    /// Query single row using type-safe SQL
+    public func queryOne(_ sql: SQL) throws -> Row? {
+        try queryOne(sql.sql, values: sql.values)
+    }
+
+    /// Query scalar value using raw SQL string
+    public func queryScalar<T>(_ sql: String, values: [SQLiteValue] = [], type: T.Type = T.self) throws -> T? {
+        guard let row = try queryOne(sql, values: values),
+              let firstValue = row.data.values.first else {
+            return nil
+        }
+
+        switch firstValue {
+        case .integer(let v):
+            if T.self == Int.self { return Int(v) as? T }
+            if T.self == Int32.self { return Int32(v) as? T }
+            return v as? T
+        case .real(let v):
+            if T.self == Float.self { return Float(v) as? T }
+            return v as? T
+        case .text(let v): return v as? T
+        case .blob(let v): return v as? T
+        case .null: return nil
+        }
+    }
+
+    /// Query scalar value using type-safe SQL
+    public func queryScalar<T>(_ sql: SQL, type: T.Type = T.self) throws -> T? {
+        try queryScalar(sql.sql, values: sql.values, type: type)
+    }
+
+    // MARK: - Entity CRUD Operations
+
+    /// Insert a new entity
+    /// Timestamps (created_at, updated_at) are set automatically by DEFAULT values
+    public func insert<E: EntityProtocol>(_ entity: E) throws {
+        var values = try encoder.encode(entity)
+        // Remove timestamps - DEFAULT values will set them
+        values.removeValue(forKey: "created_at")
+        values.removeValue(forKey: "updated_at")
+
+        let columns = values.keys.sorted()
+        let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
+        let columnList = columns.joined(separator: ", ")
+
+        let sql = "INSERT INTO \(E.tableName) (\(columnList)) VALUES (\(placeholders))"
+        let stmt = try prepare(sql)
+
+        for (index, column) in columns.enumerated() {
+            if let value = values[column] {
+                try value.bind(to: stmt, at: Int32(index + 1))
+            }
+        }
+
+        try stmt.step()
+    }
+
+    /// Get entity by ID
+    public func get<E: EntityProtocol>(_ type: E.Type, id: UUIDV4) throws -> E? {
+        let sql: SQL = "SELECT * FROM \(E.self) WHERE id = \(id)"
+        let stmt = try prepareAndBind(sql.sql, values: sql.values)
+
+        guard try stmt.step() else {
+            return nil
+        }
+
+        return try decoder.decode(E.self, from: stmt)
+    }
+
+    /// Update an existing entity
+    /// Timestamp (updated_at) is set automatically by trigger
+    public func update<E: EntityProtocol>(_ entity: E) throws {
+        var values = try encoder.encode(entity)
+        // Remove id, created_at, updated_at - trigger will set updated_at
+        values.removeValue(forKey: "id")
+        values.removeValue(forKey: "created_at")
+        values.removeValue(forKey: "updated_at")
+
+        let columns = values.keys.sorted()
+        let setClause = columns.map { "\($0) = ?" }.joined(separator: ", ")
+
+        let sql = "UPDATE \(E.tableName) SET \(setClause) WHERE id = ?"
+        let stmt = try prepare(sql)
+
+        for (index, column) in columns.enumerated() {
+            if let value = values[column] {
+                try value.bind(to: stmt, at: Int32(index + 1))
+            }
+        }
+
+        // Bind ID
+        try stmt.bind(Int32(columns.count + 1), entity.id.data)
+
+        try stmt.step()
+
+        if changes == 0 {
+            throw StoreError.entityNotFound(entity.id)
+        }
+    }
+
+    /// Delete an entity
+    public func delete<E: EntityProtocol>(_ entity: E) throws {
+        try delete(E.self, id: entity.id)
+    }
+
+    /// Delete entity by ID
+    public func delete<E: EntityProtocol>(_ type: E.Type, id: UUIDV4) throws {
+        let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(id)"
+        try execute(sql)
     }
 }

@@ -30,12 +30,12 @@ struct QueryBuilderTests {
             updatedAt: Date().addingTimeInterval(1)
         )
 
-        try store.insert(user1)
-        try store.insert(user2)
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
 
-        let ordered = try store.fetch(TestUser.self)
+        let ordered = try Query(TestUser.self)
             .order(by: \.name, ascending: true)
-            .all()
+            .all(store.connection)
 
         #expect(ordered.count == 2)
         #expect(ordered.first?.name == "Alice")
@@ -57,19 +57,19 @@ struct QueryBuilderTests {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            try store.insert(user)
+            try store.connection.insert(user)
         }
 
-        let limited = try store.fetch(TestUser.self)
+        let limited = try Query(TestUser.self)
             .limit(2)
-            .all()
+            .all(store.connection)
 
         #expect(limited.count == 2)
 
-        let offsetted = try store.fetch(TestUser.self)
+        let offsetted = try Query(TestUser.self)
             .limit(2)
             .offset(2)
-            .all()
+            .all(store.connection)
 
         #expect(offsetted.count == 2)
     }
@@ -90,9 +90,9 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
-        let first = try store.fetch(TestUser.self).first()
+        let first = try Query(TestUser.self).first(store.connection)
         #expect(first != nil)
         #expect(first?.name == "Alice")
     }
@@ -103,7 +103,7 @@ struct QueryBuilderTests {
         try store.register(TestUser.self)
         try store.migrate()
 
-        let existsBefore = try store.fetch(TestUser.self).exists()
+        let existsBefore = try Query(TestUser.self).exists(store.connection)
         #expect(existsBefore == false)
 
         let user = TestUser(
@@ -116,9 +116,9 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
-        let existsAfter = try store.fetch(TestUser.self).exists()
+        let existsAfter = try Query(TestUser.self).exists(store.connection)
         #expect(existsAfter == true)
     }
 
@@ -148,60 +148,60 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user1)
-        try store.insert(user2)
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
 
         // Update all users with age >= 25 to age 100 (KeyPath syntax)
-        let updated = try store.fetch(TestUser.self)
-            .filter(\TestUser.age >= 25)
-            .updateAll([\TestUser.age <- 100])
+        let updated = try Query(TestUser.self)
+            .filter(\.age >= 25)
+            .updateAll(store.connection, [\.age <- 100])
 
         #expect(updated == 2)
 
-        var users = try store.fetch(TestUser.self).all()
+        var users = try Query(TestUser.self).all(store.connection)
         #expect(users.allSatisfy { $0.age == 100 })
 
         // Update using closure syntax with .set()
-        let updated2 = try store.fetch(TestUser.self)
+        let updated2 = try Query(TestUser.self)
             .filter { $0.age == 100 }
-            .updateAll { $0.age.set(50) }
+            .updateAll(store.connection, { $0.age.set(50) })
 
         #expect(updated2 == 2)
 
-        users = try store.fetch(TestUser.self).all()
+        users = try Query(TestUser.self).all(store.connection)
         #expect(users.allSatisfy { $0.age == 50 })
 
         // Test += operator
-        let updated3 = try store.fetch(TestUser.self)
+        let updated3 = try Query(TestUser.self)
             .filter { $0.age == 50 }
-            .updateAll { $0.age += 10 }
+            .updateAll(store.connection, { $0.age += 10 })
 
         #expect(updated3 == 2)
 
-        users = try store.fetch(TestUser.self).all()
+        users = try Query(TestUser.self).all(store.connection)
         #expect(users.allSatisfy { $0.age == 60 })
 
         // Test multiple updates with result builder
-        let updated4 = try store.fetch(TestUser.self)
+        let updated4 = try Query(TestUser.self)
             .filter { $0.age == 60 && $0.name == "Alice" }
-            .updateAll {
+            .updateAll(store.connection, {
                 $0.age.set(99)
                 $0.name.set("Alice Updated")
-            }
+            })
 
         #expect(updated4 == 1)
 
-        let alice = try store.fetch(TestUser.self)
+        let alice = try Query(TestUser.self)
             .filter { $0.name == "Alice Updated" }
-            .first()
+            .first(store.connection)
         #expect(alice?.age == 99)
 
         // Test complex filter with || and multiple updates
-        let updated5 = try store.fetch(TestUser.self)
+        let updated5 = try Query(TestUser.self)
             .filter { $0.name == "Alice Updated" || $0.name == "Bob" }
-            .updateAll {
+            .updateAll(store.connection, {
                 $0.age -= 9
-            }
+            })
 
         #expect(updated5 == 2)
     }
@@ -222,17 +222,17 @@ struct QueryBuilderTests {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            try store.insert(user)
+            try store.connection.insert(user)
         }
 
         // Delete users with age >= 23
-        let deleted = try store.fetch(TestUser.self)
-            .filter(\TestUser.age >= 23)
-            .deleteAll()
+        let deleted = try Query(TestUser.self)
+            .filter(\.age >= 23)
+            .deleteAll(store.connection)
 
         #expect(deleted == 2)
 
-        let remaining = try store.fetch(TestUser.self).count()
+        let remaining = try Query(TestUser.self).count(store.connection)
         #expect(remaining == 3)
     }
 
@@ -252,20 +252,20 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Test filter with KeyPath predicate (no closure)
-        let result = try store.fetch(TestUser.self)
-            .filter(\TestUser.name == "Alice")
-            .first()
+        let result = try Query(TestUser.self)
+            .filter(\.name == "Alice")
+            .first(store.connection)
 
         #expect(result != nil)
         #expect(result?.name == "Alice")
 
         // Test filter with closure syntax
-        let result2 = try store.fetch(TestUser.self)
+        let result2 = try Query(TestUser.self)
             .filter { $0.name == "Alice" }
-            .first()
+            .first(store.connection)
 
         #expect(result2 != nil)
     }
@@ -306,29 +306,29 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user1)
-        try store.insert(user2)
-        try store.insert(user3)
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
+        try store.connection.insert(user3)
 
         // Test && operator
-        let andResult = try store.fetch(TestUser.self)
+        let andResult = try Query(TestUser.self)
             .filter { $0.age >= 25 && $0.name == "Alice" }
-            .all()
+            .all(store.connection)
 
         #expect(andResult.count == 1)
         #expect(andResult.first?.name == "Alice")
 
         // Test || operator
-        let orResult = try store.fetch(TestUser.self)
+        let orResult = try Query(TestUser.self)
             .filter { $0.name == "Alice" || $0.name == "Bob" }
-            .all()
+            .all(store.connection)
 
         #expect(orResult.count == 2)
 
         // Test ! operator
-        let notResult = try store.fetch(TestUser.self)
+        let notResult = try Query(TestUser.self)
             .filter { !($0.name == "Alice") }
-            .all()
+            .all(store.connection)
 
         #expect(notResult.count == 2)
         #expect(notResult.allSatisfy { $0.name != "Alice" })
@@ -350,19 +350,19 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Test SQL interpolation with value parameters
         let newName = "Alice Updated"
         let minAge = 20
         let sql: SQL = "UPDATE \(TestUser.self) SET \(\TestUser.name) = \(newName) WHERE \(\TestUser.age) >= \(minAge)"
-        try store.execute(sql)
+        try store.connection.execute(sql.sql, values: sql.values)
 
-        let updated = try store.fetch(TestUser.self).first()
+        let updated = try Query(TestUser.self).first(store.connection)
         #expect(updated?.name == "Alice Updated")
 
         // Test query with SQL interpolation
-        let rows = try store.query(
+        let rows = try store.connection.query(
             "SELECT \(\TestUser.name), \(\TestUser.age) FROM \(TestUser.self)" as SQL
         )
         #expect(rows.count == 1)
@@ -370,9 +370,9 @@ struct QueryBuilderTests {
         // Test with multiple value types
         let newAge = 30
         let sql2: SQL = "UPDATE \(TestUser.self) SET \(\TestUser.age) = \(newAge) WHERE \(\TestUser.name) = \(newName)"
-        try store.execute(sql2)
+        try store.connection.execute(sql2.sql, values: sql2.values)
 
-        let updated2 = try store.fetch(TestUser.self).first()
+        let updated2 = try Query(TestUser.self).first(store.connection)
         #expect(updated2?.age == 30)
     }
 
@@ -393,7 +393,7 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Test with Bool
         let isActive = true
@@ -416,7 +416,7 @@ struct QueryBuilderTests {
         #expect(sqlUUID.sql == "SELECT * FROM test_user WHERE id = ?")
 
         // Test query execution with UUIDV4
-        let rows = try store.query(sqlUUID)
+        let rows = try store.connection.query(sqlUUID.sql, values: sqlUUID.values)
         #expect(rows.count == 1)
     }
 
@@ -436,7 +436,7 @@ struct QueryBuilderTests {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            try store.insert(user)
+            try store.connection.insert(user)
         }
 
         // Test raw interpolation for ORDER BY
@@ -445,7 +445,7 @@ struct QueryBuilderTests {
         #expect(sql.sql == "SELECT * FROM test_user ORDER BY age DESC")
         #expect(sql.values.isEmpty)
 
-        let rows = try store.query(sql)
+        let rows = try store.connection.query(sql.sql, values: sql.values)
         #expect(rows.count == 3)
     }
 
@@ -465,27 +465,27 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Test queryOne
         let name = "Charlie"
-        let row = try store.queryOne("SELECT * FROM \(TestUser.self) WHERE \(\TestUser.name) = \(name)" as SQL)
+        let row = try store.connection.queryOne("SELECT * FROM \(TestUser.self) WHERE \(\TestUser.name) = \(name)" as SQL)
         #expect(row != nil)
         #expect(row?["name"] == .text("Charlie"))
 
         // Test queryScalar (COUNT returns Int64)
-        let count: Int64? = try store.queryScalar("SELECT COUNT(*) FROM \(TestUser.self)" as SQL)
+        let count: Int64? = try store.connection.queryScalar("SELECT COUNT(*) FROM \(TestUser.self)" as SQL)
         #expect(count == 1)
 
         // Test queryScalar with filter
         let minAge = 25
-        let countFiltered: Int64? = try store.queryScalar(
+        let countFiltered: Int64? = try store.connection.queryScalar(
             "SELECT COUNT(*) FROM \(TestUser.self) WHERE \(\TestUser.age) >= \(minAge)" as SQL
         )
         #expect(countFiltered == 1)
 
         // Test SELECT with value interpolation
-        let rows = try store.query(
+        let rows = try store.connection.query(
             "SELECT \(\TestUser.age) FROM \(TestUser.self) WHERE \(\TestUser.age) >= \(minAge)" as SQL
         )
         #expect(rows.count == 1)
@@ -528,34 +528,34 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user1)
-        try store.insert(user2)
-        try store.insert(user3)
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
+        try store.connection.insert(user3)
 
         // Test chained filter with KeyPath syntax
-        let result1 = try store.fetch(TestUser.self)
+        let result1 = try Query(TestUser.self)
             .filter(\TestUser.age >= 25)
             .filter(\TestUser.age <= 30)
-            .all()
+            .all(store.connection)
         #expect(result1.count == 2)
 
         // Test combined && with KeyPath syntax
-        let result2 = try store.fetch(TestUser.self)
+        let result2 = try Query(TestUser.self)
             .filter(\TestUser.age >= 25 && \TestUser.name == "Alice")
-            .all()
+            .all(store.connection)
         #expect(result2.count == 1)
         #expect(result2.first?.name == "Alice")
 
         // Test combined || with KeyPath syntax
-        let result3 = try store.fetch(TestUser.self)
+        let result3 = try Query(TestUser.self)
             .filter(\TestUser.name == "Alice" || \TestUser.name == "Bob")
-            .all()
+            .all(store.connection)
         #expect(result3.count == 2)
 
         // Test complex condition with KeyPath syntax
-        let result4 = try store.fetch(TestUser.self)
+        let result4 = try Query(TestUser.self)
             .filter((\TestUser.age >= 25 && \TestUser.age < 30) || \TestUser.name == "Charlie")
-            .all()
+            .all(store.connection)
         #expect(result4.count == 2)  // Alice (25) and Charlie (name match)
     }
 
@@ -576,10 +576,10 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         // Test query with KeyPath subscript
-        let rows = try store.query("SELECT * FROM \(TestUser.self)" as SQL)
+        let rows = try store.connection.query("SELECT * FROM \(TestUser.self)" as SQL)
         #expect(rows.count == 1)
 
         let row = rows.first!
@@ -596,7 +596,7 @@ struct QueryBuilderTests {
         #expect(optionalName == "Alice")
 
         // Test queryOne (single row)
-        let singleRow = try store.queryOne("SELECT * FROM \(TestUser.self) WHERE \(\TestUser.name) = \("Alice")" as SQL)
+        let singleRow = try store.connection.queryOne("SELECT * FROM \(TestUser.self) WHERE \(\TestUser.name) = \("Alice")" as SQL)
         #expect(singleRow != nil)
         #expect(singleRow![\TestUser.name] == "Alice")
         #expect(singleRow![\TestUser.age] == 25)
@@ -611,9 +611,9 @@ struct QueryBuilderTests {
             createdAt: Date(),
             updatedAt: Date()
         )
-        try store.insert(user2)
+        try store.connection.insert(user2)
 
-        let allRows = try store.query("SELECT * FROM \(TestUser.self) ORDER BY \(raw: "age")" as SQL)
+        let allRows = try store.connection.query("SELECT * FROM \(TestUser.self) ORDER BY \(raw: "age")" as SQL)
         #expect(allRows.count == 2)
         #expect(allRows[0][\TestUser.name] == "Alice")
         #expect(allRows[1][\TestUser.name] == "Bob")
@@ -636,11 +636,11 @@ struct QueryBuilderTests {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            try store.insert(user)
+            try store.connection.insert(user)
         }
 
         // Distinct should work with select
-        let query = store.fetch(TestUser.self)
+        let query = Query(TestUser.self)
             .distinct()
             .select("age")
 

@@ -26,24 +26,40 @@ final class MigrationManager {
 
     /// Create table for an entity type
     public func createTable<E: EntityProtocol>(for type: E.Type) throws {
-        let tableName = E.tableName
+        try createTableForAnyType(type)
+    }
+
+    /// Create table for any entity type (type-erased)
+    public func createTableForAnyType(_ type: any EntityProtocol.Type) throws {
+        let tableName = type.tableName
 
         // Check if table exists
         if try connection.tableExists(tableName) {
             // Table exists, check for schema changes
-            try migrateTable(for: type)
+            try migrateTableForAnyType(type)
             return
         }
 
-        // Build CREATE TABLE SQL
+        // Build CREATE TABLE SQL with timestamp defaults
         var columnDefs: [String] = []
 
-        for column in E.columns {
-            columnDefs.append(column.toSQL())
+        for column in type.columns {
+            // Add DEFAULT for timestamp columns
+            if column.name == "created_at" || column.name == "updated_at" {
+                let colWithDefault = ColumnDefinition(
+                    name: column.name,
+                    type: column.type,
+                    nullable: column.nullable,
+                    defaultValue: "(strftime('%s', 'now'))"
+                )
+                columnDefs.append(colWithDefault.toSQL())
+            } else {
+                columnDefs.append(column.toSQL())
+            }
         }
 
         // Add foreign key constraints
-        for fk in E.foreignKeys {
+        for fk in type.foreignKeys {
             columnDefs.append(fk.toSQL())
         }
 
@@ -51,8 +67,68 @@ final class MigrationManager {
         try connection.execute(sql)
 
         // Create indexes
-        for index in E.indexes {
+        for index in type.indexes {
             let indexSQL = index.toSQL(tableName: tableName)
+            try connection.execute(indexSQL)
+        }
+
+        // Create UPDATE trigger for updated_at
+        try createUpdateTimestampTrigger(for: tableName)
+    }
+
+    /// Create trigger to auto-update updated_at on UPDATE
+    private func createUpdateTimestampTrigger(for tableName: String) throws {
+        let trigger = """
+            CREATE TRIGGER IF NOT EXISTS __swiftstore_update_\(tableName)
+            AFTER UPDATE ON \(tableName)
+            FOR EACH ROW
+            WHEN NEW.updated_at = OLD.updated_at
+            BEGIN
+                UPDATE \(tableName) SET updated_at = strftime('%s', 'now')
+                WHERE rowid = NEW.rowid;
+            END
+            """
+        try connection.execute(trigger)
+    }
+
+    /// Migrate existing table (type-erased version)
+    private func migrateTableForAnyType(_ type: any EntityProtocol.Type) throws {
+        let tableName = type.tableName
+        let existingColumns = try connection.tableInfo(tableName)
+        let existingColumnNames = Set(existingColumns.compactMap { $0["name"] as? String })
+
+        // Add new columns
+        for column in type.columns {
+            if !existingColumnNames.contains(column.name) {
+                // Skip virtual columns for ALTER TABLE
+                if column.generatedAs != nil {
+                    continue
+                }
+
+                var alterSQL = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
+                if !column.nullable {
+                    if let defaultValue = column.defaultValue {
+                        alterSQL += " NOT NULL DEFAULT \(defaultValue)"
+                    } else if column.name == "created_at" || column.name == "updated_at" {
+                        alterSQL += " NOT NULL DEFAULT (strftime('%s', 'now'))"
+                    } else {
+                        let defaultVal = defaultValueForType(column.type)
+                        alterSQL += " NOT NULL DEFAULT \(defaultVal)"
+                    }
+                }
+                try connection.execute(alterSQL)
+            }
+        }
+
+        // Ensure all indexes exist
+        for index in type.indexes {
+            let indexSQL = index.toSQL(tableName: tableName).replacingOccurrences(
+                of: "CREATE INDEX",
+                with: "CREATE INDEX IF NOT EXISTS"
+            ).replacingOccurrences(
+                of: "CREATE UNIQUE INDEX",
+                with: "CREATE UNIQUE INDEX IF NOT EXISTS"
+            )
             try connection.execute(indexSQL)
         }
     }
@@ -245,45 +321,9 @@ final class MigrationManager {
         return indexNames
     }
 
-    /// Migrate existing table to match new schema
-    private func migrateTable<E: EntityProtocol>(for type: E.Type) throws {
-        let tableName = E.tableName
-        let existingColumns = try connection.tableInfo(tableName)
-        let existingColumnNames = Set(existingColumns.compactMap { $0["name"] as? String })
-
-        // Add new columns
-        for column in E.columns {
-            if !existingColumnNames.contains(column.name) {
-                // Skip virtual columns for ALTER TABLE (they need table recreation)
-                if column.generatedAs != nil {
-                    continue
-                }
-
-                var alterSQL = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type.rawValue)"
-                if !column.nullable {
-                    if let defaultValue = column.defaultValue {
-                        alterSQL += " NOT NULL DEFAULT \(defaultValue)"
-                    } else {
-                        // For non-nullable columns without default, use type-appropriate default
-                        let defaultVal = defaultValueForType(column.type)
-                        alterSQL += " NOT NULL DEFAULT \(defaultVal)"
-                    }
-                }
-                try connection.execute(alterSQL)
-            }
-        }
-
-        // Ensure all indexes exist
-        for index in E.indexes {
-            let indexSQL = index.toSQL(tableName: tableName).replacingOccurrences(
-                of: "CREATE INDEX",
-                with: "CREATE INDEX IF NOT EXISTS"
-            ).replacingOccurrences(
-                of: "CREATE UNIQUE INDEX",
-                with: "CREATE UNIQUE INDEX IF NOT EXISTS"
-            )
-            try connection.execute(indexSQL)
-        }
+    /// Create system tables (pending_deletes, etc.)
+    public func createSystemTables() throws {
+        try connection.execute(PendingDelete.ddl)
     }
 
     private func defaultValueForType(_ type: SQLiteType) -> String {

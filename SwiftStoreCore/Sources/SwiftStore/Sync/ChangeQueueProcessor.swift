@@ -148,8 +148,7 @@ public final class ChangeQueueProcessor {
             VALUES (\(changeId.data), \(change.table), \(entityId.data), \(change.op.rawValue), \(payload), \(deviceId), \(change.clock), \(now.timeIntervalSince1970), \(now.timeIntervalSince1970))
             """
 
-        let stmt = try connection.prepare(sql.sql)
-        try stmt.step()
+        try connection.execute(sql)
     }
 
     /// Encode row data to JSON

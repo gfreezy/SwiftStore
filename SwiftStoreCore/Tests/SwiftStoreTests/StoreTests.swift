@@ -36,9 +36,9 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
-        let fetched = try store.get(TestUser.self, id: user.id)
+        let fetched = try store.connection.get(TestUser.self, id: user.id)
         #expect(fetched != nil)
         #expect(fetched?.name == "Alice")
         #expect(fetched?.email == "alice@example.com")
@@ -62,14 +62,14 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
+        try store.connection.insert(user)
 
         user.name = "Alice Updated"
         user.age = 26
 
-        try store.update(user)
+        try store.connection.update(user)
 
-        let fetched = try store.get(TestUser.self, id: user.id)
+        let fetched = try store.connection.get(TestUser.self, id: user.id)
         #expect(fetched?.name == "Alice Updated")
         #expect(fetched?.age == 26)
     }
@@ -90,10 +90,10 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.insert(user)
-        try store.delete(user)
+        try store.connection.insert(user)
+        try store.connection.delete(user)
 
-        let fetched = try store.get(TestUser.self, id: user.id)
+        let fetched = try store.connection.get(TestUser.self, id: user.id)
         #expect(fetched == nil)
     }
 
@@ -123,13 +123,13 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.insert(user1)
-        try store.insert(user2)
+        try store.connection.insert(user1)
+        try store.connection.insert(user2)
 
-        let allUsers = try store.fetch(TestUser.self).all()
+        let allUsers = try store.fetch(TestUser.self).all(store.connection)
         #expect(allUsers.count == 2)
 
-        let count = try store.fetch(TestUser.self).count()
+        let count = try store.fetch(TestUser.self).count(store.connection)
         #expect(count == 2)
     }
 
@@ -159,12 +159,12 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.transaction {
-            try store.insert(user1)
-            try store.insert(user2)
+        try store.connection.transaction {
+            try store.connection.insert(user1)
+            try store.connection.insert(user2)
         }
 
-        let count = try store.fetch(TestUser.self).count()
+        let count = try store.fetch(TestUser.self).count(store.connection)
         #expect(count == 2)
     }
 
@@ -189,9 +189,9 @@ struct StoreTests {
         let tag1 = TestTag(id: UUIDV4(), name: "swift", createdAt: Date(), updatedAt: Date())
         let tag2 = TestTag(id: UUIDV4(), name: "ios", createdAt: Date(), updatedAt: Date())
 
-        try store.insert(user)
-        try store.insert(tag1)
-        try store.insert(tag2)
+        try store.connection.insert(user)
+        try store.connection.insert(tag1)
+        try store.connection.insert(tag2)
 
         // Create relations
         let relation1 = TestUserTags(
@@ -209,13 +209,13 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        try store.insert(relation1)
-        try store.insert(relation2)
+        try store.connection.insert(relation1)
+        try store.connection.insert(relation2)
 
         // Query relations
         let userTags = try store.fetch(TestUserTags.self)
             .where(\.userId == user.id)
-            .all()
+            .all(store.connection)
 
         #expect(userTags.count == 2)
     }
