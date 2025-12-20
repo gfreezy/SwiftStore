@@ -26,8 +26,7 @@ struct DatabaseSchemaBuilderTests {
         let builder = DatabaseSchemaBuilder(
             options: DatabaseSchemaBuildOptions(
                 createUpdateTrigger: true,
-                trackDeletes: true,
-                autoTimestampDefaults: true
+                trackDeletes: true
             )
         )
         let schemas = builder.buildSchemas(from: [TestUser.self])
@@ -49,8 +48,7 @@ struct DatabaseSchemaBuilderTests {
         let builder = DatabaseSchemaBuilder(
             options: DatabaseSchemaBuildOptions(
                 createUpdateTrigger: false,
-                trackDeletes: false,
-                autoTimestampDefaults: true
+                trackDeletes: false
             )
         )
         let schemas = builder.buildSchemas(from: [TestUser.self])
@@ -59,34 +57,18 @@ struct DatabaseSchemaBuilderTests {
         #expect(schemas[0].triggers.isEmpty)
     }
 
-    @Test("Build schema with autoTimestampDefaults")
-    func testBuildSchemaWithAutoTimestampDefaults() {
-        let builder = DatabaseSchemaBuilder(
-            options: DatabaseSchemaBuildOptions(autoTimestampDefaults: true)
-        )
+    @Test("Build schema uses column defaultValue from entity")
+    func testBuildSchemaUsesColumnDefaultValue() {
+        let builder = DatabaseSchemaBuilder()
         let schemas = builder.buildSchemas(from: [TestUser.self])
 
         let schema = schemas[0]
         let createdAt = schema.columns.first { $0.name == "created_at" }
         let updatedAt = schema.columns.first { $0.name == "updated_at" }
 
+        // Default values come from the entity's ColumnDefinition
         #expect(createdAt?.defaultValue == "(strftime('%s', 'now'))")
         #expect(updatedAt?.defaultValue == "(strftime('%s', 'now'))")
-    }
-
-    @Test("Build schema without autoTimestampDefaults")
-    func testBuildSchemaWithoutAutoTimestampDefaults() {
-        let builder = DatabaseSchemaBuilder(
-            options: DatabaseSchemaBuildOptions(autoTimestampDefaults: false)
-        )
-        let schemas = builder.buildSchemas(from: [TestUser.self])
-
-        let schema = schemas[0]
-        let createdAt = schema.columns.first { $0.name == "created_at" }
-        let updatedAt = schema.columns.first { $0.name == "updated_at" }
-
-        #expect(createdAt?.defaultValue == nil)
-        #expect(updatedAt?.defaultValue == nil)
     }
 
     @Test("Build schema with all column types")

@@ -3,9 +3,6 @@ import SwiftStoreCore
 
 /// Handles SQLite update hooks and writes changes directly to a separate changelog database
 public final class ChangeTracker: SQLiteUpdateHookHandler {
-    // Table name
-    public static let changeLogTable = "__swiftstore_change_log"
-
     private let mainConnection: SQLiteConnection
     private let changeLogConnection: SQLiteConnection
     private let registeredEntities: [String: any EntityProtocol.Type]
@@ -13,58 +10,51 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let pendingDeletesTable: String
     private let tickClock: () -> Int64
 
+    /// Initialize the change tracker
+    /// - Parameters:
+    ///   - connection: The main database connection
+    ///   - changeLogDbPath: The path to the changelog database
+    ///   - deviceId: The device ID
+    ///   - pendingDeletesTable: The name of the pending deletes table
+    ///   - registeredEntities: The registered entity types to track changes for
+    ///   - tickClock: A function to tick the clock
+    /// - Throws: An error if the changelog table cannot be migrated
     public init(
         connection: SQLiteConnection,
         changeLogDbPath: String,
         deviceId: String,
         pendingDeletesTable: String,
-        registeredEntities: [String: any EntityProtocol.Type],
+        registeredEntities: [any EntityProtocol.Type],
         tickClock: @escaping () -> Int64
     ) throws {
         self.mainConnection = connection
         self.deviceId = deviceId
         self.pendingDeletesTable = pendingDeletesTable
-        self.registeredEntities = registeredEntities
+        // Build lookup dictionary from table name to entity type
+        self.registeredEntities = Dictionary(uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
         self.tickClock = tickClock
 
         // Create separate connection for changelog database
         self.changeLogConnection = try SQLiteConnection(path: changeLogDbPath)
 
-        // Create changelog table if not exists
-        try createChangeLogTable()
+        // Create changelog table using Migrator
+        try migrateChangeLogTable()
     }
 
-    private func createChangeLogTable() throws {
-        let sql = """
-            CREATE TABLE IF NOT EXISTS \(Self.changeLogTable) (
-                id BLOB PRIMARY KEY,
-                entity_type TEXT NOT NULL,
-                entity_id BLOB NOT NULL,
-                operation TEXT NOT NULL,
-                payload TEXT,
-                device_id TEXT NOT NULL,
-                logical_clock INTEGER NOT NULL,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            )
-            """
-        try changeLogConnection.execute(sql)
-
-        // Create indexes
-        try changeLogConnection.execute("""
-            CREATE INDEX IF NOT EXISTS idx_change_log_clock
-            ON \(Self.changeLogTable) (logical_clock)
-            """)
-        try changeLogConnection.execute("""
-            CREATE INDEX IF NOT EXISTS idx_change_log_entity
-            ON \(Self.changeLogTable) (entity_type, entity_id)
-            """)
+    private func migrateChangeLogTable() throws {
+        let migrator = Migrator(connection: changeLogConnection, trackDeletes: false, createUpdateTrigger: false)
+        let plan = try migrator.plan(for: [ChangeLog.self])
+        try migrator.apply(plan)
     }
 
     // MARK: - Lifecycle
 
     /// Start tracking changes by registering update hook
-    public func start() {
+    public func start() throws {
+        // Clear pending deletes table (stale from previous runs)
+        let clearSQL: SQL = "DELETE FROM \(raw: pendingDeletesTable)"
+        try mainConnection.execute(clearSQL)
+
         mainConnection.setUpdateHook(self)
     }
 
@@ -81,9 +71,6 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     // MARK: - SQLiteUpdateHookHandler
 
     public func handleUpdate(_ info: SQLiteUpdateInfo) {
-        // Skip change_log table
-        guard info.tableName != Self.changeLogTable else { return }
-
         // Skip DELETE operations (we handle deletes via INSERT on pending_deletes)
         guard info.operation != .delete else { return }
 
@@ -193,9 +180,10 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
             entityType: entityType,
             entityId: entityId,
             operation: operation,
+            payload: payload,
             deviceId: deviceId,
             logicalClock: clockValue
         )
-        try connection.insert(log)
+        try changeLogConnection.insert(log)
     }
 }

@@ -39,6 +39,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             let primaryKey = prop.name == "id"
             let colType = prop.sqliteType
             let isJSON = !prop.isPrimitive && prop.type != "UUIDV4"
+            // Add default value for Date columns (createdAt/updatedAt)
+            let isTimestamp = prop.type == "Date" && (prop.name == "createdAt" || prop.name == "updatedAt")
 
             var def = "ColumnDefinition(name: \"\(prop.columnName)\", type: .\(colType)"
             if nullable {
@@ -49,6 +51,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             }
             if isJSON {
                 def += ", isJSONEncoded: true"
+            }
+            if isTimestamp {
+                def += ", defaultValue: \"(strftime('%s', 'now'))\""
             }
             def += ")"
             columnDefs.append(def)

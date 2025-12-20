@@ -29,16 +29,17 @@ public final class Migrator {
     private let schemaBuilder: DatabaseSchemaBuilder
     private let sqlGenerator: MigrationSQLGenerator
 
-    public init(connection: SQLiteConnection, trackDeletes: Bool = false) {
+    public static var pendingDeletesTableName: String { DatabaseSchemaBuilder.pendingDeletesTableName }
+
+    public init(connection: SQLiteConnection, trackDeletes: Bool = false, createUpdateTrigger: Bool = true) {
         self.connection = connection
 
         self.schemaReader = DatabaseSchemaReader(connection: connection)
 
         self.schemaBuilder = DatabaseSchemaBuilder(
             options: DatabaseSchemaBuildOptions(
-                createUpdateTrigger: true,
-                trackDeletes: trackDeletes,
-                autoTimestampDefaults: true
+                createUpdateTrigger: createUpdateTrigger,
+                trackDeletes: trackDeletes
             )
         )
 

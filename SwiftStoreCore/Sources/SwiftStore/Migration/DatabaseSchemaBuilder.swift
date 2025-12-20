@@ -9,17 +9,12 @@ public struct DatabaseSchemaBuildOptions: Sendable {
     /// Add delete trigger to schema
     public var trackDeletes: Bool
 
-    /// Add DEFAULT for created_at/updated_at columns
-    public var autoTimestampDefaults: Bool
-
     public init(
         createUpdateTrigger: Bool = true,
         trackDeletes: Bool = false,
-        autoTimestampDefaults: Bool = true
     ) {
         self.createUpdateTrigger = createUpdateTrigger
         self.trackDeletes = trackDeletes
-        self.autoTimestampDefaults = autoTimestampDefaults
     }
 
     public static let `default` = DatabaseSchemaBuildOptions()
@@ -27,6 +22,7 @@ public struct DatabaseSchemaBuildOptions: Sendable {
 
 /// Builds TableSchema from EntityProtocol definitions
 public struct DatabaseSchemaBuilder {
+    public static let pendingDeletesTableName = "__swiftstore_pending_deletes"
     public let options: DatabaseSchemaBuildOptions
 
     public init(options: DatabaseSchemaBuildOptions = .default) {
@@ -65,19 +61,12 @@ public struct DatabaseSchemaBuilder {
 
     private func buildColumns(from entity: any EntityProtocol.Type) -> [ColumnSchema] {
         entity.columns.map { col in
-            var defaultValue = col.defaultValue
-
-            // Add timestamp defaults if enabled
-            if options.autoTimestampDefaults && (col.name == "created_at" || col.name == "updated_at") {
-                defaultValue = defaultValue ?? "(strftime('%s', 'now'))"
-            }
-
             return ColumnSchema(
                 name: col.name,
                 type: col.type.rawValue,
                 isNullable: col.nullable,
                 isPrimaryKey: col.primaryKey,
-                defaultValue: defaultValue,
+                defaultValue: col.defaultValue,
                 generatedAs: col.generatedAs
             )
         }
@@ -172,7 +161,7 @@ public struct DatabaseSchemaBuilder {
 
     private func buildDeleteTrackingTable() -> TableSchema {
         TableSchema(
-            name: "__swiftstore_pending_deletes",
+            name: Self.pendingDeletesTableName,
             columns: [
                 ColumnSchema(name: "id", type: "INTEGER", isPrimaryKey: true),
                 ColumnSchema(name: "table_name", type: "TEXT"),

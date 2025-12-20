@@ -27,9 +27,7 @@ public final class ChangeTrackerReader {
 
     /// Get the latest clock value in the changelog
     public func latestClock() throws -> Int64 {
-        let sql = "SELECT MAX(\(\ChangeLog.logicalClock)) FROM \(ChangeTracker.changeLogTable)"
-        let clock = try connection.queryScalar(sql, type: Int64.self)
-        return clock ?? 0
+        return try ChangeLog.filter().max(\.logicalClock, connection) ?? 0
     }
 
     /// Count changes since a given clock value

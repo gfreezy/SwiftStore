@@ -87,8 +87,8 @@ struct TestUser: EntityProtocol, SQLiteCodable {
             ColumnDefinition(name: "email", type: .text),
             ColumnDefinition(name: "age", type: .integer, nullable: true),
             ColumnDefinition(name: "address", type: .text, isJSONEncoded: true),
-            ColumnDefinition(name: "created_at", type: .real),
-            ColumnDefinition(name: "updated_at", type: .real)
+            ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+            ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
         ]
     }
 
@@ -136,8 +136,8 @@ struct TestTag: EntityProtocol, SQLiteCodable {
         [
             ColumnDefinition(name: "id", type: .blob, primaryKey: true),
             ColumnDefinition(name: "name", type: .text),
-            ColumnDefinition(name: "created_at", type: .real),
-            ColumnDefinition(name: "updated_at", type: .real)
+            ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+            ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
         ]
     }
 
@@ -173,8 +173,8 @@ struct TestUserTags: EntityProtocol, RelationMarker, SQLiteCodable {
             ColumnDefinition(name: "id", type: .blob, primaryKey: true),
             ColumnDefinition(name: "user_id", type: .blob),
             ColumnDefinition(name: "tag_id", type: .blob),
-            ColumnDefinition(name: "created_at", type: .real),
-            ColumnDefinition(name: "updated_at", type: .real)
+            ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+            ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
         ]
     }
 

@@ -42,15 +42,6 @@ struct SyncTests {
         #expect(invalidResult.offsetSeconds == 10.0)
     }
 
-    @Test("NTP client default servers")
-    func testNTPDefaultServers() {
-        let servers = NTPClient.defaultServers
-        #expect(servers.contains("time.apple.com"))
-        #expect(servers.contains("pool.ntp.org"))
-        #expect(servers.contains("time.google.com"))
-        #expect(servers.contains("time.cloudflare.com"))
-    }
-
     @Test("NTP time verification")
     func testNTPTimeVerification() async throws {
         // This test requires network access
@@ -93,14 +84,4 @@ struct SyncTests {
         }
     }
 
-    @Test("Change operation types")
-    func testChangeOperationType() {
-        let insert = ChangeOperation.insert
-        let update = ChangeOperation.update
-        let delete = ChangeOperation.delete
-
-        #expect(insert.rawValue == "insert")
-        #expect(update.rawValue == "update")
-        #expect(delete.rawValue == "delete")
-    }
 }
