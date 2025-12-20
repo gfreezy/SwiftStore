@@ -15,6 +15,9 @@ struct TestEntity {
 
 // MARK: - Test Helpers
 
+/// Fixed device ID for testing
+let testDeviceId = UUIDV4()
+
 func createTestConnection() throws -> SQLiteConnection {
     let tempPath = NSTemporaryDirectory() + "swiftstore_sync_test_\(UUID().uuidString).sqlite"
     return try SQLiteConnection(path: tempPath)
@@ -45,7 +48,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -66,14 +69,14 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
         #expect(changes[0].entityId == entity.id)
         #expect(changes[0].operation == .insert)
-        #expect(changes[0].deviceId == "test-device")
+        #expect(changes[0].deviceId == testDeviceId)
         #expect(changes[0].logicalClock == 1)
         #expect(changes[0].payload != nil)
     }
@@ -96,7 +99,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -112,7 +115,7 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
@@ -148,7 +151,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -163,7 +166,7 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
@@ -181,7 +184,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -211,7 +214,7 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify all changes captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 3)
@@ -251,7 +254,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self], // Only TestEntity registered
             tickClock: { clockValue += 1; return clockValue }
@@ -276,7 +279,7 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify only registered entity change is captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
@@ -303,7 +306,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -328,7 +331,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -348,7 +351,7 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify payload
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
@@ -375,7 +378,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -406,7 +409,7 @@ struct ChangeTrackerTests {
         try connection.insert(entity2)
 
         // Verify only first insert captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
@@ -421,7 +424,7 @@ struct ChangeTrackerTests {
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
-            deviceId: "test-device",
+            deviceId: testDeviceId,
             pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -443,7 +446,7 @@ struct ChangeTrackerTests {
 
         changeTracker.stop()
 
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog")
+        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
 
         // Get all changes
         let allChanges = try reader.changesSince(clock: 0)

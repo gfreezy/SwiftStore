@@ -17,12 +17,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../SwiftStoreCore"),
+        .package(path: "../SwiftStoreSync"),
     ],
     targets: [
         .target(
             name: "SwiftStoreConnectionQueue",
             dependencies: [
                 .product(name: "SwiftStoreCore", package: "SwiftStoreCore"),
+                .product(name: "SwiftStoreSync", package: "SwiftStoreSync"),
             ]
         ),
     ]

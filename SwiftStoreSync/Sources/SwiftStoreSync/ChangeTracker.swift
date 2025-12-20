@@ -6,7 +6,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let mainConnection: SQLiteConnection
     private let changeLogConnection: SQLiteConnection
     private let registeredEntities: [String: any EntityProtocol.Type]
-    private let deviceId: String
+    private let deviceId: UUIDV4
     private let pendingDeletesTable: String
     private let tickClock: () -> Int64
 
@@ -22,7 +22,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     public init(
         connection: SQLiteConnection,
         changeLogDbPath: String,
-        deviceId: String,
+        deviceId: UUIDV4,
         pendingDeletesTable: String,
         registeredEntities: [any EntityProtocol.Type],
         tickClock: @escaping () -> Int64
