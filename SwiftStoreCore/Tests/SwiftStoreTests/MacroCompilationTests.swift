@@ -311,7 +311,7 @@ struct MacroCompilationTests {
         #expect(limited.count == 2)
 
         // Test count
-        let count = try MacroUser.query().count(store.connection)
+        let count = try MacroUser.filter().count(store.connection)
         #expect(count == 5)
     }
 

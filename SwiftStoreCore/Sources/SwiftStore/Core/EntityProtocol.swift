@@ -8,7 +8,7 @@ import SwiftStoreProtocols
 
 public extension EntityProtocol {
     /// Create a new Query for this entity type
-    static func query() -> Query<Self> {
+    static func filter() -> Query<Self> {
         Query(Self.self)
     }
 

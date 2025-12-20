@@ -667,7 +667,7 @@ struct QueryBuilderTests {
         try store.connection.insert(user)
 
         // Test query() method
-        let result = try TestUser.query().all(store.connection)
+        let result = try TestUser.filter().all(store.connection)
         #expect(result.count == 1)
         #expect(result.first?.name == "Alice")
     }

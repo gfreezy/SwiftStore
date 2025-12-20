@@ -189,30 +189,13 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         payload: String?,
         clockValue: Int64
     ) throws {
-        let now = Date()
-        let changeId = UUIDV4()
-
-        let sql = """
-            INSERT INTO \(Self.changeLogTable)
-            (id, entity_type, entity_id, operation, payload, device_id, logical_clock, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-
-        let stmt = try changeLogConnection.prepare(sql)
-        try SQLiteValue.blob(changeId.data).bind(to: stmt, at: 1)
-        try SQLiteValue.text(entityType).bind(to: stmt, at: 2)
-        try SQLiteValue.blob(entityId.data).bind(to: stmt, at: 3)
-        try SQLiteValue.text(operation.rawValue).bind(to: stmt, at: 4)
-        if let payload = payload {
-            try SQLiteValue.text(payload).bind(to: stmt, at: 5)
-        } else {
-            try stmt.bindNull(5)
-        }
-        try SQLiteValue.text(deviceId).bind(to: stmt, at: 6)
-        try SQLiteValue.integer(clockValue).bind(to: stmt, at: 7)
-        try SQLiteValue.real(now.timeIntervalSince1970).bind(to: stmt, at: 8)
-        try SQLiteValue.real(now.timeIntervalSince1970).bind(to: stmt, at: 9)
-
-        try stmt.step()
+        let log = ChangeLog(
+            entityType: entityType,
+            entityId: entityId,
+            operation: operation,
+            deviceId: deviceId,
+            logicalClock: clockValue
+        )
+        try connection.insert(log)
     }
 }

@@ -17,7 +17,7 @@ public struct MigrationPlan: Sendable {
 }
 
 /// Manages database schema migrations
-final class MigrationManager {
+public final class MigrationManager {
     private let connection: SQLiteConnection
     public let pendingDeletesTable: String = "__swiftstore_pending_deletes"
 

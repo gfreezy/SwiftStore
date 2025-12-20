@@ -27,11 +27,6 @@ public struct Query<T: EntityProtocol> {
         filter(buildPredicate(Columns()))
     }
 
-    /// Add a WHERE predicate (original API)
-    public func `where`(_ predicate: Predicate<T>) -> Query<T> {
-        filter(predicate)
-    }
-
     /// Filter by primary key
     public func filter(id: UUIDV4) -> Query<T> {
         filter(\T.id == id)
@@ -199,6 +194,188 @@ public struct Query<T: EntityProtocol> {
     /// Check if no records exist matching the query
     public func isEmpty(_ connection: SQLiteConnection) throws -> Bool {
         try count(connection) == 0
+    }
+
+    // MARK: - Aggregate Functions
+
+    /// Get the minimum value of a column
+    public func min<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, _ connection: SQLiteConnection) throws -> V? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: V.self)
+    }
+
+    /// Get the minimum value of an optional column
+    public func min<V: SQLiteComparable>(_ keyPath: KeyPath<T, V?>, _ connection: SQLiteConnection) throws -> V? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: V.self)
+    }
+
+    /// Get the maximum value of a column
+    public func max<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, _ connection: SQLiteConnection) throws -> V? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT MAX(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: V.self)
+    }
+
+    /// Get the maximum value of an optional column
+    public func max<V: SQLiteComparable>(_ keyPath: KeyPath<T, V?>, _ connection: SQLiteConnection) throws -> V? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT MAX(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: V.self)
+    }
+
+    /// Get the sum of a column (Int)
+    public func sum(_ keyPath: KeyPath<T, Int>, _ connection: SQLiteConnection) throws -> Int {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Int.self) ?? 0
+    }
+
+    /// Get the sum of an optional Int column
+    public func sum(_ keyPath: KeyPath<T, Int?>, _ connection: SQLiteConnection) throws -> Int {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Int.self) ?? 0
+    }
+
+    /// Get the sum of a column (Double)
+    public func sum(_ keyPath: KeyPath<T, Double>, _ connection: SQLiteConnection) throws -> Double {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self) ?? 0.0
+    }
+
+    /// Get the sum of an optional Double column
+    public func sum(_ keyPath: KeyPath<T, Double?>, _ connection: SQLiteConnection) throws -> Double {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self) ?? 0.0
+    }
+
+    /// Get the average value of a column (Int -> Double)
+    public func avg(_ keyPath: KeyPath<T, Int>, _ connection: SQLiteConnection) throws -> Double? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self)
+    }
+
+    /// Get the average value of an optional Int column
+    public func avg(_ keyPath: KeyPath<T, Int?>, _ connection: SQLiteConnection) throws -> Double? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self)
+    }
+
+    /// Get the average value of a column (Double)
+    public func avg(_ keyPath: KeyPath<T, Double>, _ connection: SQLiteConnection) throws -> Double? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self)
+    }
+
+    /// Get the average value of an optional Double column
+    public func avg(_ keyPath: KeyPath<T, Double?>, _ connection: SQLiteConnection) throws -> Double? {
+        let column = columnName(for: keyPath)
+        var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
+        var values: [SQLiteValue] = []
+
+        if !predicates.isEmpty {
+            let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
+            sql += " WHERE \(whereClause)"
+            values = predicates.flatMap { $0.values }
+        }
+
+        return try connection.queryScalar(sql, values: values, type: Double.self)
     }
 
     // MARK: - Batch Operations
