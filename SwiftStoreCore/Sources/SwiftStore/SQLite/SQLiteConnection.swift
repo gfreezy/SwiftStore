@@ -288,6 +288,7 @@ public final class SQLiteConnection {
             column["name"] = stmt.columnString(1)
             column["type"] = stmt.columnString(2)
             column["notnull"] = stmt.columnInt(3) == 1
+            column["dflt_value"] = stmt.columnString(4)
             column["pk"] = stmt.columnInt(5) == 1
             columns.append(column)
         }

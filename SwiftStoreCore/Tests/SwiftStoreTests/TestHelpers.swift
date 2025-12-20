@@ -7,18 +7,18 @@ import SwiftStoreProtocols
 /// Test store wrapper that provides connection and migration functionality
 struct TestStore {
     let connection: SQLiteConnection
-    let migrationManager: MigrationManager
+    let migrator: Migrator
     let dbPath: String
 
     // Track registered entities for planMigrations
     private var registeredEntities: [any EntityProtocol.Type] = []
 
-    init(path: String) throws {
+    init(path: String, trackDeletes: Bool = false) throws {
         self.dbPath = path
         var options = SQLiteConnection.Options()
         options.walMode = true
         self.connection = try SQLiteConnection(path: path, options: options)
-        self.migrationManager = MigrationManager(connection: connection)
+        self.migrator = Migrator(connection: connection, trackDeletes: trackDeletes)
     }
 
     mutating func register<E: EntityProtocol>(_ type: E.Type) throws {
@@ -26,11 +26,8 @@ struct TestStore {
     }
 
     func migrate(entities: [any EntityProtocol.Type]) throws {
-        try migrationManager.createSystemTables()
-        for entityType in entities {
-            try migrationManager.createTableForAnyType(entityType)
-        }
-        try migrationManager.createDeleteTriggers(for: entities.map { $0.tableName })
+        let plan = try migrator.plan(for: entities)
+        try migrator.apply(plan)
     }
 
     func migrate() throws {
@@ -42,15 +39,11 @@ struct TestStore {
     }
 
     func planMigration<E: EntityProtocol>(for type: E.Type) throws -> MigrationPlan {
-        try migrationManager.planMigration(for: type)
+        try migrator.plan(for: [type])
     }
 
     func planMigrations() throws -> MigrationPlan {
-        try migrationManager.planMigrations(for: registeredEntities)
-    }
-
-    func generateCreateTableSQL<E: EntityProtocol>(for type: E.Type) -> String {
-        migrationManager.generateCreateTableSQL(for: type)
+        try migrator.plan(for: registeredEntities)
     }
 }
 
