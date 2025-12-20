@@ -23,10 +23,41 @@ public struct IndexMacro: DeclarationMacro {
 
 /// Parser for #Index macro calls within struct body
 struct IndexMarkerParser {
+    /// Represents a column in an index, which can be a regular column or a virtual column for nested JSON properties
+    struct IndexColumn {
+        /// The column name to use in the index (snake_case)
+        let columnName: String
+        /// The original keypath components (e.g., ["settings", "theme"] for \.settings.theme)
+        let keypathComponents: [String]
+        /// Whether this is a nested property requiring a virtual column
+        var isNested: Bool { keypathComponents.count > 1 }
+        /// The JSON path for extraction (e.g., "$.theme" for \.settings.theme)
+        var jsonPath: String? {
+            guard isNested else { return nil }
+            let path = keypathComponents.dropFirst().map { MacroHelpers.camelToSnakeCase($0) }
+            return "$." + path.joined(separator: ".")
+        }
+        /// The base column that contains the JSON (e.g., "settings" for \.settings.theme)
+        var jsonColumn: String? {
+            guard isNested else { return nil }
+            return MacroHelpers.camelToSnakeCase(keypathComponents.first!)
+        }
+    }
+
     struct IndexInfo {
-        let columns: [String]
+        let columns: [IndexColumn]
         let unique: Bool
         let name: String?
+
+        /// Column names for index creation
+        var columnNames: [String] {
+            columns.map { $0.columnName }
+        }
+
+        /// Virtual columns that need to be created
+        var virtualColumns: [IndexColumn] {
+            columns.filter { $0.isNested }
+        }
     }
 
     /// Parse all #Index markers from struct members
@@ -47,7 +78,7 @@ struct IndexMarkerParser {
     }
 
     private static func parseIndexMacro(_ arguments: LabeledExprListSyntax, tableName: String) -> IndexInfo? {
-        var columns: [String] = []
+        var columns: [IndexColumn] = []
         var unique = false
         var customName: String? = nil
 
@@ -65,9 +96,11 @@ struct IndexMarkerParser {
                 }
             } else {
                 // Unlabeled argument - should be a keypath
-                if let columnName = MacroHelpers.extractPropertyName(from: arg.expression) {
-                    let snakeCase = MacroHelpers.camelToSnakeCase(columnName)
-                    columns.append(snakeCase)
+                if let components = extractKeypathComponents(from: arg.expression) {
+                    let snakeCaseComponents = components.map { MacroHelpers.camelToSnakeCase($0) }
+                    // For nested properties, use double underscore as separator
+                    let columnName = snakeCaseComponents.joined(separator: "__")
+                    columns.append(IndexColumn(columnName: columnName, keypathComponents: components))
                 }
             }
         }
@@ -77,5 +110,22 @@ struct IndexMarkerParser {
         }
 
         return IndexInfo(columns: columns, unique: unique, name: customName)
+    }
+
+    /// Extract all components from a keypath expression
+    /// e.g., \.settings.theme -> ["settings", "theme"]
+    private static func extractKeypathComponents(from keyPath: ExprSyntax) -> [String]? {
+        guard let keyPathExpr = keyPath.as(KeyPathExprSyntax.self) else {
+            return nil
+        }
+
+        var components: [String] = []
+        for component in keyPathExpr.components {
+            if let property = component.component.as(KeyPathPropertyComponentSyntax.self) {
+                components.append(property.declName.baseName.text)
+            }
+        }
+
+        return components.isEmpty ? nil : components
     }
 }

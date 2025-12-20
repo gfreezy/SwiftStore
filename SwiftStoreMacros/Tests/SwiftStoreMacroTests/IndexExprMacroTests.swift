@@ -323,4 +323,363 @@ struct IndexMacroTests {
             macros: testMacros
         )
     }
+
+    @Test("Entity with #Index on nested property generates virtual column")
+    func testEntityWithNestedPropertyIndex() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Profile {
+                #Index(\\.settings.theme)
+
+                let id: UUIDV4
+                var bio: String
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Profile {
+
+                let id: UUIDV4
+                var bio: String
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "profile"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "bio", type: .text),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real),
+                        ColumnDefinition(name: "updated_at", type: .real),
+                        ColumnDefinition(name: "settings__theme", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.theme')")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["bio"] = .text(self.bio)
+                    result["settings"] = try {
+                        let jsonData = try JSONEncoder().encode(self.settings)
+                        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                            throw StoreError.encodingFailed("Failed to encode \\(self.settings) to JSON")
+                        }
+                        return .text(jsonString)
+                    }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _bio = statement.columnString(Int32(1)) ?? ""
+                    let _settings = try {
+                        guard let jsonString = statement.columnString(Int32(2)),
+                              let jsonData = jsonString.data(using: .utf8) else {
+                            throw StoreError.decodingFailed("Failed to decode UserSettings from column 2")
+                        }
+                        return try JSONDecoder().decode(UserSettings.self, from: jsonData)
+                    }()
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
+                    return Self(
+                        id: _id,
+                        bio: _bio,
+                        settings: _settings,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_profile_settings__theme", columns: ["settings__theme"])
+                    ]
+                }
+            }
+
+            extension Profile: EntityProtocol {
+            }
+
+            extension Profile: SQLiteCodable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity with #Index on multiple nested properties")
+    func testEntityWithMultipleNestedPropertyIndex() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Profile {
+                #Index(\\.settings.theme, \\.settings.notifications)
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Profile {
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "profile"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real),
+                        ColumnDefinition(name: "updated_at", type: .real),
+                        ColumnDefinition(name: "settings__theme", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.theme')"),
+                        ColumnDefinition(name: "settings__notifications", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.notifications')")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["settings"] = try {
+                        let jsonData = try JSONEncoder().encode(self.settings)
+                        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                            throw StoreError.encodingFailed("Failed to encode \\(self.settings) to JSON")
+                        }
+                        return .text(jsonString)
+                    }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _settings = try {
+                        guard let jsonString = statement.columnString(Int32(1)),
+                              let jsonData = jsonString.data(using: .utf8) else {
+                            throw StoreError.decodingFailed("Failed to decode UserSettings from column 1")
+                        }
+                        return try JSONDecoder().decode(UserSettings.self, from: jsonData)
+                    }()
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        id: _id,
+                        settings: _settings,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_profile_settings__theme_settings__notifications", columns: ["settings__theme", "settings__notifications"])
+                    ]
+                }
+            }
+
+            extension Profile: EntityProtocol {
+            }
+
+            extension Profile: SQLiteCodable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity with #Index mixing nested and regular properties")
+    func testEntityWithMixedNestedAndRegularIndex() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Profile {
+                #Index(\\.settings.theme, \\.id)
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Profile {
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "profile"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real),
+                        ColumnDefinition(name: "updated_at", type: .real),
+                        ColumnDefinition(name: "settings__theme", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.theme')")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["settings"] = try {
+                        let jsonData = try JSONEncoder().encode(self.settings)
+                        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                            throw StoreError.encodingFailed("Failed to encode \\(self.settings) to JSON")
+                        }
+                        return .text(jsonString)
+                    }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _settings = try {
+                        guard let jsonString = statement.columnString(Int32(1)),
+                              let jsonData = jsonString.data(using: .utf8) else {
+                            throw StoreError.decodingFailed("Failed to decode UserSettings from column 1")
+                        }
+                        return try JSONDecoder().decode(UserSettings.self, from: jsonData)
+                    }()
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        id: _id,
+                        settings: _settings,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_profile_settings__theme_id", columns: ["settings__theme", "id"])
+                    ]
+                }
+            }
+
+            extension Profile: EntityProtocol {
+            }
+
+            extension Profile: SQLiteCodable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity with multiple #Index markers with shared nested column")
+    func testEntityWithMultipleIndexesSharedNestedColumn() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Profile {
+                #Index(\\.settings.theme, \\.settings.notifications)
+                #Index(\\.settings.theme, \\.id)
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Profile {
+
+
+                let id: UUIDV4
+                var settings: UserSettings
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "profile"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real),
+                        ColumnDefinition(name: "updated_at", type: .real),
+                        ColumnDefinition(name: "settings__theme", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.theme')"),
+                        ColumnDefinition(name: "settings__notifications", type: .text, nullable: true, generatedAs: "json_extract(settings, '$.notifications')")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["settings"] = try {
+                        let jsonData = try JSONEncoder().encode(self.settings)
+                        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                            throw StoreError.encodingFailed("Failed to encode \\(self.settings) to JSON")
+                        }
+                        return .text(jsonString)
+                    }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _settings = try {
+                        guard let jsonString = statement.columnString(Int32(1)),
+                              let jsonData = jsonString.data(using: .utf8) else {
+                            throw StoreError.decodingFailed("Failed to decode UserSettings from column 1")
+                        }
+                        return try JSONDecoder().decode(UserSettings.self, from: jsonData)
+                    }()
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        id: _id,
+                        settings: _settings,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_profile_settings__theme_settings__notifications", columns: ["settings__theme", "settings__notifications"]),
+                        IndexDefinition(name: "idx_profile_settings__theme_id", columns: ["settings__theme", "id"])
+                    ]
+                }
+            }
+
+            extension Profile: EntityProtocol {
+            }
+
+            extension Profile: SQLiteCodable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
 }

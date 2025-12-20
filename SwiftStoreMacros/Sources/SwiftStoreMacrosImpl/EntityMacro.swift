@@ -60,30 +60,55 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             public static var tableName: String { "\(raw: tableName)" }
             """
 
-        let columnsDecl: DeclSyntax = """
-            public static var columns: [ColumnDefinition] {
-                [
-                    \(raw: columnsArray)
-                ]
-            }
-            """
-
         // Generate sqliteEncode() method
         let encodeDecl = try generateSqliteEncode(properties: properties)
 
         // Generate sqliteDecode(from:) method
         let decodeDecl = try generateSqliteDecode(properties: properties, structName: structName)
 
+        // Parse #Index markers from struct body
+        let indexInfos = IndexMarkerParser.parse(from: structDecl.memberBlock.members, tableName: tableName)
+
+        // Collect all virtual columns needed for nested property indexes
+        var virtualColumnDefs: [String] = []
+        var seenVirtualColumns: Set<String> = []
+        for idx in indexInfos {
+            for virtualCol in idx.virtualColumns {
+                // Avoid duplicates
+                guard !seenVirtualColumns.contains(virtualCol.columnName) else { continue }
+                seenVirtualColumns.insert(virtualCol.columnName)
+
+                // Generate virtual column definition
+                // json_extract returns TEXT by default for string values
+                let jsonExtract = "json_extract(\(virtualCol.jsonColumn!), '\(virtualCol.jsonPath!)')"
+                let def = "ColumnDefinition(name: \"\(virtualCol.columnName)\", type: .text, nullable: true, generatedAs: \"\(jsonExtract)\")"
+                virtualColumnDefs.append(def)
+            }
+        }
+
+        // Append virtual columns to the columns array if any
+        var finalColumnsArray = columnsArray
+        if !virtualColumnDefs.isEmpty {
+            finalColumnsArray += ",\n            " + virtualColumnDefs.joined(separator: ",\n            ")
+        }
+
+        let columnsDecl: DeclSyntax = """
+            public static var columns: [ColumnDefinition] {
+                [
+                    \(raw: finalColumnsArray)
+                ]
+            }
+            """
+
         var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl]
 
-        // Parse #Index markers from struct body and generate indexes
-        let indexInfos = IndexMarkerParser.parse(from: structDecl.memberBlock.members, tableName: tableName)
+        // Generate indexes
         if !indexInfos.isEmpty {
             var indexDefStrings: [String] = []
             for idx in indexInfos {
-                let columnsStr = idx.columns.map { "\"\($0)\"" }.joined(separator: ", ")
+                let columnsStr = idx.columnNames.map { "\"\($0)\"" }.joined(separator: ", ")
                 // Use custom name if provided, otherwise generate from table and columns
-                let indexName = idx.name ?? "idx_\(tableName)_\(idx.columns.joined(separator: "_"))"
+                let indexName = idx.name ?? "idx_\(tableName)_\(idx.columnNames.joined(separator: "_"))"
                 var def = "IndexDefinition(name: \"\(indexName)\", columns: [\(columnsStr)]"
                 if idx.unique {
                     def += ", unique: true"

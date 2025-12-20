@@ -25,6 +25,8 @@ struct UserSettings: Codable, Sendable {
 
 @Entity
 struct MacroProfile {
+    #Index<Self>(\.settings.theme, \.settings.notifications)
+    #Index<Self>(\.settings.theme, \.id)
     let id: UUIDV4
     var bio: String
     var settings: UserSettings
@@ -355,5 +357,82 @@ struct MacroCompilationTests {
         #expect(itemColumns[2].name == "priority")
         #expect(itemColumns[2].type == .text)
         #expect(itemColumns[2].isJSONEncoded == true)
+    }
+
+    @Test("Virtual columns for nested index are generated correctly")
+    func testVirtualColumnsForNestedIndex() {
+        // MacroProfile has indexes on nested properties:
+        // #Index<Self>(\.settings.theme, \.settings.notifications)
+        // #Index<Self>(\.settings.theme, \.id)
+
+        let profileColumns = MacroProfile.columns
+
+        // Find virtual columns (they have generatedAs != nil)
+        let virtualColumns = profileColumns.filter { $0.generatedAs != nil }
+
+        // Should have 2 virtual columns: settings__theme and settings__notifications
+        #expect(virtualColumns.count == 2)
+
+        // Verify settings__theme virtual column
+        let themeColumn = virtualColumns.first { $0.name == "settings__theme" }
+        #expect(themeColumn != nil)
+        #expect(themeColumn?.type == .text)
+        #expect(themeColumn?.nullable == true)
+        #expect(themeColumn?.generatedAs == "json_extract(settings, '$.theme')")
+
+        // Verify settings__notifications virtual column
+        let notificationsColumn = virtualColumns.first { $0.name == "settings__notifications" }
+        #expect(notificationsColumn != nil)
+        #expect(notificationsColumn?.type == .text)
+        #expect(notificationsColumn?.nullable == true)
+        #expect(notificationsColumn?.generatedAs == "json_extract(settings, '$.notifications')")
+
+        // Verify indexes
+        let profileIndexes = MacroProfile.indexes
+        #expect(profileIndexes.count == 2)
+
+        // First index: settings__theme, settings__notifications
+        let firstIndex = profileIndexes.first { $0.columns.contains("settings__theme") && $0.columns.contains("settings__notifications") }
+        #expect(firstIndex != nil)
+        #expect(firstIndex?.columns == ["settings__theme", "settings__notifications"])
+
+        // Second index: settings__theme, id
+        let secondIndex = profileIndexes.first { $0.columns.contains("settings__theme") && $0.columns.contains("id") }
+        #expect(secondIndex != nil)
+        #expect(secondIndex?.columns == ["settings__theme", "id"])
+    }
+
+    @Test("Virtual column index works in database")
+    func testVirtualColumnIndexInDatabase() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [MacroProfile.self])
+
+        // Insert some profiles with different settings
+        let profiles = [
+            MacroProfile(id: UUIDV4(), bio: "Bio 1", settings: UserSettings(theme: "dark", notifications: true), createdAt: Date(), updatedAt: Date()),
+            MacroProfile(id: UUIDV4(), bio: "Bio 2", settings: UserSettings(theme: "light", notifications: false), createdAt: Date(), updatedAt: Date()),
+            MacroProfile(id: UUIDV4(), bio: "Bio 3", settings: UserSettings(theme: "dark", notifications: false), createdAt: Date(), updatedAt: Date()),
+        ]
+
+        for profile in profiles {
+            try store.connection.insert(profile)
+        }
+
+        // Verify index exists by checking sqlite_master
+        let indexSQL = "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='macro_profile'"
+        let stmt = try store.connection.prepare(indexSQL)
+        var indexSQLs: [String] = []
+        while try stmt.step() {
+            if let sql = stmt.columnString(0) {
+                indexSQLs.append(sql)
+            }
+        }
+
+        // Should have indexes on virtual columns
+        let hasThemeNotificationsIndex = indexSQLs.contains { $0.contains("settings__theme") && $0.contains("settings__notifications") }
+        let hasThemeIdIndex = indexSQLs.contains { $0.contains("settings__theme") && $0.contains("id") }
+
+        #expect(hasThemeNotificationsIndex)
+        #expect(hasThemeIdIndex)
     }
 }
