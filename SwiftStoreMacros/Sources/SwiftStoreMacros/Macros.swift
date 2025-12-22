@@ -8,8 +8,8 @@
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
 /// - Auto-generates init with default values: id = UUIDV4(), createdAt = Date(), updatedAt = Date()
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init))
-@attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable)
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys))
+@attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Default)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
@@ -58,3 +58,27 @@ public macro Index<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., unique: 
 ///   }
 @freestanding(declaration)
 public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "SyncKeyMacro")
+
+// MARK: - Default Macro
+
+/// Default macro that generates fault-tolerant Decodable conformance for Codable structs.
+///
+/// This macro generates:
+/// - `CodingKeys` enum
+/// - `init(from decoder: Decoder)` that uses default values for missing fields
+///
+/// Fields with default values will use `decodeIfPresent` with fallback to the default.
+/// Fields without default values will use `decode` and throw if missing.
+///
+/// Usage:
+/// ```swift
+/// @Default
+/// struct UserSettings: Codable {
+///     var theme: String = "light"   // Uses "light" if missing
+///     var fontSize: Int = 14        // Uses 14 if missing
+///     var userId: String            // Required, throws if missing
+/// }
+/// ```
+@attached(member, names: named(CodingKeys), named(init))
+@attached(extension, conformances: Default)
+public macro Default() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")

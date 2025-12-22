@@ -156,6 +156,8 @@ struct PropertyInfo {
     let type: String
     let isOptional: Bool
     let isLet: Bool
+    /// The default value expression as source code string (e.g., "\"\"", "0", "[]")
+    let defaultValue: String?
 
     var columnName: String {
         MacroHelpers.camelToSnakeCase(name)
@@ -183,14 +185,25 @@ extension StructDeclSyntax {
                     if let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
                        let typeAnnotation = binding.typeAnnotation {
                         let name = identifier.identifier.text
-                        let type = typeAnnotation.type.description.trimmingCharacters(in: .whitespaces)
+                        // Use trimmedDescription to remove trivia (comments, whitespace)
+                        let type = typeAnnotation.type.trimmedDescription
                         let isOptional = MacroHelpers.isOptional(type)
+
+                        // Extract default value if present (e.g., var name: String = "")
+                        let defaultValue: String?
+                        if let initializer = binding.initializer {
+                            // Use trimmedDescription to remove trivia (comments, whitespace)
+                            defaultValue = initializer.value.trimmedDescription
+                        } else {
+                            defaultValue = nil
+                        }
 
                         properties.append(PropertyInfo(
                             name: name,
                             type: type,
                             isOptional: isOptional,
-                            isLet: isLet
+                            isLet: isLet,
+                            defaultValue: defaultValue
                         ))
                     }
                 }

@@ -101,6 +101,46 @@ struct SyncKeyEmployee {
     let updatedAt: Date
 }
 
+/// Entity with property default values
+@Entity
+struct UserPosts {
+    #SyncKey<UserPosts>(\.slug)
+    var slug: String
+    var title: String = ""
+    var content: String = ""
+    var views: Int = 0
+    var isPublished: Bool = false
+    var tags: [String] = []
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+// MARK: - @Default Test Structs
+
+/// Simple Codable struct with all default values
+@Default
+struct DefaultSettings: Codable {
+    var theme: String = "light"
+    var fontSize: Int = 14
+    var notifications: Bool = true
+}
+
+/// Codable struct with mixed required and default fields
+@Default
+struct DefaultUserPrefs: Codable {
+    var userId: String           // Required field (no default)
+    var theme: String = "light"  // Has default
+    var language: String = "en"  // Has default
+}
+
+/// Codable struct with optional fields
+@Default
+struct DefaultConfig: Codable {
+    var apiUrl: String = "https://api.example.com"
+    var timeout: Int = 30
+    var debugMode: Bool?  // Optional, no default needed
+}
+
 // MARK: - Compilation Tests
 
 @Suite("Macro Compilation Tests")
@@ -620,5 +660,261 @@ struct MacroCompilationTests {
     func testSyncKeyTableNameConversion() {
         #expect(SyncKeyUser.tableName == "sync_key_user")
         #expect(SyncKeyEmployee.tableName == "sync_key_employee")
+    }
+
+    // MARK: - Property Default Value Tests
+
+    @Test("Entity with property default values")
+    func testEntityWithDefaultValues() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [UserPosts.self])
+
+        // Create using only required parameters (slug), others use defaults
+        let post = UserPosts(slug: "hello-world")
+        #expect(post.title == "")
+        #expect(post.content == "")
+        #expect(post.views == 0)
+        #expect(post.isPublished == false)
+        #expect(post.tags == [])
+
+        // Insert and verify
+        try store.connection.insert(post)
+
+        let fetched = try UserPosts
+            .filter { $0.slug == "hello-world" }
+            .first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.title == "")
+        #expect(fetched?.content == "")
+        #expect(fetched?.views == 0)
+        #expect(fetched?.isPublished == false)
+    }
+
+    @Test("Entity with partial default values override")
+    func testEntityWithPartialDefaultValuesOverride() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [UserPosts.self])
+
+        // Create with some parameters overridden
+        let post = UserPosts(
+            slug: "my-first-post",
+            title: "My First Post",
+            views: 100,
+            isPublished: true
+        )
+        #expect(post.title == "My First Post")
+        #expect(post.content == "")  // default
+        #expect(post.views == 100)
+        #expect(post.isPublished == true)
+        #expect(post.tags == [])  // default
+
+        // Insert and verify
+        try store.connection.insert(post)
+
+        let fetched = try UserPosts
+            .filter { $0.slug == "my-first-post" }
+            .first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.title == "My First Post")
+        #expect(fetched?.views == 100)
+        #expect(fetched?.isPublished == true)
+    }
+
+    @Test("Backward compatible JSON decoding with missing fields")
+    func testBackwardCompatibleDecoding() throws {
+        // Simulate old version JSON payload that doesn't have new fields (views, isPublished, tags)
+        let oldVersionJson = """
+        {
+            "slug": "old-post",
+            "title": "Old Post",
+            "content": "Old content",
+            "createdAt": 1703203200.0,
+            "updatedAt": 1703203200.0
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = oldVersionJson.data(using: .utf8)!
+
+        // Should decode successfully using default values for missing fields
+        let post = try decoder.decode(UserPosts.self, from: data)
+
+        #expect(post.slug == "old-post")
+        #expect(post.title == "Old Post")
+        #expect(post.content == "Old content")
+        // These fields are missing from JSON, should use default values
+        #expect(post.views == 0)
+        #expect(post.isPublished == false)
+        #expect(post.tags == [])
+    }
+
+    @Test("Backward compatible decoding with partial fields")
+    func testBackwardCompatibleDecodingPartialFields() throws {
+        // JSON with some new fields present, some missing
+        let partialJson = """
+        {
+            "slug": "partial-post",
+            "title": "Partial Post",
+            "content": "Some content",
+            "views": 50,
+            "createdAt": 1703203200.0,
+            "updatedAt": 1703203200.0
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = partialJson.data(using: .utf8)!
+
+        let post = try decoder.decode(UserPosts.self, from: data)
+
+        #expect(post.slug == "partial-post")
+        #expect(post.title == "Partial Post")
+        #expect(post.views == 50)  // Present in JSON
+        #expect(post.isPublished == false)  // Missing, use default
+        #expect(post.tags == [])  // Missing, use default
+    }
+
+    // MARK: - @Default Macro Tests
+
+    @Test("@Default struct conforms to Default protocol")
+    func testDefaultProtocolConformance() {
+        // This compiles only if DefaultSettings conforms to Default
+        func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
+        #expect(checkDefault(DefaultSettings.self))
+        #expect(checkDefault(DefaultUserPrefs.self))
+        #expect(checkDefault(DefaultConfig.self))
+    }
+
+    @Test("@Entity struct conforms to Default protocol")
+    func testEntityDefaultProtocolConformance() {
+        // This compiles only if Entity types conform to Default
+        func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
+        #expect(checkDefault(MacroUser.self))
+        #expect(checkDefault(MacroProfile.self))
+        #expect(checkDefault(MacroTask.self))
+        #expect(checkDefault(SyncKeyUser.self))
+        #expect(checkDefault(UserPosts.self))
+    }
+
+    @Test("@Default with all default values - missing fields use defaults")
+    func testDefaultAllDefaultValues() throws {
+        let json = """
+        {}
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let settings = try decoder.decode(DefaultSettings.self, from: data)
+
+        #expect(settings.theme == "light")
+        #expect(settings.fontSize == 14)
+        #expect(settings.notifications == true)
+    }
+
+    @Test("@Default with all default values - partial fields override defaults")
+    func testDefaultPartialFields() throws {
+        let json = """
+        {
+            "theme": "dark",
+            "fontSize": 18
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let settings = try decoder.decode(DefaultSettings.self, from: data)
+
+        #expect(settings.theme == "dark")
+        #expect(settings.fontSize == 18)
+        #expect(settings.notifications == true)  // Default used
+    }
+
+    @Test("@Default with required field - throws when missing")
+    func testDefaultRequiredFieldThrows() throws {
+        let json = """
+        {
+            "theme": "dark"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        // Should throw because userId is required
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode(DefaultUserPrefs.self, from: data)
+        }
+    }
+
+    @Test("@Default with required field - succeeds when present")
+    func testDefaultRequiredFieldPresent() throws {
+        let json = """
+        {
+            "userId": "user123"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let prefs = try decoder.decode(DefaultUserPrefs.self, from: data)
+
+        #expect(prefs.userId == "user123")
+        #expect(prefs.theme == "light")  // Default
+        #expect(prefs.language == "en")  // Default
+    }
+
+    @Test("@Default with optional fields - nil when missing")
+    func testDefaultOptionalFields() throws {
+        let json = """
+        {}
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let config = try decoder.decode(DefaultConfig.self, from: data)
+
+        #expect(config.apiUrl == "https://api.example.com")
+        #expect(config.timeout == 30)
+        #expect(config.debugMode == nil)
+    }
+
+    @Test("@Default with optional fields - present when specified")
+    func testDefaultOptionalFieldsPresent() throws {
+        let json = """
+        {
+            "debugMode": true
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let config = try decoder.decode(DefaultConfig.self, from: data)
+
+        #expect(config.apiUrl == "https://api.example.com")
+        #expect(config.timeout == 30)
+        #expect(config.debugMode == true)
+    }
+
+    @Test("@Default type error throws instead of using default")
+    func testDefaultTypeErrorThrows() throws {
+        let json = """
+        {
+            "theme": 123,
+            "fontSize": 14
+        }
+        """
+
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        // Should throw because theme is wrong type (Int instead of String)
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode(DefaultSettings.self, from: data)
+        }
     }
 }
