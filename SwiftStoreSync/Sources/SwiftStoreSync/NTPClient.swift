@@ -17,11 +17,27 @@ public struct NTPVerificationResult: Sendable {
 }
 
 /// NTP time verification error
-public enum NTPError: Error {
+public enum NTPError: Error, LocalizedError {
     case timeout
     case invalidResponse
     case networkError(Error)
     case allServersFailed
+    case timeOutOfSync(offsetMs: Int64, toleranceMs: Int64)
+
+    public var errorDescription: String? {
+        switch self {
+        case .timeout:
+            return "NTP request timed out"
+        case .invalidResponse:
+            return "Invalid NTP response"
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        case .allServersFailed:
+            return "All NTP servers failed"
+        case .timeOutOfSync(let offsetMs, let toleranceMs):
+            return "Device time is out of sync by \(offsetMs)ms (tolerance: \(toleranceMs)ms)"
+        }
+    }
 }
 
 /// Simple NTP client for time verification

@@ -18,6 +18,9 @@ public struct ChangeLog {
     public var payload: String?
     public var deviceId: UUIDV4
     public var logicalClock: Int64
+    /// Schema version for migration compatibility
+    /// Higher versions can process lower version data, lower versions ignore higher version data
+    public var schemaVersion: Int
     public let createdAt: Date
     public let updatedAt: Date
 
@@ -29,6 +32,7 @@ public struct ChangeLog {
         payload: String? = nil,
         deviceId: UUIDV4,
         logicalClock: Int64,
+        schemaVersion: Int = 1,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -39,6 +43,7 @@ public struct ChangeLog {
         self.payload = payload
         self.deviceId = deviceId
         self.logicalClock = logicalClock
+        self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

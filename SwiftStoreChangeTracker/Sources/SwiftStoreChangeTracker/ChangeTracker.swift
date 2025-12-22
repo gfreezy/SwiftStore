@@ -9,6 +9,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let deviceId: UUIDV4
     private let pendingDeletesTable: String
     private let tickClock: () -> Int64
+    private let schemaVersion: Int
 
     /// Initialize the change tracker
     /// - Parameters:
@@ -18,6 +19,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     ///   - pendingDeletesTable: The name of the pending deletes table
     ///   - registeredEntities: The registered entity types to track changes for
     ///   - tickClock: A function to tick the clock
+    ///   - schemaVersion: The schema version for migration compatibility
     /// - Throws: An error if the changelog table cannot be migrated
     public init(
         connection: SQLiteConnection,
@@ -25,7 +27,8 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         deviceId: UUIDV4,
         pendingDeletesTable: String,
         registeredEntities: [any EntityProtocol.Type],
-        tickClock: @escaping () -> Int64
+        tickClock: @escaping () -> Int64,
+        schemaVersion: Int = 1
     ) throws {
         self.mainConnection = connection
         self.deviceId = deviceId
@@ -33,6 +36,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         // Build lookup dictionary from table name to entity type
         self.registeredEntities = Dictionary(uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
         self.tickClock = tickClock
+        self.schemaVersion = schemaVersion
 
         // Create separate connection for changelog database
         self.changeLogConnection = try SQLiteConnection(path: changeLogDbPath)
@@ -182,7 +186,8 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
             operation: operation,
             payload: payload,
             deviceId: deviceId,
-            logicalClock: clockValue
+            logicalClock: clockValue,
+            schemaVersion: schemaVersion
         )
         try changeLogConnection.insert(log)
     }

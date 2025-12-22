@@ -75,6 +75,11 @@ public struct SyncConfig: Sendable {
     public let syncConfiguration: SyncConfiguration
     /// Initial sync state
     public let initialState: SyncState
+    /// Current schema version for migration compatibility
+    /// Higher versions can process lower version data, lower versions ignore higher version data
+    public let schemaVersion: Int
+    /// Maximum acceptable time offset in milliseconds for NTP verification (nil to disable)
+    public let ntpToleranceMs: Int64?
 
     public init(
         changeLogDbPath: String,
@@ -85,7 +90,9 @@ public struct SyncConfig: Sendable {
         transport: any SyncTransport,
         syncableEntities: [any SyncableEntity.Type],
         syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        initialState: SyncState = SyncState()
+        initialState: SyncState = SyncState(),
+        schemaVersion: Int = 1,
+        ntpToleranceMs: Int64? = 5000
     ) {
         self.changeLogDbPath = changeLogDbPath
         self.deviceId = deviceId
@@ -96,6 +103,8 @@ public struct SyncConfig: Sendable {
         self.syncableEntities = syncableEntities
         self.syncConfiguration = syncConfiguration
         self.initialState = initialState
+        self.schemaVersion = schemaVersion
+        self.ntpToleranceMs = ntpToleranceMs
     }
 }
 
@@ -111,6 +120,8 @@ public final class SyncManager {
     private let changeLogDbPath: String
     private let applierRegistry: EntityApplierRegistry
     private let configuration: SyncConfiguration
+    private let schemaVersion: Int
+    private let ntpToleranceMs: Int64?
     private var state: SyncState
 
     /// Initialize with database connection and sync configuration
@@ -123,6 +134,8 @@ public final class SyncManager {
         self.deviceId = config.deviceId
         self.changeLogDbPath = config.changeLogDbPath
         self.configuration = config.syncConfiguration
+        self.schemaVersion = config.schemaVersion
+        self.ntpToleranceMs = config.ntpToleranceMs
         self.state = config.initialState
 
         // Create ChangeTracker
@@ -132,7 +145,8 @@ public final class SyncManager {
             deviceId: config.deviceId,
             pendingDeletesTable: config.pendingDeletesTable,
             registeredEntities: config.registeredEntities,
-            tickClock: config.tickClock
+            tickClock: config.tickClock,
+            schemaVersion: config.schemaVersion
         )
 
         // Create EntityApplierRegistry from syncable entities
@@ -158,6 +172,14 @@ public final class SyncManager {
     /// - Returns: Sync result with statistics
     nonisolated(nonsending)
     public func sync() async throws -> SyncResult {
+        // 0. Verify time sync if NTP tolerance is configured
+        if let tolerance = ntpToleranceMs {
+            let result = try await NTPClient.verifyTime(toleranceMs: tolerance)
+            if !result.isValid {
+                throw NTPError.timeOutOfSync(offsetMs: result.offsetMs, toleranceMs: tolerance)
+            }
+        }
+
         // 1. Pull changes from remote
         let pullResult = try await pull()
 
@@ -186,8 +208,12 @@ public final class SyncManager {
 
         try Task.checkCancellation()
 
-        // Filter out changes from this device (they're already local)
-        let remoteChanges = response.changes.filter { $0.deviceId != deviceId }
+        // Filter out:
+        // 1. Changes from this device (they're already local)
+        // 2. Changes with higher schema version (incompatible with current version)
+        let remoteChanges = response.changes.filter {
+            $0.deviceId != deviceId && $0.schemaVersion <= schemaVersion
+        }
 
         guard !remoteChanges.isEmpty else {
             state.lastServerClock = response.serverClock

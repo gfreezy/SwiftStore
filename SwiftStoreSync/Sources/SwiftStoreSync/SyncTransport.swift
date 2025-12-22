@@ -11,6 +11,8 @@ public struct SyncChange: Codable, Sendable {
     public let payload: String?
     public let deviceId: UUIDV4
     public let logicalClock: Int64
+    /// Schema version for migration compatibility
+    public let schemaVersion: Int
     public let createdAt: Date
 
     public init(
@@ -21,6 +23,7 @@ public struct SyncChange: Codable, Sendable {
         payload: String?,
         deviceId: UUIDV4,
         logicalClock: Int64,
+        schemaVersion: Int = 1,
         createdAt: Date
     ) {
         self.id = id
@@ -30,6 +33,7 @@ public struct SyncChange: Codable, Sendable {
         self.payload = payload
         self.deviceId = deviceId
         self.logicalClock = logicalClock
+        self.schemaVersion = schemaVersion
         self.createdAt = createdAt
     }
 
@@ -42,6 +46,7 @@ public struct SyncChange: Codable, Sendable {
         self.payload = changeLog.payload
         self.deviceId = changeLog.deviceId
         self.logicalClock = changeLog.logicalClock
+        self.schemaVersion = changeLog.schemaVersion
         self.createdAt = changeLog.createdAt
     }
 }
