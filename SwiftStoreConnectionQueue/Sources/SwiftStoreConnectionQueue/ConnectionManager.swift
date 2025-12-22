@@ -1,39 +1,10 @@
 import Foundation
-import OSLog
 import SwiftStoreCore
 import SwiftStoreSync
 
-/// Configuration for ChangeTracker
-public struct ChangeTrackerConfig: Sendable {
-    /// Path to the changelog database file
-    public let changeLogDbPath: String
-    /// Device ID for identifying the source of changes
-    public let deviceId: UUIDV4
-    /// Name of the pending deletes table
-    public let pendingDeletesTable: String
-    /// Entity types to track changes for
-    public let registeredEntities: [any EntityProtocol.Type]
-    /// Function to tick the logical clock
-    public let tickClock: @Sendable () -> Int64
-
-    public init(
-        changeLogDbPath: String,
-        deviceId: UUIDV4,
-        pendingDeletesTable: String = "__swiftstore_pending_deletes",
-        registeredEntities: [any EntityProtocol.Type],
-        tickClock: @escaping @Sendable () -> Int64
-    ) {
-        self.changeLogDbPath = changeLogDbPath
-        self.deviceId = deviceId
-        self.pendingDeletesTable = pendingDeletesTable
-        self.registeredEntities = registeredEntities
-        self.tickClock = tickClock
-    }
-}
-
 /// Manages database connections with a single writer and multiple readers.
 /// This ensures thread-safety and optimal performance using SQLite's WAL mode.
-/// Thread safety is handled by the internal ConnectionActor instances.
+/// Thread safety is handled by the internal actor instances.
 public final class ConnectionManager: Sendable {
     private let path: String
     private let options: SQLiteConnection.Options
@@ -41,7 +12,6 @@ public final class ConnectionManager: Sendable {
 
     private let writer: WritableConnectionActor
     private let readers: [ReaderEntry]
-    private let changeLogReader: ChangeLogReaderActor?
 
     private struct ReaderEntry: Sendable {
         let actor: ConnectionActor
@@ -53,12 +23,12 @@ public final class ConnectionManager: Sendable {
     ///   - path: Path to the database file
     ///   - options: SQLite connection options
     ///   - maxReadConnections: Maximum number of read connections in the pool
-    ///   - changeTrackerConfig: Optional configuration for change tracking
+    ///   - syncConfig: Optional sync configuration (includes change tracking)
     public init(
         path: String,
         options: SQLiteConnection.Options = .init(),
         maxReadConnections: Int = 4,
-        changeTrackerConfig: ChangeTrackerConfig? = nil
+        syncConfig: SyncConfig? = nil
     ) throws {
         self.path = path
         self.options = options
@@ -68,22 +38,9 @@ public final class ConnectionManager: Sendable {
         var writeOptions = options
         writeOptions.walMode = true
 
-        // Create writer connection with optional change tracking
+        // Create writer connection with optional sync
         let writerConn = try SQLiteConnection(path: path, options: writeOptions)
-        self.writer = try WritableConnectionActor(
-            connection: writerConn,
-            changeTrackerConfig: changeTrackerConfig
-        )
-
-        // Create changelog reader actor if change tracking is configured
-        if let config = changeTrackerConfig {
-            self.changeLogReader = try ChangeLogReaderActor(
-                changeLogDbPath: config.changeLogDbPath,
-                deviceId: config.deviceId
-            )
-        } else {
-            self.changeLogReader = nil
-        }
+        self.writer = try WritableConnectionActor(connection: writerConn, syncConfig: syncConfig)
 
         // Create reader connections
         var readerEntries: [ReaderEntry] = []
@@ -133,60 +90,32 @@ public final class ConnectionManager: Sendable {
         return try await randomReader.actor.run(block)
     }
 
-    /// Start change tracking (if configured)
-    public func startChangeTracking() async throws {
-        try await writer.startChangeTracking()
-    }
+    // MARK: - Sync Convenience Methods
 
-    /// Stop change tracking (if configured)
-    public func stopChangeTracking() async {
-        await writer.stopChangeTracking()
-    }
-
-    /// Check if change tracking is enabled
-    public var isChangeTrackingEnabled: Bool {
+    /// Check if sync is configured
+    public var hasSyncEnabled: Bool {
         get async {
-            await writer.isChangeTrackingEnabled
+            await writer.hasSyncEnabled
         }
     }
 
-    /// Get changes since a given clock value
-    /// Returns nil if change tracking is not configured
-    public func changesSince(clock: Int64) async throws -> [ChangeLog]? {
-        guard let reader = changeLogReader else { return nil }
-        return try await reader.changesSince(clock: clock)
+    /// Perform a full sync (pull then push)
+    /// - Returns: Sync result with statistics
+    public func sync() async throws -> SyncResult {
+        try await writer.sync()
     }
 
-    /// Get all changes (for initial sync)
-    /// Returns nil if change tracking is not configured
-    public func allChanges() async throws -> [ChangeLog]? {
-        guard let reader = changeLogReader else { return nil }
-        return try await reader.allChanges()
-    }
-
-    /// Get the latest clock value in the changelog
-    /// Returns nil if change tracking is not configured
-    public func latestClock() async throws -> Int64? {
-        guard let reader = changeLogReader else { return nil }
-        return try await reader.latestClock()
-    }
-
-    /// Count changes since a given clock value
-    /// Returns nil if change tracking is not configured
-    public func countChangesSince(clock: Int64) async throws -> Int? {
-        guard let reader = changeLogReader else { return nil }
-        return try await reader.countChangesSince(clock: clock)
-    }
-
-    /// Check if change tracking is configured
-    public var hasChangeTracking: Bool {
-        changeLogReader != nil
+    /// Get current sync state
+    public var syncState: SyncState? {
+        get async {
+            await writer.syncState
+        }
     }
 }
 
 /// Internal actor to serialize access to a single SQLite connection (read-only)
 actor ConnectionActor {
-    private let connection: SQLiteConnection
+    let connection: SQLiteConnection
 
     init(connection: SQLiteConnection) {
         self.connection = connection
@@ -197,27 +126,18 @@ actor ConnectionActor {
     }
 }
 
-/// Actor for writable connection with optional ChangeTracker support
+/// Actor for writable connection with optional sync support
 public actor WritableConnectionActor {
     private let connection: SQLiteConnection
-    private let changeTracker: ChangeTracker?
-    private var isTracking: Bool = false
+    private let syncManager: SyncManager?
+    private var isSyncing: Bool = false
 
-    /// Initialize with connection and optional change tracker config
-    init(connection: SQLiteConnection, changeTrackerConfig: ChangeTrackerConfig?) throws {
+    init(connection: SQLiteConnection, syncConfig: SyncConfig? = nil) throws {
         self.connection = connection
-
-        if let config = changeTrackerConfig {
-            self.changeTracker = try ChangeTracker(
-                connection: connection,
-                changeLogDbPath: config.changeLogDbPath,
-                deviceId: config.deviceId,
-                pendingDeletesTable: config.pendingDeletesTable,
-                registeredEntities: config.registeredEntities,
-                tickClock: config.tickClock
-            )
+        if let config = syncConfig {
+            self.syncManager = try SyncManager(connection: connection, config: config)
         } else {
-            self.changeTracker = nil
+            self.syncManager = nil
         }
     }
 
@@ -226,55 +146,25 @@ public actor WritableConnectionActor {
         try block(connection)
     }
 
-    /// Start change tracking
-    func startChangeTracking() throws {
-        guard let tracker = changeTracker else { return }
-        guard !isTracking else { return }
-        try tracker.start()
-        isTracking = true
+    // MARK: - Sync Operations
+
+    var hasSyncEnabled: Bool {
+        syncManager != nil
     }
 
-    /// Stop change tracking
-    func stopChangeTracking() {
-        guard let tracker = changeTracker else { return }
-        guard isTracking else { return }
-        tracker.stop()
-        isTracking = false
+    func sync() async throws -> SyncResult {
+        guard let manager = syncManager else {
+            throw SyncError.notConfigured("SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
+        }
+        guard !isSyncing else {
+            throw SyncError.syncAlreadyInProgress("Sync is already in progress.")
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+        return try await manager.sync()
     }
 
-    /// Check if change tracking is enabled and active
-    var isChangeTrackingEnabled: Bool {
-        changeTracker != nil && isTracking
-    }
-}
-
-/// Actor for reading changes from the changelog database
-public actor ChangeLogReaderActor {
-    private let reader: ChangeTrackerReader
-
-    /// Initialize with changelog database path and device ID
-    init(changeLogDbPath: String, deviceId: UUIDV4) throws {
-        self.reader = try ChangeTrackerReader(changeLogDbPath: changeLogDbPath, deviceId: deviceId)
-    }
-
-    /// Get changes since a given clock value
-    func changesSince(clock: Int64) throws -> [ChangeLog] {
-        try reader.changesSince(clock: clock)
-    }
-
-    /// Get all changes (for initial sync)
-    func allChanges() throws -> [ChangeLog] {
-        try reader.allChanges()
-    }
-
-    /// Get the latest clock value in the changelog
-    func latestClock() throws -> Int64 {
-        try reader.latestClock()
-    }
-
-    /// Count changes since a given clock value
-    func countChangesSince(clock: Int64) throws -> Int {
-        try reader.countChangesSince(clock: clock)
+    var syncState: SyncState? {
+        syncManager?.syncState
     }
 }
-

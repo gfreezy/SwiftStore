@@ -1,8 +1,8 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
-    name: "SwiftStoreSync",
+    name: "SwiftStoreChangeTracker",
     platforms: [
         .macOS(.v14),
         .iOS(.v17),
@@ -11,25 +11,25 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "SwiftStoreSync",
-            targets: ["SwiftStoreSync"]
+            name: "SwiftStoreChangeTracker",
+            targets: ["SwiftStoreChangeTracker"]
         ),
     ],
     dependencies: [
         .package(path: "../SwiftStoreCore"),
-        .package(path: "../SwiftStoreChangeTracker"),
+        .package(path: "../SwiftStoreMacros"),
     ],
     targets: [
         .target(
-            name: "SwiftStoreSync",
+            name: "SwiftStoreChangeTracker",
             dependencies: [
                 .product(name: "SwiftStoreCore", package: "SwiftStoreCore"),
-                .product(name: "SwiftStoreChangeTracker", package: "SwiftStoreChangeTracker"),
+                .product(name: "SwiftStoreMacros", package: "SwiftStoreMacros"),
             ]
         ),
         .testTarget(
-            name: "SwiftStoreSyncTests",
-            dependencies: ["SwiftStoreSync"]
+            name: "SwiftStoreChangeTrackerTests",
+            dependencies: ["SwiftStoreChangeTracker"]
         ),
     ]
 )

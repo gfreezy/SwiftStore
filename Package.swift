@@ -28,6 +28,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "./SwiftStoreCore"),
+        .package(path: "./SwiftStoreChangeTracker"),
         .package(path: "./SwiftStoreSync"),
         .package(path: "./SwiftStoreConnectionQueue"),
     ],
@@ -37,6 +38,7 @@ let package = Package(
             name: "SwiftStore",
             dependencies: [
                 .product(name: "SwiftStoreCore", package: "SwiftStoreCore"),
+                .product(name: "SwiftStoreChangeTracker", package: "SwiftStoreChangeTracker"),
                 .product(name: "SwiftStoreSync", package: "SwiftStoreSync"),
                 .product(name: "SwiftStoreConnectionQueue", package: "SwiftStoreConnectionQueue"),
             ]

@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import SwiftStoreSync
+@testable import SwiftStoreChangeTracker
 
 @Suite("Sync Tests")
 struct SyncTests {

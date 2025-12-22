@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import SwiftStoreSync
+@testable import SwiftStoreChangeTracker
 @testable import SwiftStoreCore
 
 // MARK: - Test Entity (Manual implementation for reliable encoding)
