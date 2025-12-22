@@ -13,14 +13,17 @@ struct User {
     var updatedAt: Date
 }
 
+@Default
 struct Size: Codable {
     let width: Int
     let height: Int
 }
 
+@Default
 struct Pic: Codable {
     let ident: String
     let size: Size
+    let time: Date = Date()
 }
 
 @Entity
@@ -29,6 +32,7 @@ struct UserPosts {
     var name: String = "hoyo"
     var content: String
     var image: Pic = Pic(ident: "ident", size: .init(width: 10, height: 10))
+    var utime: Date = Date()
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 }

@@ -62,10 +62,11 @@ func createTestConnectionAndMigrate() throws -> SQLiteConnection {
 
 // MARK: - Test Helper Types
 
+@Default
 struct Address: Codable, Sendable {
-    var street: String
-    var city: String
-    var zipCode: String
+    var street: String = ""
+    var city: String = ""
+    var zipCode: String = ""
 }
 
 // MARK: - Test Entities using @Entity macro

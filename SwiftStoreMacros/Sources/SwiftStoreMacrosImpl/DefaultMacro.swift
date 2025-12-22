@@ -14,16 +14,63 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            throw MacroError.message("@Default can only be applied to structs")
+        // Generate the marker property (required for Default protocol)
+        let markerDecl: DeclSyntax = """
+            @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
+            """
+
+        // For structs, generate full Decodable implementation
+        if let structDecl = declaration.as(StructDeclSyntax.self) {
+            let properties = structDecl.extractProperties()
+
+            // Generate CodingKeys enum and init(from decoder:)
+            let decodableInitDecl = generateDecodableInit(properties: properties)
+
+            // Generate memberwise init with default values
+            let memberwiseInitDecl = generateMemberwiseInit(properties: properties)
+
+            return [decodableInitDecl, memberwiseInitDecl, markerDecl]
         }
 
-        let properties = structDecl.extractProperties()
+        // For enums, only need the marker
+        if declaration.is(EnumDeclSyntax.self) {
+            return [markerDecl]
+        }
 
-        // Generate CodingKeys enum and init(from decoder:)
-        let decodableInitDecl = generateDecodableInit(properties: properties)
+        throw MacroError.message("@Default can only be applied to structs or enums")
+    }
 
-        return [decodableInitDecl]
+    /// Generate memberwise init method with default values
+    private static func generateMemberwiseInit(properties: [PropertyInfo]) -> DeclSyntax {
+        var params: [String] = []
+
+        for prop in properties {
+            let paramName = prop.name
+            let paramType = prop.type
+
+            if let defaultValue = prop.defaultValue {
+                params.append("\(paramName): \(paramType) = \(defaultValue)")
+            } else if prop.isOptional {
+                params.append("\(paramName): \(paramType) = nil")
+            } else {
+                params.append("\(paramName): \(paramType)")
+            }
+        }
+
+        let paramsStr = params.joined(separator: ", ")
+
+        // Generate assignments
+        var assignments: [String] = []
+        for prop in properties {
+            assignments.append("self.\(prop.name) = \(prop.name)")
+        }
+        let assignmentsStr = assignments.joined(separator: "\n        ")
+
+        return """
+            public init(\(raw: paramsStr)) {
+                \(raw: assignmentsStr)
+            }
+            """
     }
 
     // MARK: - ExtensionMacro
@@ -35,7 +82,8 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        guard declaration.is(StructDeclSyntax.self) else {
+        // Support both structs and enums
+        guard declaration.is(StructDeclSyntax.self) || declaration.is(EnumDeclSyntax.self) else {
             return []
         }
 

@@ -8,7 +8,7 @@
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
 /// - Auto-generates init with default values: id = UUIDV4(), createdAt = Date(), updatedAt = Date()
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys))
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(_defaultMacroMarker))
 @attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Default)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
@@ -79,6 +79,6 @@ public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #ext
 ///     var userId: String            // Required, throws if missing
 /// }
 /// ```
-@attached(member, names: named(CodingKeys), named(init))
+@attached(member, names: named(CodingKeys), named(init), named(_defaultMacroMarker))
 @attached(extension, conformances: Default)
 public macro Default() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")

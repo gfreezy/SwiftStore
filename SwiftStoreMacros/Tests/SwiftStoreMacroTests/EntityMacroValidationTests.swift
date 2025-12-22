@@ -206,62 +206,86 @@ struct EntityMacroValidationTests {
         )
     }
 
-    @Test("Entity macro accepts #SyncKey without id field")
-    func testSyncKeyWithoutId() {
-        // When using #SyncKey, the entity should not have an id field
-        // and the sync key columns become the primary key
+    @Test("Entity macro rejects field without type annotation")
+    func testMissingTypeAnnotation() {
         assertMacroExpansion(
             """
             @Entity
-            struct SyncableUser {
-                #SyncKey<SyncableUser>(\\.email)
-                var email: String
-                var name: String
+            struct InvalidUser {
+                let id: UUIDV4
+                var name = "default"
                 let createdAt: Date
                 let updatedAt: Date
             }
             """,
             expandedSource: """
-            struct SyncableUser {
-                var email: String
-                var name: String
+            struct InvalidUser {
+                let id: UUIDV4
+                var name = "default"
                 let createdAt: Date
                 let updatedAt: Date
             }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "@Entity requires 'InvalidUser.name' to have an explicit type annotation. Use 'var name: Type = value' instead of 'var name = value'.", line: 1, column: 1)
+            ],
+            macros: testMacros
+        )
+    }
 
-            extension SyncableUser: EntityProtocol {
-                public static let tableName = "syncable_user"
-                public static let columns: [ColumnDefinition] = [
-                    ColumnDefinition(name: "email", type: .text, nullable: false, primaryKey: true, defaultValue: nil, generatedAs: nil),
-                    ColumnDefinition(name: "name", type: .text, nullable: false, primaryKey: false, defaultValue: nil, generatedAs: nil),
-                    ColumnDefinition(name: "created_at", type: .real, nullable: false, primaryKey: false, defaultValue: nil, generatedAs: nil),
-                    ColumnDefinition(name: "updated_at", type: .real, nullable: false, primaryKey: false, defaultValue: nil, generatedAs: nil),
-                ]
-                public static let indexes: [IndexDefinition] = [
-                    IndexDefinition(name: "idx_syncable_user_sync_key", columns: ["email"], unique: true),
-                ]
-                public static let syncKeyColumns: [String] = ["email"]
-            }
-
-            extension SyncableUser: SQLiteCodable {
-                public func sqliteEncode() throws -> [String: SQLiteValue] {
-                    var result: [String: SQLiteValue] = [:]
-                    result["email"] = email
-                    result["name"] = name
-                    result["created_at"] = createdAt.timeIntervalSince1970
-                    result["updated_at"] = updatedAt.timeIntervalSince1970
-                    return result
-                }
-                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> SyncableUser {
-                    return SyncableUser(
-                        email: try statement.read(column: "email"),
-                        name: try statement.read(column: "name"),
-                        createdAt: Date(timeIntervalSince1970: try statement.read(column: "created_at")),
-                        updatedAt: Date(timeIntervalSince1970: try statement.read(column: "updated_at"))
-                    )
-                }
+    @Test("Entity macro rejects let field without type annotation")
+    func testMissingTypeAnnotationLet() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct InvalidUser {
+                let id: UUIDV4
+                let status = "active"
+                let createdAt: Date
+                let updatedAt: Date
             }
             """,
+            expandedSource: """
+            struct InvalidUser {
+                let id: UUIDV4
+                let status = "active"
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "@Entity requires 'InvalidUser.status' to have an explicit type annotation. Use 'var status: Type = value' instead of 'var status = value'.", line: 1, column: 1)
+            ],
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity macro rejects multiple fields without type annotations")
+    func testMissingTypeAnnotationMultiple() {
+        // Note: The macro stops at the first error
+        assertMacroExpansion(
+            """
+            @Entity
+            struct InvalidUser {
+                let id: UUIDV4
+                var name = "default"
+                var age = 0
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct InvalidUser {
+                let id: UUIDV4
+                var name = "default"
+                var age = 0
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "@Entity requires 'InvalidUser.name' to have an explicit type annotation. Use 'var name: Type = value' instead of 'var name = value'.", line: 1, column: 1)
+            ],
             macros: testMacros
         )
     }

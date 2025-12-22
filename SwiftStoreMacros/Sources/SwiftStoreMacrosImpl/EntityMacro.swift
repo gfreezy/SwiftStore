@@ -16,6 +16,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         let structName = structDecl.name.text
 
+        // Validate all properties have explicit type annotations
+        try structDecl.validateAllPropertiesHaveTypes(structName: structName)
+
         // Parse optional tableName argument
         let tableName: String
         if let arguments = node.arguments?.as(LabeledExprListSyntax.self),
@@ -130,7 +133,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Generate custom Decodable init that handles missing keys with default values
         let decodableInitDecl = generateDecodableInit(properties: properties, hasSyncKey: hasSyncKey)
 
-        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl]
+        // Generate Default protocol marker (prevents manual conformance)
+        let defaultMarkerDecl: DeclSyntax = """
+            @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
+            """
+
+        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl, defaultMarkerDecl]
 
         // Generate indexes (including auto-generated unique index for sync key)
         var indexDefStrings: [String] = []
@@ -182,12 +190,16 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             "case \(prop.name)"
         }.joined(separator: "\n            ")
 
+        // Check if we have any nested struct types that need Default validation
+        let hasNestedTypes = properties.contains { MacroHelpers.isNestedStructType($0.type) }
+
         // Generate decoding statements
         var decodingStatements: [String] = []
 
         for prop in properties {
             let propName = prop.name
             let baseType = prop.type.replacingOccurrences(of: "?", with: "")
+            let isNestedType = MacroHelpers.isNestedStructType(prop.type)
 
             // Determine the default value for this property
             let defaultValue: String?
@@ -203,7 +215,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
             if prop.isOptional {
                 // Optional types: use decodeIfPresent, default to nil
-                decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
+                if isNestedType {
+                    // Use helper function for nested types to enforce Default constraint
+                    decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName))")
+                } else {
+                    decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
+                }
             } else if let defaultVal = defaultValue {
                 // Non-optional with default: use decodeIfPresent with fallback
                 // For empty array literals, we need explicit type annotation
@@ -213,14 +230,46 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 } else {
                     typedDefault = defaultVal
                 }
-                decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName)) ?? \(typedDefault)")
+                if isNestedType {
+                    // Use helper function for nested types to enforce Default constraint
+                    decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName)) ?? \(typedDefault)")
+                } else {
+                    decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName)) ?? \(typedDefault)")
+                }
             } else {
                 // Non-optional without default: required field
-                decodingStatements.append("self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))")
+                if isNestedType {
+                    // Use helper function for nested types to enforce Default constraint
+                    decodingStatements.append("self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))")
+                } else {
+                    decodingStatements.append("self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))")
+                }
             }
         }
 
         let decodingCode = decodingStatements.joined(separator: "\n        ")
+
+        // Generate helper functions for nested type decoding if needed
+        let helperFunctions: String
+        if hasNestedTypes {
+            helperFunctions = """
+
+
+                /// Helper to decode nested types with Default constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNested<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                    try container.decode(T.self, forKey: key)
+                }
+
+                /// Helper to decode optional nested types with Default constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNestedIfPresent<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                    try container.decodeIfPresent(T.self, forKey: key)
+                }
+            """
+        } else {
+            helperFunctions = ""
+        }
 
         return """
             private enum CodingKeys: String, CodingKey {
@@ -230,7 +279,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             public init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 \(raw: decodingCode)
-            }
+            }\(raw: helperFunctions)
             """
     }
 
@@ -683,6 +732,7 @@ public enum MacroError: Error, CustomStringConvertible {
     case fieldNotFound(structName: String, fieldName: String)
     case invalidKeyPath(keyPath: String)
     case syncKeyAndIdMutuallyExclusive(structName: String)
+    case missingTypeAnnotation(structName: String, fieldName: String)
 
     public var description: String {
         switch self {
@@ -700,6 +750,8 @@ public enum MacroError: Error, CustomStringConvertible {
             return "Invalid KeyPath: '\(keyPath)'"
         case .syncKeyAndIdMutuallyExclusive(let structName):
             return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV4', not both."
+        case .missingTypeAnnotation(let structName, let fieldName):
+            return "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
         }
     }
 }

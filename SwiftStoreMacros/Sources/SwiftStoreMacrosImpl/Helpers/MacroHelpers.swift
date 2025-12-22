@@ -138,6 +138,41 @@ enum MacroHelpers {
         return primitives.contains(baseType)
     }
 
+    /// Check if type is a nested struct that needs Default validation
+    /// Returns false for arrays, dictionaries, and other generic types
+    static func isNestedStructType(_ typeString: String) -> Bool {
+        let baseType = typeString.replacingOccurrences(of: "?", with: "")
+
+        // Skip primitive types
+        if isPrimitive(baseType) {
+            return false
+        }
+
+        // Skip UUIDV4 (special-cased as primitive for encoding)
+        if baseType == "UUIDV4" {
+            return false
+        }
+
+        // Skip array types: [Element] or Array<Element>
+        if baseType.hasPrefix("[") || baseType.hasPrefix("Array<") {
+            return false
+        }
+
+        // Skip dictionary types: [Key: Value] or Dictionary<Key, Value>
+        if baseType.contains(":") || baseType.hasPrefix("Dictionary<") {
+            return false
+        }
+
+        // Skip Set types: Set<Element>
+        if baseType.hasPrefix("Set<") {
+            return false
+        }
+
+        // This is a custom type (likely a struct or enum)
+        // We'll require Default for these
+        return true
+    }
+
     /// Validate that a field exists in the properties list
     static func validateFieldExists(
         properties: [PropertyInfo],
@@ -211,5 +246,35 @@ extension StructDeclSyntax {
         }
 
         return properties
+    }
+
+    /// Validate that all stored properties have explicit type annotations
+    /// Throws MacroError if any property is missing a type annotation
+    func validateAllPropertiesHaveTypes(structName: String) throws {
+        for member in memberBlock.members {
+            if let varDecl = member.decl.as(VariableDeclSyntax.self) {
+                // Skip computed properties (those with accessor blocks but no initializer)
+                let hasAccessor = varDecl.bindings.contains { binding in
+                    binding.accessorBlock != nil
+                }
+                if hasAccessor {
+                    continue
+                }
+
+                for binding in varDecl.bindings {
+                    if let identifier = binding.pattern.as(IdentifierPatternSyntax.self) {
+                        let name = identifier.identifier.text
+
+                        // Check if type annotation is missing
+                        if binding.typeAnnotation == nil {
+                            throw MacroError.missingTypeAnnotation(
+                                structName: structName,
+                                fieldName: name
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

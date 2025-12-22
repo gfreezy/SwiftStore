@@ -17,10 +17,11 @@ struct MacroUser {
     let updatedAt: Date
 }
 
-/// Entity with nested Codable type
+/// Entity with nested Codable type (must use @Default for compile-time validation)
+@Default
 struct UserSettings: Codable, Sendable {
-    var theme: String
-    var notifications: Bool
+    var theme: String = "light"
+    var notifications: Bool = true
 }
 
 @Entity
@@ -35,6 +36,7 @@ struct MacroProfile {
 }
 
 /// Enum for testing Codable enum storage (stored as JSON)
+@Default
 enum TaskStatus: String, Codable, Sendable {
     case pending
     case inProgress = "in_progress"
@@ -51,6 +53,7 @@ struct MacroTask {
 }
 
 /// Integer enum for testing Codable enum storage
+@Default
 enum Priority: Int, Codable, Sendable {
     case low = 0
     case medium = 1
@@ -139,6 +142,111 @@ struct DefaultConfig: Codable {
     var apiUrl: String = "https://api.example.com"
     var timeout: Int = 30
     var debugMode: Bool?  // Optional, no default needed
+}
+
+/// Comprehensive test struct covering all common types with defaults
+@Default
+struct AllTypesWithDefaults: Codable {
+    // String types
+    var stringEmpty: String = ""
+    var stringValue: String = "hello"
+
+    // Integer types
+    var intZero: Int = 0
+    var intValue: Int = 42
+    var int8Value: Int8 = 8
+    var int16Value: Int16 = 16
+    var int32Value: Int32 = 32
+    var int64Value: Int64 = 64
+
+    // Unsigned integer types
+    var uintZero: UInt = 0
+    var uintValue: UInt = 100
+
+    // Floating point types
+    var doubleZero: Double = 0.0
+    var doubleValue: Double = 3.14
+    var floatValue: Float = 2.5
+
+    // Boolean types
+    var boolFalse: Bool = false
+    var boolTrue: Bool = true
+
+    // Collection types
+    var arrayEmpty: [String] = []
+    var arrayValue: [Int] = [1, 2, 3]
+    var dictEmpty: [String: Int] = [:]
+    var dictValue: [String: String] = ["key": "value"]
+}
+
+/// Test struct with optional types (nil defaults)
+@Default
+struct AllOptionalTypes: Codable {
+    var optString: String?
+    var optInt: Int?
+    var optDouble: Double?
+    var optBool: Bool?
+    var optArray: [String]?
+    var optDict: [String: Int]?
+}
+
+/// Test struct with mixed optional and non-optional
+@Default
+struct MixedOptionalTypes: Codable {
+    var required: String                    // Required, throws if missing
+    var withDefault: String = "default"    // Has default
+    var optional: String?                   // Optional, nil if missing
+    var optionalWithNil: Int? = nil        // Explicit nil default
+}
+
+/// Nested struct for testing
+@Default
+struct NestedAddress: Codable, Equatable {
+    var street: String = ""
+    var city: String = ""
+    var zip: String = ""
+}
+
+/// Enum with @Default for nested usage
+@Default
+enum Status: String, Codable {
+    case active
+    case inactive
+    case pending
+}
+
+/// Test struct with nested @Default type
+@Default
+struct PersonWithAddress: Codable {
+    var name: String = ""
+    var address: NestedAddress = NestedAddress()
+}
+
+/// Comprehensive struct with nested types, collections, and enums
+@Default
+struct ComplexNestedTypes: Codable {
+    // Nested struct
+    var address: NestedAddress = NestedAddress()
+    var optionalAddress: NestedAddress?
+
+    // Enum
+    var status: Status = .active
+    var optionalStatus: Status?
+
+    // Array of primitives
+    var tags: [String] = []
+    var scores: [Int] = [0, 0, 0]
+
+    // Array of nested struct
+    var addresses: [NestedAddress] = [NestedAddress(), NestedAddress()]
+
+    // Dictionary with primitives
+    var metadata: [String: String] = ["key": "value"]
+    var counts: [String: Int] = ["default": 0]
+
+    // Optional collections
+    var optionalTags: [String]?
+    var optionalMetadata: [String: String]?
 }
 
 // MARK: - Compilation Tests
@@ -916,5 +1024,335 @@ struct MacroCompilationTests {
         #expect(throws: DecodingError.self) {
             _ = try decoder.decode(DefaultSettings.self, from: data)
         }
+    }
+
+    // MARK: - Comprehensive Type Coverage Tests
+
+    @Test("All primitive types with defaults - empty JSON uses all defaults")
+    func testAllPrimitiveTypesDefaults() throws {
+        let json = "{}"
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(AllTypesWithDefaults.self, from: data)
+
+        // String defaults
+        #expect(obj.stringEmpty == "")
+        #expect(obj.stringValue == "hello")
+
+        // Integer defaults
+        #expect(obj.intZero == 0)
+        #expect(obj.intValue == 42)
+        #expect(obj.int8Value == 8)
+        #expect(obj.int16Value == 16)
+        #expect(obj.int32Value == 32)
+        #expect(obj.int64Value == 64)
+
+        // Unsigned integer defaults
+        #expect(obj.uintZero == 0)
+        #expect(obj.uintValue == 100)
+
+        // Floating point defaults
+        #expect(obj.doubleZero == 0.0)
+        #expect(obj.doubleValue == 3.14)
+        #expect(obj.floatValue == 2.5)
+
+        // Boolean defaults
+        #expect(obj.boolFalse == false)
+        #expect(obj.boolTrue == true)
+
+        // Collection defaults
+        #expect(obj.arrayEmpty == [])
+        #expect(obj.arrayValue == [1, 2, 3])
+        #expect(obj.dictEmpty == [:])
+        #expect(obj.dictValue == ["key": "value"])
+    }
+
+    @Test("All primitive types - values override defaults")
+    func testAllPrimitiveTypesOverride() throws {
+        let json = """
+        {
+            "stringEmpty": "not empty",
+            "stringValue": "world",
+            "intZero": 999,
+            "intValue": 0,
+            "boolFalse": true,
+            "boolTrue": false,
+            "arrayEmpty": ["a", "b"],
+            "arrayValue": [],
+            "dictEmpty": {"x": 1},
+            "dictValue": {}
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(AllTypesWithDefaults.self, from: data)
+
+        #expect(obj.stringEmpty == "not empty")
+        #expect(obj.stringValue == "world")
+        #expect(obj.intZero == 999)
+        #expect(obj.intValue == 0)
+        #expect(obj.boolFalse == true)
+        #expect(obj.boolTrue == false)
+        #expect(obj.arrayEmpty == ["a", "b"])
+        #expect(obj.arrayValue == [])
+        #expect(obj.dictEmpty == ["x": 1])
+        #expect(obj.dictValue == [:])
+    }
+
+    @Test("All optional types - empty JSON gives nil")
+    func testAllOptionalTypesNil() throws {
+        let json = "{}"
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(AllOptionalTypes.self, from: data)
+
+        #expect(obj.optString == nil)
+        #expect(obj.optInt == nil)
+        #expect(obj.optDouble == nil)
+        #expect(obj.optBool == nil)
+        #expect(obj.optArray == nil)
+        #expect(obj.optDict == nil)
+    }
+
+    @Test("All optional types - values present")
+    func testAllOptionalTypesPresent() throws {
+        let json = """
+        {
+            "optString": "hello",
+            "optInt": 42,
+            "optDouble": 3.14,
+            "optBool": true,
+            "optArray": ["a", "b"],
+            "optDict": {"x": 1}
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(AllOptionalTypes.self, from: data)
+
+        #expect(obj.optString == "hello")
+        #expect(obj.optInt == 42)
+        #expect(obj.optDouble == 3.14)
+        #expect(obj.optBool == true)
+        #expect(obj.optArray == ["a", "b"])
+        #expect(obj.optDict == ["x": 1])
+    }
+
+    @Test("Mixed optional types - required field throws when missing")
+    func testMixedOptionalRequiredThrows() throws {
+        let json = """
+        {
+            "withDefault": "custom",
+            "optional": "value"
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode(MixedOptionalTypes.self, from: data)
+        }
+    }
+
+    @Test("Mixed optional types - all fields present")
+    func testMixedOptionalAllPresent() throws {
+        let json = """
+        {
+            "required": "must have",
+            "withDefault": "custom",
+            "optional": "value",
+            "optionalWithNil": 42
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(MixedOptionalTypes.self, from: data)
+
+        #expect(obj.required == "must have")
+        #expect(obj.withDefault == "custom")
+        #expect(obj.optional == "value")
+        #expect(obj.optionalWithNil == 42)
+    }
+
+    @Test("Mixed optional types - only required field")
+    func testMixedOptionalOnlyRequired() throws {
+        let json = """
+        {
+            "required": "must have"
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(MixedOptionalTypes.self, from: data)
+
+        #expect(obj.required == "must have")
+        #expect(obj.withDefault == "default")
+        #expect(obj.optional == nil)
+        #expect(obj.optionalWithNil == nil)
+    }
+
+    @Test("Nested struct - empty JSON uses nested defaults")
+    func testNestedStructDefaults() throws {
+        let json = "{}"
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(PersonWithAddress.self, from: data)
+
+        #expect(obj.name == "")
+        #expect(obj.address.street == "")
+        #expect(obj.address.city == "")
+        #expect(obj.address.zip == "")
+    }
+
+    @Test("Nested struct - partial nested values")
+    func testNestedStructPartialValues() throws {
+        let json = """
+        {
+            "name": "John",
+            "address": {
+                "city": "NYC"
+            }
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(PersonWithAddress.self, from: data)
+
+        #expect(obj.name == "John")
+        #expect(obj.address.street == "")  // default
+        #expect(obj.address.city == "NYC")  // from JSON
+        #expect(obj.address.zip == "")  // default
+    }
+
+    @Test("Complex nested types - empty JSON uses all defaults")
+    func testComplexNestedDefaults() throws {
+        let json = "{}"
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(ComplexNestedTypes.self, from: data)
+
+        // Nested struct defaults
+        #expect(obj.address.street == "")
+        #expect(obj.optionalAddress == nil)
+
+        // Enum defaults
+        #expect(obj.status == .active)
+        #expect(obj.optionalStatus == nil)
+
+        // Array defaults
+        #expect(obj.tags == [])
+        #expect(obj.scores == [0, 0, 0])
+        // addresses has default [NestedAddress(), NestedAddress()]
+        #expect(obj.addresses.count == 2)
+        #expect(obj.addresses[0].street == "")
+        #expect(obj.addresses[1].city == "")
+
+        // Dictionary defaults
+        // metadata has default ["key": "value"]
+        #expect(obj.metadata == ["key": "value"])
+        #expect(obj.counts == ["default": 0])
+
+        // Optional collection defaults
+        #expect(obj.optionalTags == nil)
+        #expect(obj.optionalMetadata == nil)
+    }
+
+    @Test("Complex nested types - full values override")
+    func testComplexNestedFullValues() throws {
+        let json = """
+        {
+            "address": {"street": "123 Main", "city": "NYC", "zip": "10001"},
+            "optionalAddress": {"street": "456 Oak", "city": "LA", "zip": "90001"},
+            "status": "inactive",
+            "optionalStatus": "pending",
+            "tags": ["swift", "ios"],
+            "scores": [100, 200],
+            "addresses": [{"street": "A", "city": "B", "zip": "C"}],
+            "metadata": {"key": "value"},
+            "counts": {"items": 5},
+            "optionalTags": ["opt"],
+            "optionalMetadata": {"opt": "data"}
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(ComplexNestedTypes.self, from: data)
+
+        // Nested struct
+        #expect(obj.address.street == "123 Main")
+        #expect(obj.address.city == "NYC")
+        #expect(obj.optionalAddress?.city == "LA")
+
+        // Enum
+        #expect(obj.status == .inactive)
+        #expect(obj.optionalStatus == .pending)
+
+        // Arrays
+        #expect(obj.tags == ["swift", "ios"])
+        #expect(obj.scores == [100, 200])
+        #expect(obj.addresses.count == 1)
+        #expect(obj.addresses[0].street == "A")
+
+        // Dictionaries
+        #expect(obj.metadata == ["key": "value"])
+        #expect(obj.counts == ["items": 5])
+
+        // Optional collections
+        #expect(obj.optionalTags == ["opt"])
+        #expect(obj.optionalMetadata == ["opt": "data"])
+    }
+
+    @Test("Enum with @Default - memberwise init works")
+    func testEnumMemberwiseInit() {
+        // Verify enum can be created and used
+        let status = Status.active
+        #expect(status.rawValue == "active")
+
+        let inactive = Status.inactive
+        #expect(inactive.rawValue == "inactive")
+    }
+
+    @Test("Nested struct in array - partial data")
+    func testNestedArrayPartialData() throws {
+        let json = """
+        {
+            "addresses": [
+                {"city": "NYC"},
+                {"street": "Oak St", "zip": "12345"},
+                {}
+            ]
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let obj = try decoder.decode(ComplexNestedTypes.self, from: data)
+
+        #expect(obj.addresses.count == 3)
+
+        // First address: only city
+        #expect(obj.addresses[0].street == "")
+        #expect(obj.addresses[0].city == "NYC")
+        #expect(obj.addresses[0].zip == "")
+
+        // Second address: street and zip
+        #expect(obj.addresses[1].street == "Oak St")
+        #expect(obj.addresses[1].city == "")
+        #expect(obj.addresses[1].zip == "12345")
+
+        // Third address: all defaults
+        #expect(obj.addresses[2].street == "")
+        #expect(obj.addresses[2].city == "")
+        #expect(obj.addresses[2].zip == "")
     }
 }
