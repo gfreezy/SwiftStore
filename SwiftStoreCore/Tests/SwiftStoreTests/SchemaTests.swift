@@ -115,15 +115,8 @@ struct DatabaseSchemaBuilderTests {
         let schemas = builder.buildSchemas(from: [TestUserTags.self])
 
         let schema = schemas[0]
-        #expect(schema.foreignKeys.count == 2)
-
-        let userFk = schema.foreignKeys.first { $0.column == "user_id" }
-        #expect(userFk?.referencesTable == "test_user")
-        #expect(userFk?.referencesColumn == "id")
-
-        let tagFk = schema.foreignKeys.first { $0.column == "tag_id" }
-        #expect(tagFk?.referencesTable == "test_tag")
-        #expect(tagFk?.referencesColumn == "id")
+        // Foreign keys are no longer auto-generated from entity definitions
+        #expect(schema.foreignKeys.isEmpty)
     }
 
     @Test("Build multiple schemas")

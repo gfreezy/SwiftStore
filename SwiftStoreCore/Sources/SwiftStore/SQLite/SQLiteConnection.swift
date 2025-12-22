@@ -432,8 +432,13 @@ public final class SQLiteConnection {
         try stmt.step()
     }
 
-    /// Get entity by ID
-    public func get<E: EntityProtocol>(_ type: E.Type, id: UUIDV4) throws -> E? {
+}
+
+// MARK: - Identifiable Entity Extensions
+
+public extension SQLiteConnection {
+    /// Get entity by ID (only available for entities with id field)
+    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV4) throws -> E? where E.ID == UUIDV4 {
         let sql: SQL = "SELECT * FROM \(E.self) WHERE id = \(id)"
         let stmt = try prepareAndBind(sql.sql, values: sql.values)
 
@@ -444,9 +449,9 @@ public final class SQLiteConnection {
         return try decoder.decode(E.self, from: stmt)
     }
 
-    /// Update an existing entity
+    /// Update an existing entity (only available for entities with id field)
     /// Timestamp (updated_at) is set automatically by trigger
-    public func update<E: EntityProtocol>(_ entity: E) throws {
+    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV4 {
         var values = try encoder.encode(entity)
         // Remove id, created_at, updated_at - trigger will set updated_at
         values.removeValue(forKey: "id")
@@ -475,13 +480,13 @@ public final class SQLiteConnection {
         }
     }
 
-    /// Delete an entity
-    public func delete<E: EntityProtocol>(_ entity: E) throws {
+    /// Delete an entity (only available for entities with id field)
+    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV4 {
         try delete(E.self, id: entity.id)
     }
 
-    /// Delete entity by ID
-    public func delete<E: EntityProtocol>(_ type: E.Type, id: UUIDV4) throws {
+    /// Delete entity by ID (only available for entities with id field)
+    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV4) throws where E.ID == UUIDV4 {
         let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(id)"
         try execute(sql)
     }

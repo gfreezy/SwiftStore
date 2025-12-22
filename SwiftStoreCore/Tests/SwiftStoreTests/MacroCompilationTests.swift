@@ -76,6 +76,31 @@ struct MacroOrder {
     let updatedAt: Date
 }
 
+// MARK: - SyncKey Test Entities
+
+/// Entity with single field sync key (no id field)
+@Entity
+struct SyncKeyUser {
+    #SyncKey<SyncKeyUser>(\.email)
+    var email: String
+    var name: String
+    var age: Int?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+/// Entity with composite sync key (no id field)
+@Entity
+struct SyncKeyEmployee {
+    #SyncKey<SyncKeyEmployee>(\.companyCode, \.employeeCode)
+    var companyCode: String
+    var employeeCode: String
+    var name: String
+    var department: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
 // MARK: - Compilation Tests
 
 @Suite("Macro Compilation Tests")
@@ -434,5 +459,166 @@ struct MacroCompilationTests {
 
         #expect(hasThemeNotificationsIndex)
         #expect(hasThemeIdIndex)
+    }
+
+    // MARK: - SyncKey Tests
+
+    @Test("SyncKeyUser entity with single field sync key")
+    func testSyncKeyUserCRUD() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [SyncKeyUser.self])
+
+        // Create
+        let user = SyncKeyUser(
+            email: "alice@example.com",
+            name: "Alice",
+            age: 25,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(user)
+
+        // Read using query (no get by id since there's no id field)
+        let fetched = try SyncKeyUser
+            .filter { $0.email == "alice@example.com" }
+            .first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.name == "Alice")
+        #expect(fetched?.email == "alice@example.com")
+        #expect(fetched?.age == 25)
+
+        // Delete using query
+        let deleted = try SyncKeyUser
+            .filter { $0.email == "alice@example.com" }
+            .deleteAll(store.connection)
+        #expect(deleted == 1)
+
+        let fetchedAfterDelete = try SyncKeyUser
+            .filter { $0.email == "alice@example.com" }
+            .first(store.connection)
+        #expect(fetchedAfterDelete == nil)
+    }
+
+    @Test("SyncKeyEmployee entity with composite sync key")
+    func testSyncKeyEmployeeCRUD() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [SyncKeyEmployee.self])
+
+        // Create employees in different companies with same employee code
+        let emp1 = SyncKeyEmployee(
+            companyCode: "ACME",
+            employeeCode: "E001",
+            name: "Alice",
+            department: "Engineering",
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        let emp2 = SyncKeyEmployee(
+            companyCode: "CORP",
+            employeeCode: "E001",
+            name: "Bob",
+            department: "Sales",
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(emp1)
+        try store.connection.insert(emp2)
+
+        // Both should exist (different composite keys)
+        let count = try SyncKeyEmployee.filter().count(store.connection)
+        #expect(count == 2)
+
+        // Query by composite key
+        let acmeEmployee = try SyncKeyEmployee
+            .filter { $0.companyCode == "ACME" && $0.employeeCode == "E001" }
+            .first(store.connection)
+        #expect(acmeEmployee?.name == "Alice")
+
+        let corpEmployee = try SyncKeyEmployee
+            .filter { $0.companyCode == "CORP" && $0.employeeCode == "E001" }
+            .first(store.connection)
+        #expect(corpEmployee?.name == "Bob")
+    }
+
+    @Test("SyncKey columns are generated correctly")
+    func testSyncKeyColumnsGenerated() {
+        // SyncKeyUser - single field sync key
+        #expect(SyncKeyUser.syncKeyColumns == ["email"])
+
+        // Verify email is primary key (single column sync key uses column-level PRIMARY KEY)
+        let emailColumn = SyncKeyUser.columns.first { $0.name == "email" }
+        #expect(emailColumn?.primaryKey == true)
+
+        // SyncKeyEmployee - composite sync key
+        #expect(SyncKeyEmployee.syncKeyColumns == ["company_code", "employee_code"])
+
+        // For composite sync keys, individual columns are NOT marked as primary key
+        // (SQLite doesn't support multiple PRIMARY KEY columns, uniqueness is enforced via unique index)
+        let companyColumn = SyncKeyEmployee.columns.first { $0.name == "company_code" }
+        let employeeColumn = SyncKeyEmployee.columns.first { $0.name == "employee_code" }
+        #expect(companyColumn?.primaryKey == false)
+        #expect(employeeColumn?.primaryKey == false)
+    }
+
+    @Test("SyncKey creates unique index")
+    func testSyncKeyCreatesUniqueIndex() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [SyncKeyUser.self, SyncKeyEmployee.self])
+
+        // Check SyncKeyUser index
+        let userIndexes = SyncKeyUser.indexes
+        let userSyncKeyIndex = userIndexes.first { $0.name.contains("sync_key") }
+        #expect(userSyncKeyIndex != nil)
+        #expect(userSyncKeyIndex?.columns == ["email"])
+        #expect(userSyncKeyIndex?.unique == true)
+
+        // Check SyncKeyEmployee index
+        let empIndexes = SyncKeyEmployee.indexes
+        let empSyncKeyIndex = empIndexes.first { $0.name.contains("sync_key") }
+        #expect(empSyncKeyIndex != nil)
+        #expect(empSyncKeyIndex?.columns == ["company_code", "employee_code"])
+        #expect(empSyncKeyIndex?.unique == true)
+
+        // Verify indexes exist in database
+        let indexSQL = "SELECT name, sql FROM sqlite_master WHERE type='index' AND (tbl_name='sync_key_user' OR tbl_name='sync_key_employee')"
+        let stmt = try store.connection.prepare(indexSQL)
+        var indexNames: [String] = []
+        while try stmt.step() {
+            if let name = stmt.columnString(0) {
+                indexNames.append(name)
+            }
+        }
+
+        let hasUserSyncKeyIndex = indexNames.contains { $0.contains("sync_key_user") && $0.contains("sync_key") }
+        let hasEmpSyncKeyIndex = indexNames.contains { $0.contains("sync_key_employee") && $0.contains("sync_key") }
+        #expect(hasUserSyncKeyIndex)
+        #expect(hasEmpSyncKeyIndex)
+    }
+
+    @Test("SyncKey entity is not Identifiable")
+    func testSyncKeyEntityNotIdentifiable() {
+        // SyncKeyUser should not conform to Identifiable since it has no id field
+        // This is a compile-time check - if this compiles, SyncKeyUser doesn't have id
+        let user = SyncKeyUser(
+            email: "test@example.com",
+            name: "Test",
+            age: nil,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+
+        // Verify the entity has no id property at runtime
+        let columns = SyncKeyUser.columns
+        let hasIdColumn = columns.contains { $0.name == "id" }
+        #expect(!hasIdColumn)
+
+        // Use the user to avoid compiler warning
+        #expect(user.email == "test@example.com")
+    }
+
+    @Test("SyncKey table name conversion works correctly")
+    func testSyncKeyTableNameConversion() {
+        #expect(SyncKeyUser.tableName == "sync_key_user")
+        #expect(SyncKeyEmployee.tableName == "sync_key_employee")
     }
 }

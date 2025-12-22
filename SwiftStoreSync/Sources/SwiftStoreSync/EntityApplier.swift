@@ -46,19 +46,133 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
             let decoder = JSONDecoder()
             let entity = try decoder.decode(T.self, from: data)
 
-            // Check if entity exists
-            let existing = try T.filter(id: change.entityId).first(connection)
-            if existing != nil {
-                try connection.update(entity)
+            // Find existing record by sync key
+            let syncKeyCols = T.syncKeyColumns
+            let syncKeyValues = SyncKeyEncoder.decode(change.syncKey)
+
+            if let _ = try findBySyncKey(syncKeyCols: syncKeyCols, syncKeyValues: syncKeyValues, connection: connection) {
+                // Update existing record using sync key
+                try updateBySyncKey(entity: entity, syncKeyCols: syncKeyCols, syncKeyValues: syncKeyValues, connection: connection)
             } else {
                 try connection.insert(entity)
             }
 
         case .delete:
-            let sql: SQL = "DELETE FROM \(raw: T.tableName) WHERE id = \(change.entityId)"
-            try connection.execute(sql)
+            // Delete by sync key
+            let syncKeyCols = T.syncKeyColumns
+            let syncKeyValues = SyncKeyEncoder.decode(change.syncKey)
+            try deleteBySyncKey(syncKeyCols: syncKeyCols, syncKeyValues: syncKeyValues, connection: connection)
         }
     }
+
+    /// Find entity by sync key
+    private func findBySyncKey(syncKeyCols: [String], syncKeyValues: [SQLiteValue], connection: SQLiteConnection) throws -> T? {
+        guard syncKeyCols.count == syncKeyValues.count else {
+            throw SyncError.invalidPayload("Sync key column count mismatch")
+        }
+
+        // Build WHERE clause: col1 = ? AND col2 = ?
+        let whereClause = syncKeyCols.enumerated().map { idx, col in
+            "\(col) = ?\(idx + 1)"
+        }.joined(separator: " AND ")
+
+        let sql = "SELECT * FROM \(T.tableName) WHERE \(whereClause)"
+        let stmt = try connection.prepare(sql)
+
+        // Bind sync key values
+        for (idx, value) in syncKeyValues.enumerated() {
+            try bindValue(stmt: stmt, index: Int32(idx + 1), value: value)
+        }
+
+        guard try stmt.step() else {
+            return nil
+        }
+
+        return try T.sqliteDecode(from: stmt)
+    }
+
+    /// Delete entity by sync key
+    private func deleteBySyncKey(syncKeyCols: [String], syncKeyValues: [SQLiteValue], connection: SQLiteConnection) throws {
+        guard syncKeyCols.count == syncKeyValues.count else {
+            throw SyncError.invalidPayload("Sync key column count mismatch")
+        }
+
+        // Build WHERE clause: col1 = ? AND col2 = ?
+        let whereClause = syncKeyCols.enumerated().map { idx, col in
+            "\(col) = ?\(idx + 1)"
+        }.joined(separator: " AND ")
+
+        let sql = "DELETE FROM \(T.tableName) WHERE \(whereClause)"
+        let stmt = try connection.prepare(sql)
+
+        // Bind sync key values
+        for (idx, value) in syncKeyValues.enumerated() {
+            try bindValue(stmt: stmt, index: Int32(idx + 1), value: value)
+        }
+
+        try stmt.step()
+    }
+
+    /// Update entity by sync key
+    private func updateBySyncKey(entity: T, syncKeyCols: [String], syncKeyValues: [SQLiteValue], connection: SQLiteConnection) throws {
+        guard syncKeyCols.count == syncKeyValues.count else {
+            throw SyncError.invalidPayload("Sync key column count mismatch")
+        }
+
+        // Get all columns except sync key columns (for SET clause) and timestamps
+        let allColumns = T.columns.map { $0.name }
+        let excludedFromSet = Set(syncKeyCols + ["created_at", "updated_at"])
+        let setColumns = allColumns.filter { !excludedFromSet.contains($0) }
+
+        // Encode entity to get values
+        let values = try entity.sqliteEncode()
+
+        // Build SET clause: col1 = ?, col2 = ?
+        let setClause = setColumns.enumerated().map { idx, col in
+            "\(col) = ?\(idx + 1)"
+        }.joined(separator: ", ")
+
+        // Build WHERE clause: sync_col1 = ?, sync_col2 = ?
+        let whereClause = syncKeyCols.enumerated().map { idx, col in
+            "\(col) = ?\(setColumns.count + idx + 1)"
+        }.joined(separator: " AND ")
+
+        let sql = "UPDATE \(T.tableName) SET \(setClause) WHERE \(whereClause)"
+        let stmt = try connection.prepare(sql)
+
+        // Bind SET values
+        for (idx, col) in setColumns.enumerated() {
+            if let value = values[col] {
+                try bindValue(stmt: stmt, index: Int32(idx + 1), value: value)
+            } else {
+                try stmt.bindNull(Int32(idx + 1))
+            }
+        }
+
+        // Bind WHERE values (sync key)
+        for (idx, value) in syncKeyValues.enumerated() {
+            try bindValue(stmt: stmt, index: Int32(setColumns.count + idx + 1), value: value)
+        }
+
+        try stmt.step()
+    }
+
+    /// Bind SQLiteValue to statement
+    private func bindValue(stmt: SQLiteStatementImpl, index: Int32, value: SQLiteValue) throws {
+        switch value {
+        case .null:
+            try stmt.bindNull(index)
+        case .integer(let num):
+            try stmt.bind(index, num)
+        case .real(let num):
+            try stmt.bind(index, num)
+        case .text(let str):
+            try stmt.bind(index, str)
+        case .blob(let data):
+            try stmt.bind(index, data)
+        }
+    }
+
 }
 
 /// Registry for entity appliers

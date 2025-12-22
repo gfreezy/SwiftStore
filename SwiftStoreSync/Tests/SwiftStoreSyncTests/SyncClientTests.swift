@@ -25,13 +25,17 @@ struct SyncTests {
 
     @Test("SyncChange from ChangeLog")
     func testSyncChangeFromChangeLog() {
+        // Create a sync key (binary encoded UUIDV4)
+        let syncKeyData = SyncKeyEncoder.encode([.blob(UUIDV4().data)])
+
         let changeLog = ChangeLog(
             entityType: "test_entity",
-            entityId: UUIDV4(),
+            syncKey: syncKeyData,
             operation: .insert,
             payload: "{\"name\": \"test\"}",
             deviceId: UUIDV4(),
-            logicalClock: 1
+            logicalClock: 1,
+            schemaVersion: 1
         )
 
         let syncChange = SyncChange(from: changeLog)

@@ -29,14 +29,27 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         let properties = structDecl.extractProperties()
 
-        // Validate required fields
-        try validateRequiredFields(properties: properties, structName: structName)
+        // Parse #SyncKey marker (if any) FIRST - needed for validation
+        let syncKeyInfo = SyncKeyMarkerParser.parse(from: structDecl.memberBlock.members)
+        let hasSyncKey = syncKeyInfo != nil
+        let syncKeyColumns = syncKeyInfo?.columns ?? ["id"]
+
+        // Validate required fields based on whether #SyncKey is used
+        try validateRequiredFields(properties: properties, structName: structName, hasSyncKey: hasSyncKey)
 
         // Generate column definitions
         var columnDefs: [String] = []
         for prop in properties {
             let nullable = prop.isOptional
-            let primaryKey = prop.name == "id"
+            // Primary key: either "id" (when no #SyncKey) or first sync key column (when #SyncKey is used)
+            let isPrimaryKey: Bool
+            if hasSyncKey {
+                // When using #SyncKey, the first sync key column is the primary key for single-column sync key
+                // For composite sync key, we don't set primaryKey on columns (use unique index instead)
+                isPrimaryKey = syncKeyColumns.count == 1 && prop.columnName == syncKeyColumns[0]
+            } else {
+                isPrimaryKey = prop.name == "id"
+            }
             let colType = prop.sqliteType
             let isJSON = !prop.isPrimitive && prop.type != "UUIDV4"
             // Add default value for Date columns (createdAt/updatedAt)
@@ -46,7 +59,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             if nullable {
                 def += ", nullable: true"
             }
-            if primaryKey {
+            if isPrimaryKey {
                 def += ", primaryKey: true"
             }
             if isJSON {
@@ -105,22 +118,42 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             }
             """
 
-        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl]
+        // Generate syncKeyColumns property
+        let syncKeyColumnsStr = syncKeyColumns.map { "\"\($0)\"" }.joined(separator: ", ")
+        let syncKeyColumnsDecl: DeclSyntax = """
+            public static var syncKeyColumns: [String] { [\(raw: syncKeyColumnsStr)] }
+            """
 
-        // Generate indexes
-        if !indexInfos.isEmpty {
-            var indexDefStrings: [String] = []
-            for idx in indexInfos {
-                let columnsStr = idx.columnNames.map { "\"\($0)\"" }.joined(separator: ", ")
-                // Use custom name if provided, otherwise generate from table and columns
-                let indexName = idx.name ?? "idx_\(tableName)_\(idx.columnNames.joined(separator: "_"))"
-                var def = "IndexDefinition(name: \"\(indexName)\", columns: [\(columnsStr)]"
-                if idx.unique {
-                    def += ", unique: true"
-                }
-                def += ")"
-                indexDefStrings.append(def)
+        // Generate init method with default values for id, createdAt, updatedAt
+        let initDecl = generateInitMethod(properties: properties, hasSyncKey: hasSyncKey)
+
+        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl]
+
+        // Generate indexes (including auto-generated unique index for sync key)
+        var indexDefStrings: [String] = []
+
+        // Add user-defined indexes
+        for idx in indexInfos {
+            let columnsStr = idx.columnNames.map { "\"\($0)\"" }.joined(separator: ", ")
+            // Use custom name if provided, otherwise generate from table and columns
+            let indexName = idx.name ?? "idx_\(tableName)_\(idx.columnNames.joined(separator: "_"))"
+            var def = "IndexDefinition(name: \"\(indexName)\", columns: [\(columnsStr)]"
+            if idx.unique {
+                def += ", unique: true"
             }
+            def += ")"
+            indexDefStrings.append(def)
+        }
+
+        // Auto-generate unique index for sync key (unless it's just "id" which is already primary key)
+        if syncKeyColumns != ["id"] {
+            let syncKeyIndexName = "idx_\(tableName)_sync_key"
+            let syncKeyIndexDef = "IndexDefinition(name: \"\(syncKeyIndexName)\", columns: [\(syncKeyColumnsStr)], unique: true)"
+            indexDefStrings.append(syncKeyIndexDef)
+        }
+
+        // Only add indexes property if there are any indexes
+        if !indexDefStrings.isEmpty {
             let indexesArray = indexDefStrings.joined(separator: ",\n            ")
             let indexesDecl: DeclSyntax = """
                 public static var indexes: [IndexDefinition] {
@@ -133,6 +166,51 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         }
 
         return result
+    }
+
+    /// Generate init method with default values for id, createdAt, updatedAt
+    private static func generateInitMethod(properties: [PropertyInfo], hasSyncKey: Bool) -> DeclSyntax {
+        var params: [String] = []
+
+        for prop in properties {
+            let paramName = prop.name
+            let paramType = prop.type
+
+            // Determine if this parameter should have a default value
+            let defaultValue: String?
+            if paramName == "id" && !hasSyncKey {
+                // id has default value UUIDV4() for non-sync-key entities
+                defaultValue = "UUIDV4()"
+            } else if paramName == "createdAt" || paramName == "updatedAt" {
+                // createdAt and updatedAt have default value Date()
+                defaultValue = "Date()"
+            } else {
+                defaultValue = nil
+            }
+
+            if let defaultVal = defaultValue {
+                params.append("\(paramName): \(paramType) = \(defaultVal)")
+            } else {
+                params.append("\(paramName): \(paramType)")
+            }
+        }
+
+        let paramsStr = params.joined(separator: ",\n        ")
+
+        // Generate assignments
+        var assignments: [String] = []
+        for prop in properties {
+            assignments.append("self.\(prop.name) = \(prop.name)")
+        }
+        let assignmentsStr = assignments.joined(separator: "\n        ")
+
+        return """
+            public init(
+                \(raw: paramsStr)
+            ) {
+                \(raw: assignmentsStr)
+            }
+            """
     }
 
     /// Generate the sqliteEncode() method
@@ -356,58 +434,84 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+            return []
+        }
+
+        let properties = structDecl.extractProperties()
+        let hasIdField = properties.contains(where: { $0.name == "id" })
+
+        var extensions: [ExtensionDeclSyntax] = []
+
         // EntityProtocol conformance
         let entityProtocol: DeclSyntax = """
             extension \(type.trimmed): EntityProtocol {}
             """
+        if let ext = entityProtocol.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
 
         // SQLiteCodable conformance (for optimized encode/decode)
         let sqliteCodable: DeclSyntax = """
             extension \(type.trimmed): SQLiteCodable {}
             """
-
-        var extensions: [ExtensionDeclSyntax] = []
-
-        if let ext = entityProtocol.as(ExtensionDeclSyntax.self) {
+        if let ext = sqliteCodable.as(ExtensionDeclSyntax.self) {
             extensions.append(ext)
         }
 
-        if let ext = sqliteCodable.as(ExtensionDeclSyntax.self) {
-            extensions.append(ext)
+        // Identifiable conformance only if entity has id field
+        if hasIdField {
+            let identifiable: DeclSyntax = """
+                extension \(type.trimmed): Identifiable {}
+                """
+            if let ext = identifiable.as(ExtensionDeclSyntax.self) {
+                extensions.append(ext)
+            }
         }
 
         return extensions
     }
 
     /// Validate that required fields exist with correct types
-    private static func validateRequiredFields(properties: [PropertyInfo], structName: String) throws {
-        // Check for id: UUIDV4
-        guard let idProp = properties.first(where: { $0.name == "id" }) else {
-            throw MacroError.missingRequiredField(
-                structName: structName,
-                fieldName: "id",
-                expectedType: "UUIDV4"
-            )
+    /// - hasSyncKey: If true, #SyncKey is used and id field is NOT allowed
+    ///               If false, id field is required and #SyncKey is not allowed
+    private static func validateRequiredFields(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws {
+        let hasIdField = properties.contains(where: { $0.name == "id" })
+
+        if hasSyncKey {
+            // When #SyncKey is used, id field is NOT allowed
+            if hasIdField {
+                throw MacroError.syncKeyAndIdMutuallyExclusive(structName: structName)
+            }
+        } else {
+            // When no #SyncKey, id: UUIDV4 is required
+            guard let idProp = properties.first(where: { $0.name == "id" }) else {
+                throw MacroError.missingRequiredField(
+                    structName: structName,
+                    fieldName: "id",
+                    expectedType: "UUIDV4"
+                )
+            }
+
+            let idBaseType = idProp.type.replacingOccurrences(of: "?", with: "")
+            if idBaseType != "UUIDV4" {
+                throw MacroError.wrongFieldType(
+                    structName: structName,
+                    fieldName: "id",
+                    expectedType: "UUIDV4",
+                    actualType: idProp.type
+                )
+            }
+
+            if idProp.isOptional {
+                throw MacroError.fieldMustNotBeOptional(
+                    structName: structName,
+                    fieldName: "id"
+                )
+            }
         }
 
-        let idBaseType = idProp.type.replacingOccurrences(of: "?", with: "")
-        if idBaseType != "UUIDV4" {
-            throw MacroError.wrongFieldType(
-                structName: structName,
-                fieldName: "id",
-                expectedType: "UUIDV4",
-                actualType: idProp.type
-            )
-        }
-
-        if idProp.isOptional {
-            throw MacroError.fieldMustNotBeOptional(
-                structName: structName,
-                fieldName: "id"
-            )
-        }
-
-        // Check for createdAt: Date
+        // Check for createdAt: Date (always required)
         guard let createdAtProp = properties.first(where: { $0.name == "createdAt" }) else {
             throw MacroError.missingRequiredField(
                 structName: structName,
@@ -433,7 +537,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             )
         }
 
-        // Check for updatedAt: Date
+        // Check for updatedAt: Date (always required)
         guard let updatedAtProp = properties.first(where: { $0.name == "updatedAt" }) else {
             throw MacroError.missingRequiredField(
                 structName: structName,
@@ -469,6 +573,7 @@ public enum MacroError: Error, CustomStringConvertible {
     case fieldMustNotBeOptional(structName: String, fieldName: String)
     case fieldNotFound(structName: String, fieldName: String)
     case invalidKeyPath(keyPath: String)
+    case syncKeyAndIdMutuallyExclusive(structName: String)
 
     public var description: String {
         switch self {
@@ -484,6 +589,8 @@ public enum MacroError: Error, CustomStringConvertible {
             return "Field '\(fieldName)' not found in '\(structName)'"
         case .invalidKeyPath(let keyPath):
             return "Invalid KeyPath: '\(keyPath)'"
+        case .syncKeyAndIdMutuallyExclusive(let structName):
+            return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV4', not both."
         }
     }
 }

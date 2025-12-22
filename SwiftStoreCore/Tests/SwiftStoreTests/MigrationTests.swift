@@ -450,9 +450,9 @@ struct MigratorPlanSQLTests {
 
         let sql = normalizeSQL(createStatements[0])
 
-        // Verify foreign key constraints are included
-        #expect(sql.contains("foreign key (user_id) references test_user(id)"))
-        #expect(sql.contains("foreign key (tag_id) references test_tag(id)"))
+        // Foreign keys are no longer auto-generated from entity definitions
+        // Verify table is created without foreign key constraints
+        #expect(!sql.contains("foreign key"))
     }
 
     @Test("Plan creates correct CREATE TABLE SQL with virtual columns")
@@ -583,7 +583,7 @@ struct MigratorPlanSQLTests {
             CREATE TABLE __swiftstore_pending_deletes (
                 id INTEGER NOT NULL PRIMARY KEY,
                 table_name TEXT NOT NULL,
-                entity_id BLOB NOT NULL
+                sync_key_json TEXT NOT NULL
             )
         """)
         #expect(normalizeSQL(deletesTable!) == expectedSQL)
@@ -850,7 +850,7 @@ struct MigratorPlanSQLTests {
         #expect(sql.contains("id blob not null primary key"))
         #expect(sql.contains("user_id blob not null"))
         #expect(sql.contains("tag_id blob not null"))
-        #expect(sql.contains("foreign key (user_id) references test_user(id)"))
-        #expect(sql.contains("foreign key (tag_id) references test_tag(id)"))
+        // Foreign keys are no longer auto-generated from entity definitions
+        #expect(!sql.contains("foreign key"))
     }
 }

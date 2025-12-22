@@ -6,7 +6,8 @@ import SwiftStoreChangeTracker
 public struct SyncChange: Codable, Sendable {
     public let id: UUIDV4
     public let entityType: String
-    public let entityId: UUIDV4
+    /// Binary encoded sync key values (using SyncKeyEncoder)
+    public let syncKey: Data
     public let operation: ChangeOperation
     public let payload: String?
     public let deviceId: UUIDV4
@@ -18,7 +19,7 @@ public struct SyncChange: Codable, Sendable {
     public init(
         id: UUIDV4,
         entityType: String,
-        entityId: UUIDV4,
+        syncKey: Data,
         operation: ChangeOperation,
         payload: String?,
         deviceId: UUIDV4,
@@ -28,7 +29,7 @@ public struct SyncChange: Codable, Sendable {
     ) {
         self.id = id
         self.entityType = entityType
-        self.entityId = entityId
+        self.syncKey = syncKey
         self.operation = operation
         self.payload = payload
         self.deviceId = deviceId
@@ -41,7 +42,7 @@ public struct SyncChange: Codable, Sendable {
     public init(from changeLog: ChangeLog) {
         self.id = changeLog.id
         self.entityType = changeLog.entityType
-        self.entityId = changeLog.entityId
+        self.syncKey = changeLog.syncKey
         self.operation = changeLog.operation
         self.payload = changeLog.payload
         self.deviceId = changeLog.deviceId

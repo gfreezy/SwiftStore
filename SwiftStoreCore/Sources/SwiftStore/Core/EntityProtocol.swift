@@ -23,16 +23,6 @@ public extension EntityProtocol {
         Query(Self.self).filter(buildPredicate)
     }
 
-    /// Filter by primary key
-    static func filter(id: UUIDV4) -> Query<Self> {
-        Query(Self.self).filter(id: id)
-    }
-
-    /// Filter by multiple primary keys
-    static func filter(ids: [UUIDV4]) -> Query<Self> {
-        Query(Self.self).filter(ids: ids)
-    }
-
     /// Add ORDER BY clause
     static func order<V>(by keyPath: KeyPath<Self, V>, ascending: Bool = true) -> Query<Self> {
         Query(Self.self).order(by: keyPath, ascending: ascending)
@@ -60,5 +50,19 @@ public extension EntityProtocol {
             query = query.select(column)
         }
         return query
+    }
+}
+
+// MARK: - Identifiable Entity Extensions
+
+public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
+    /// Filter by primary key (only available for entities with id field)
+    static func filter(id: UUIDV4) -> Query<Self> {
+        Query(Self.self).filter(id: id)
+    }
+
+    /// Filter by multiple primary keys (only available for entities with id field)
+    static func filter(ids: [UUIDV4]) -> Query<Self> {
+        Query(Self.self).filter(ids: ids)
     }
 }

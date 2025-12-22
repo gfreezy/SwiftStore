@@ -18,6 +18,15 @@ struct TestEntity {
 /// Fixed device ID for testing
 let testDeviceId = UUIDV4()
 
+/// Helper to verify sync key contains expected entity id
+func verifySyncKeyContainsId(_ syncKey: Data, expectedId: UUIDV4) -> Bool {
+    let values = SyncKeyEncoder.decode(syncKey)
+    guard values.count == 1, case .blob(let data) = values[0] else {
+        return false
+    }
+    return data == expectedId.data
+}
+
 func createTestConnection() throws -> SQLiteConnection {
     let tempPath = NSTemporaryDirectory() + "swiftstore_sync_test_\(UUID().uuidString).sqlite"
     return try SQLiteConnection(path: tempPath)
@@ -74,7 +83,7 @@ struct ChangeTrackerTests {
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
-        #expect(changes[0].entityId == entity.id)
+        #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity.id))
         #expect(changes[0].operation == .insert)
         #expect(changes[0].deviceId == testDeviceId)
         #expect(changes[0].logicalClock == 1)
@@ -120,7 +129,7 @@ struct ChangeTrackerTests {
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
-        #expect(changes[0].entityId == entity.id)
+        #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity.id))
         #expect(changes[0].operation == .update)
         #expect(changes[0].payload != nil)
 
@@ -171,7 +180,7 @@ struct ChangeTrackerTests {
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
-        #expect(changes[0].entityId == entity.id)
+        #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity.id))
         #expect(changes[0].operation == .delete)
         #expect(changes[0].payload == nil) // Delete operations don't have payload
     }
@@ -233,7 +242,7 @@ struct ChangeTrackerTests {
 
         // All changes for same entity
         for change in changes {
-            #expect(change.entityId == entity.id)
+            #expect(verifySyncKeyContainsId(change.syncKey, expectedId: entity.id))
             #expect(change.entityType == "test_entity")
         }
     }
@@ -290,12 +299,13 @@ struct ChangeTrackerTests {
     func testClearsPendingDeletesOnStart() throws {
         let (connection, dbPath) = try createAndMigrateTestDatabase(trackDeletes: true)
 
-        // Manually insert stale pending delete
+        // Manually insert stale pending delete using the new sync_key_json schema
         let staleId = UUIDV4()
+        let syncKeyJson = "{\"id\": \"\(staleId.data.map { String(format: "%02X", $0) }.joined())\"}"
         try connection.execute("""
-            INSERT INTO \(Migrator.pendingDeletesTableName) (table_name, entity_id)
+            INSERT INTO \(Migrator.pendingDeletesTableName) (table_name, sync_key_json)
             VALUES ('test_entity', ?)
-        """, values: [.blob(staleId.data)])
+        """, values: [.text(syncKeyJson)])
 
         // Verify it exists
         let countBefore = try connection.prepare("SELECT COUNT(*) FROM \(Migrator.pendingDeletesTableName)")
@@ -413,7 +423,7 @@ struct ChangeTrackerTests {
         let changes = try reader.changesSince(clock: 0)
 
         #expect(changes.count == 1)
-        #expect(changes[0].entityId == entity1.id)
+        #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity1.id))
     }
 
     @Test("ChangeTracker changesSince returns changes after clock value")

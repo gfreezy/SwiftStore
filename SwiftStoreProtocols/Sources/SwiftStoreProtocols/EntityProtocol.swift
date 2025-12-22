@@ -17,50 +17,25 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 
 /// Protocol that all entities must conform to
 ///
-/// Required fields:
-/// - `id: UUIDV4` - Primary key
+/// Required fields (enforced by @Entity macro):
+/// - Either `id: UUIDV4` (standard entity) OR `#SyncKey` (syncable entity without id)
 /// - `createdAt: Date` - Creation timestamp (auto-filled on insert)
 /// - `updatedAt: Date` - Update timestamp (auto-filled on insert/update)
 ///
 /// Note: Entities using @Entity macro will automatically get optimized SQLiteCodable implementations.
-/// Manually implemented entities will use the reflection-based fallback.
-public protocol EntityProtocol: Identifiable, Codable, Sendable {
-    var id: UUIDV4 { get }
+public protocol EntityProtocol: Codable, Sendable {
     var createdAt: Date { get }
     var updatedAt: Date { get }
 
     static var tableName: String { get }
     static var columns: [ColumnDefinition] { get }
     static var indexes: [IndexDefinition] { get }
-    static var foreignKeys: [ForeignKeyDefinition] { get }
+    static var syncKeyColumns: [String] { get }
 }
 
 /// Default implementations
 public extension EntityProtocol {
     static var indexes: [IndexDefinition] { [] }
-    static var foreignKeys: [ForeignKeyDefinition] { [] }
-}
-
-/// Relation type enumeration
-public enum RelationType: String, Sendable {
-    case oneToOne
-    case oneToMany
-    case manyToOne
-    case manyToMany
-}
-
-/// Protocol for relation entities
-public protocol RelationMarker: EntityProtocol {
-    associatedtype FromEntity: EntityProtocol
-    associatedtype ToEntity: EntityProtocol
-
-    static var fromKeyPath: String { get }
-    static var toKeyPath: String { get }
-    static var relationType: RelationType { get }
-}
-
-/// Protocol for self-referencing relations
-public protocol SelfReferenceRelation: RelationMarker where FromEntity == ToEntity {
-    static var fromName: String { get }
-    static var toName: String { get }
+    /// Default sync key columns (uses id for entities without #SyncKey)
+    static var syncKeyColumns: [String] { ["id"] }
 }

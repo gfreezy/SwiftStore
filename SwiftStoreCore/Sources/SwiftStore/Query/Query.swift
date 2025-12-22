@@ -27,16 +27,6 @@ public struct Query<T: EntityProtocol> {
         filter(buildPredicate(Columns()))
     }
 
-    /// Filter by primary key
-    public func filter(id: UUIDV4) -> Query<T> {
-        filter(\T.id == id)
-    }
-
-    /// Filter by multiple primary keys
-    public func filter(ids: [UUIDV4]) -> Query<T> {
-        filter(\T.id ~= ids)
-    }
-
     // MARK: - Distinct
 
     /// Add DISTINCT to the query
@@ -553,5 +543,19 @@ public extension Query {
         and upper: V
     ) -> Query<T> {
         filter(keyPath.between(lower, and: upper))
+    }
+}
+
+// MARK: - Identifiable Entity Extensions
+
+public extension Query where T: Identifiable, T.ID == UUIDV4 {
+    /// Filter by primary key (only available for entities with id field)
+    func filter(id: UUIDV4) -> Query<T> {
+        filter(\T.id == id)
+    }
+
+    /// Filter by multiple primary keys (only available for entities with id field)
+    func filter(ids: [UUIDV4]) -> Query<T> {
+        filter(\T.id ~= ids)
     }
 }

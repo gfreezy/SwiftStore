@@ -47,15 +47,13 @@ public struct DatabaseSchemaBuilder {
     private func buildSchema(from entity: any EntityProtocol.Type) -> TableSchema {
         let columns = buildColumns(from: entity)
         let indexes = buildIndexes(from: entity)
-        let triggers = buildTriggers(for: entity.tableName)
-        let foreignKeys = buildForeignKeys(from: entity)
+        let triggers = buildTriggers(for: entity)
 
         return TableSchema(
             name: entity.tableName,
             columns: columns,
             indexes: indexes,
-            triggers: triggers,
-            foreignKeys: foreignKeys
+            triggers: triggers
         )
     }
 
@@ -82,27 +80,15 @@ public struct DatabaseSchemaBuilder {
         }
     }
 
-    private func buildForeignKeys(from entity: any EntityProtocol.Type) -> [ForeignKeySchema] {
-        entity.foreignKeys.map { fk in
-            ForeignKeySchema(
-                column: fk.column,
-                referencesTable: fk.referencesTable,
-                referencesColumn: fk.referencesColumn,
-                onDelete: ForeignKeySchema.ForeignKeyAction(rawValue: fk.onDelete.rawValue) ?? .noAction,
-                onUpdate: ForeignKeySchema.ForeignKeyAction(rawValue: fk.onUpdate.rawValue) ?? .noAction
-            )
-        }
-    }
-
-    private func buildTriggers(for tableName: String) -> [TriggerSchema] {
+    private func buildTriggers(for entity: any EntityProtocol.Type) -> [TriggerSchema] {
         var triggers: [TriggerSchema] = []
 
         if options.createUpdateTrigger {
-            triggers.append(buildUpdateTrigger(for: tableName))
+            triggers.append(buildUpdateTrigger(for: entity.tableName))
         }
 
         if options.trackDeletes {
-            triggers.append(buildDeleteTrigger(for: tableName))
+            triggers.append(buildDeleteTrigger(for: entity))
         }
 
         return triggers
@@ -134,11 +120,26 @@ public struct DatabaseSchemaBuilder {
         )
     }
 
-    private func buildDeleteTrigger(for tableName: String) -> TriggerSchema {
+    private func buildDeleteTrigger(for entity: any EntityProtocol.Type) -> TriggerSchema {
+        let tableName = entity.tableName
         let name = "__swiftstore_delete_\(tableName)"
+
+        // Build json_object arguments from sync key columns
+        // For BLOB columns (like UUIDV4), we use hex() to convert to string
+        // since json_object cannot handle BLOB values directly
+        let syncKeyCols = entity.syncKeyColumns
+        let jsonArgs = syncKeyCols.map { col -> String in
+            // Check if column is blob type to apply hex() conversion
+            if let colDef = entity.columns.first(where: { $0.name == col }), colDef.type == .blob {
+                return "'\(col)', hex(OLD.\(col))"
+            } else {
+                return "'\(col)', OLD.\(col)"
+            }
+        }.joined(separator: ", ")
+
         let body = """
-            INSERT INTO __swiftstore_pending_deletes (table_name, entity_id)
-            VALUES ('\(tableName)', OLD.id);
+            INSERT INTO \(Self.pendingDeletesTableName) (table_name, sync_key_json)
+            VALUES ('\(tableName)', json_object(\(jsonArgs)));
         """
         let sql = """
             CREATE TRIGGER IF NOT EXISTS \(name)
@@ -165,7 +166,7 @@ public struct DatabaseSchemaBuilder {
             columns: [
                 ColumnSchema(name: "id", type: "INTEGER", isPrimaryKey: true),
                 ColumnSchema(name: "table_name", type: "TEXT"),
-                ColumnSchema(name: "entity_id", type: "BLOB")
+                ColumnSchema(name: "sync_key_json", type: "TEXT")
             ]
         )
     }
