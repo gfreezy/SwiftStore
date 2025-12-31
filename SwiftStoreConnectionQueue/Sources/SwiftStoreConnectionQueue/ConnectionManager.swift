@@ -142,6 +142,7 @@ public actor WritableConnectionActor {
     }
 
     /// Execute a block with the connection
+    /// To ensure connection is not used concurrently, block must not be async, it will be executed in sequence.
     func run<T>(_ block: @Sendable (SQLiteConnection) throws -> T) throws -> T {
         try block(connection)
     }

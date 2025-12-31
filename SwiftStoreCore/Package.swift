@@ -26,7 +26,7 @@ let package = Package(
                 .product(name: "SwiftStoreMacros", package: "SwiftStoreMacros"),
                 .product(name: "SwiftStoreProtocols", package: "SwiftStoreProtocols"),
             ],
-            path: "Sources/SwiftStore"
+            path: "Sources/SwiftStoreCore"
         ),
         .testTarget(
             name: "SwiftStoreTests",
