@@ -110,7 +110,7 @@ enum MacroHelpers {
         let baseType = swiftType.replacingOccurrences(of: "?", with: "")
 
         switch baseType {
-        case "String", "UUID":
+        case "String", "UUID", "URL":
             return "text"
         case "UUIDV4", "Data":
             return "blob"
@@ -134,7 +134,7 @@ enum MacroHelpers {
         let baseType = typeString.replacingOccurrences(of: "?", with: "")
         let primitives = ["String", "Int", "Int8", "Int16", "Int32", "Int64",
                          "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
-                         "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV4"]
+                         "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV4", "URL"]
         return primitives.contains(baseType)
     }
 
@@ -208,7 +208,7 @@ struct PropertyInfo {
 }
 
 extension StructDeclSyntax {
-    /// Extract all stored properties from a struct
+    /// Extract all stored properties from a struct (excludes computed properties)
     func extractProperties() -> [PropertyInfo] {
         var properties: [PropertyInfo] = []
 
@@ -217,6 +217,11 @@ extension StructDeclSyntax {
                 let isLet = varDecl.bindingSpecifier.tokenKind == .keyword(.let)
 
                 for binding in varDecl.bindings {
+                    // Skip computed properties (those with accessor blocks like get/set)
+                    if binding.accessorBlock != nil {
+                        continue
+                    }
+
                     if let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
                        let typeAnnotation = binding.typeAnnotation {
                         let name = identifier.identifier.text

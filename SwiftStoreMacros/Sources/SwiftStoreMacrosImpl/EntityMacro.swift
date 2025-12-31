@@ -85,7 +85,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let encodeDecl = try generateSqliteEncode(properties: properties)
 
         // Generate sqliteDecode(from:) method
-        let decodeDecl = try generateSqliteDecode(properties: properties, structName: structName)
+        let decodeDecl = try generateSqliteDecode(properties: properties, structName: structName, hasSyncKey: hasSyncKey)
 
         // Parse #Index markers from struct body
         let indexInfos = IndexMarkerParser.parse(from: structDecl.memberBlock.members, tableName: tableName)
@@ -426,6 +426,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             return ".real(\(name).timeIntervalSince1970)"
         case "UUID":
             return ".text(\(name).uuidString)"
+        case "URL":
+            return ".text(\(name).absoluteString)"
         case "UUIDV4":
             return ".blob(\(name).data)"
         case "Data":
@@ -445,13 +447,13 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     }
 
     /// Generate the sqliteDecode(from:) method
-    private static func generateSqliteDecode(properties: [PropertyInfo], structName: String) throws -> DeclSyntax {
+    private static func generateSqliteDecode(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws -> DeclSyntax {
         var decodings: [String] = []
         var constructorArgs: [String] = []
 
         for (index, prop) in properties.enumerated() {
             let varName = "_\(prop.name)"
-            let decoding = generateDecodeExpression(for: prop, index: index)
+            let decoding = generateDecodeExpression(for: prop, index: index, hasSyncKey: hasSyncKey)
             decodings.append("let \(varName) = \(decoding)")
             constructorArgs.append("\(prop.name): \(varName)")
         }
@@ -470,11 +472,29 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     }
 
     /// Generate decode expression for a property
-    private static func generateDecodeExpression(for prop: PropertyInfo, index: Int) -> String {
+    /// Uses default values when decoding fails or value is NULL
+    private static func generateDecodeExpression(for prop: PropertyInfo, index: Int, hasSyncKey: Bool) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
         // Check if decoding needs try (JSON types - all non-primitive types except UUIDV4)
         let needsTry = !prop.isPrimitive && baseType != "UUIDV4"
+
+        // Determine the effective default value (explicit or built-in)
+        let effectiveDefault: String?
+        if let propDefault = prop.defaultValue {
+            // Use explicit default value
+            if propDefault == "[]" {
+                effectiveDefault = "\(baseType)()"
+            } else {
+                effectiveDefault = propDefault
+            }
+        } else if prop.name == "id" && !hasSyncKey {
+            effectiveDefault = "UUIDV4()"
+        } else if prop.name == "createdAt" || prop.name == "updatedAt" {
+            effectiveDefault = "Date()"
+        } else {
+            effectiveDefault = nil
+        }
 
         if prop.isOptional {
             // For optional types:
@@ -490,27 +510,19 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                         return \(innerTry)\(decodeValue(type: baseType, index: index, defaultValue: nil))
                     }()
                 """
-        } else {
+        } else if let defaultVal = effectiveDefault {
             // For non-optional types with default value, use closure to handle NULL
-            if let defaultValue = prop.defaultValue {
-                let innerTry = needsTry ? "try " : ""
-                let outerTry = needsTry ? "try " : ""
-                // For empty array literals, use explicit type annotation to avoid [Any] inference
-                let typedDefault: String
-                if defaultValue == "[]" {
-                    typedDefault = "\(baseType)()"
-                } else {
-                    typedDefault = defaultValue
-                }
-                return """
-                    \(outerTry){
-                            if statement.isNull(Int32(\(index))) {
-                                return \(typedDefault)
-                            }
-                            return \(innerTry)\(decodeValue(type: baseType, index: index, defaultValue: defaultValue))
-                        }()
-                    """
-            }
+            let innerTry = needsTry ? "try " : ""
+            let outerTry = needsTry ? "try " : ""
+            return """
+                \(outerTry){
+                        if statement.isNull(Int32(\(index))) {
+                            return \(defaultVal)
+                        }
+                        return \(innerTry)\(decodeValue(type: baseType, index: index, defaultValue: defaultVal))
+                    }()
+                """
+        } else {
             // For non-optional types without default value
             if needsTry {
                 return "try \(decodeValue(type: baseType, index: index, defaultValue: nil))"
@@ -523,11 +535,14 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     /// - Parameters:
     ///   - type: The Swift type name
     ///   - index: The column index
-    ///   - defaultValue: Optional default value to use when NULL (for non-optional types)
+    ///   - defaultValue: Optional default value to use as fallback when decoding fails
     private static func decodeValue(type: String, index: Int, defaultValue: String?) -> String {
         // For types that need a fallback, use the default value if provided
         let stringFallback = defaultValue ?? "\"\""
         let dataFallback = defaultValue ?? "Data()"
+        let uuidv4Fallback = defaultValue ?? "UUIDV4()"
+        let uuidFallback = defaultValue ?? "UUID()"
+        let urlFallback = defaultValue ?? "URL(string: \"about:blank\")!"
 
         switch type {
         case "String":
@@ -561,9 +576,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         case "Date":
             return "Date(timeIntervalSince1970: statement.columnDouble(Int32(\(index))))"
         case "UUID":
-            return "UUID(uuidString: statement.columnString(Int32(\(index))) ?? \"\") ?? UUID()"
+            return "UUID(uuidString: statement.columnString(Int32(\(index))) ?? \"\") ?? \(uuidFallback)"
+        case "URL":
+            return "URL(string: statement.columnString(Int32(\(index))) ?? \"about:blank\") ?? \(urlFallback)"
         case "UUIDV4":
-            return "UUIDV4(data: statement.columnData(Int32(\(index))) ?? Data()) ?? UUIDV4()"
+            return "UUIDV4(data: statement.columnData(Int32(\(index))) ?? Data()) ?? \(uuidv4Fallback)"
         case "Data":
             return "statement.columnData(Int32(\(index))) ?? \(dataFallback)"
         default:
