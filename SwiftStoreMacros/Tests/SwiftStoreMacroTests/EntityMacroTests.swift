@@ -90,6 +90,15 @@ struct EntityMacroTests {
 
             extension User: SQLiteCodable {
             }
+
+            extension User: Identifiable {
+            }
+
+            extension User: Sendable {
+            }
+
+            extension User: Default {
+            }
             """,
             macros: testMacros
         )
@@ -173,6 +182,15 @@ struct EntityMacroTests {
 
             extension Profile: SQLiteCodable {
             }
+
+            extension Profile: Identifiable {
+            }
+
+            extension Profile: Sendable {
+            }
+
+            extension Profile: Default {
+            }
             """,
             macros: testMacros
         )
@@ -231,6 +249,15 @@ struct EntityMacroTests {
             }
 
             extension UserProfile: SQLiteCodable {
+            }
+
+            extension UserProfile: Identifiable {
+            }
+
+            extension UserProfile: Sendable {
+            }
+
+            extension UserProfile: Default {
             }
             """,
             macros: testMacros
@@ -374,6 +401,9 @@ struct EntityMacroTests {
             }
 
             extension UserWithSettings: Identifiable {
+            }
+
+            extension UserWithSettings: Sendable {
             }
 
             extension UserWithSettings: Default {
@@ -530,6 +560,9 @@ struct EntityMacroTests {
             extension UserWithOptionalSettings: Identifiable {
             }
 
+            extension UserWithOptionalSettings: Sendable {
+            }
+
             extension UserWithOptionalSettings: Default {
             }
             """,
@@ -671,6 +704,9 @@ struct EntityMacroTests {
             }
 
             extension TaskWithStatus: Identifiable {
+            }
+
+            extension TaskWithStatus: Sendable {
             }
 
             extension TaskWithStatus: Default {
@@ -820,7 +856,480 @@ struct EntityMacroTests {
             extension UserWithDefaultSettings: Identifiable {
             }
 
+            extension UserWithDefaultSettings: Sendable {
+            }
+
             extension UserWithDefaultSettings: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    // MARK: - Sendable Conformance Tests
+
+    @Test("Entity macro generates Sendable conformance")
+    func testEntityGeneratesSendableConformance() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct SimpleEntity {
+                let id: UUIDV4
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct SimpleEntity {
+                let id: UUIDV4
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "simple_entity"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["name"] = .text(self.name)
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _name = statement.columnString(Int32(1)) ?? ""
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        id: _id,
+                        name: _name,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public init(
+                    id: UUIDV4 = UUIDV4(),
+                    name: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+            }
+
+            extension SimpleEntity: EntityProtocol {
+            }
+
+            extension SimpleEntity: SQLiteCodable {
+            }
+
+            extension SimpleEntity: Identifiable {
+            }
+
+            extension SimpleEntity: Sendable {
+            }
+
+            extension SimpleEntity: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    // MARK: - SyncKey Identifiable Tests
+
+    @Test("Entity with single SyncKey generates id computed property")
+    func testEntityWithSingleSyncKeyGeneratesIdProperty() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct UserByEmail {
+                #SyncKey<UserByEmail>(\\.email)
+                var email: String
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct UserByEmail {
+                var email: String
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "user_by_email"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "email", type: .text, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["email"] = .text(self.email)
+                    result["name"] = .text(self.name)
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _email = statement.columnString(Int32(0)) ?? ""
+                    let _name = statement.columnString(Int32(1)) ?? ""
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        email: _email,
+                        name: _name,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["email"]
+                }
+
+                public init(
+                    email: String,
+                    name: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.email = email
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case email
+                    case name
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.email = try container.decode(String.self, forKey: .email)
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+
+                public var id: String {
+                    email
+                }
+            }
+
+            extension UserByEmail: EntityProtocol {
+            }
+
+            extension UserByEmail: SQLiteCodable {
+            }
+
+            extension UserByEmail: Identifiable {
+            }
+
+            extension UserByEmail: Sendable {
+            }
+
+            extension UserByEmail: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity with composite SyncKey generates SyncKeyID struct and id property")
+    func testEntityWithCompositeSyncKeyGeneratesSyncKeyIDStruct() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Employee {
+                #SyncKey<Employee>(\\.companyId, \\.employeeCode)
+                var companyId: String
+                var employeeCode: String
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Employee {
+                var companyId: String
+                var employeeCode: String
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "employee"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "company_id", type: .text),
+                        ColumnDefinition(name: "employee_code", type: .text),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["company_id"] = .text(self.companyId)
+                    result["employee_code"] = .text(self.employeeCode)
+                    result["name"] = .text(self.name)
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _companyId = statement.columnString(Int32(0)) ?? ""
+                    let _employeeCode = statement.columnString(Int32(1)) ?? ""
+                    let _name = statement.columnString(Int32(2)) ?? ""
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
+                    return Self(
+                        companyId: _companyId,
+                        employeeCode: _employeeCode,
+                        name: _name,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["company_id", "employee_code"]
+                }
+
+                public init(
+                    companyId: String,
+                    employeeCode: String,
+                    name: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.companyId = companyId
+                    self.employeeCode = employeeCode
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case companyId
+                    case employeeCode
+                    case name
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.companyId = try container.decode(String.self, forKey: .companyId)
+                    self.employeeCode = try container.decode(String.self, forKey: .employeeCode)
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+
+                public struct SyncKeyID: Hashable, Sendable {
+                    public let companyId: String
+                    public let employeeCode: String
+                }
+
+                public var id: SyncKeyID {
+                    SyncKeyID(companyId: self.companyId, employeeCode: self.employeeCode)
+                }
+            }
+
+            extension Employee: EntityProtocol {
+            }
+
+            extension Employee: SQLiteCodable {
+            }
+
+            extension Employee: Identifiable {
+            }
+
+            extension Employee: Sendable {
+            }
+
+            extension Employee: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity with UUIDV4 SyncKey generates id computed property with UUIDV4 type")
+    func testEntityWithUUIDV4SyncKeyGeneratesIdProperty() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct DeviceRecord {
+                #SyncKey<DeviceRecord>(\\.deviceId)
+                var deviceId: UUIDV4
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct DeviceRecord {
+                var deviceId: UUIDV4
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "device_record"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "device_id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["device_id"] = .blob(self.deviceId.data)
+                    result["name"] = .text(self.name)
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _deviceId = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _name = statement.columnString(Int32(1)) ?? ""
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                    return Self(
+                        deviceId: _deviceId,
+                        name: _name,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["device_id"]
+                }
+
+                public init(
+                    deviceId: UUIDV4,
+                    name: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.deviceId = deviceId
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case deviceId
+                    case name
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.deviceId = try container.decode(UUIDV4.self, forKey: .deviceId)
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+
+                public var id: UUIDV4 {
+                    deviceId
+                }
+            }
+
+            extension DeviceRecord: EntityProtocol {
+            }
+
+            extension DeviceRecord: SQLiteCodable {
+            }
+
+            extension DeviceRecord: Identifiable {
+            }
+
+            extension DeviceRecord: Sendable {
+            }
+
+            extension DeviceRecord: Default {
             }
             """,
             macros: testMacros

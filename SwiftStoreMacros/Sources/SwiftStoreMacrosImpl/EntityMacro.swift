@@ -140,6 +140,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl, defaultMarkerDecl]
 
+        // Generate id computed property for #SyncKey entities (for Identifiable conformance)
+        if let syncKeyInfo = syncKeyInfo {
+            let idDecl = generateSyncKeyIdProperty(syncKeyInfo: syncKeyInfo, properties: properties)
+            result.append(idDecl)
+        }
+
         // Generate indexes (including auto-generated unique index for sync key)
         var indexDefStrings: [String] = []
 
@@ -584,12 +590,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+        guard declaration.is(StructDeclSyntax.self) else {
             return []
         }
-
-        let properties = structDecl.extractProperties()
-        let hasIdField = properties.contains(where: { $0.name == "id" })
 
         var extensions: [ExtensionDeclSyntax] = []
 
@@ -609,14 +612,20 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             extensions.append(ext)
         }
 
-        // Identifiable conformance only if entity has id field
-        if hasIdField {
-            let identifiable: DeclSyntax = """
-                extension \(type.trimmed): Identifiable {}
-                """
-            if let ext = identifiable.as(ExtensionDeclSyntax.self) {
-                extensions.append(ext)
-            }
+        // Identifiable conformance (always - either via id field or #SyncKey generated id)
+        let identifiable: DeclSyntax = """
+            extension \(type.trimmed): Identifiable {}
+            """
+        if let ext = identifiable.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
+
+        // Sendable conformance
+        let sendable: DeclSyntax = """
+            extension \(type.trimmed): Sendable {}
+            """
+        if let ext = sendable.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
         }
 
         // Default protocol conformance (marker protocol for fault-tolerant decoding)
@@ -628,6 +637,50 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         }
 
         return extensions
+    }
+
+    /// Generate id computed property for entities using #SyncKey
+    /// This enables Identifiable conformance based on sync key fields
+    private static func generateSyncKeyIdProperty(syncKeyInfo: SyncKeyMarkerParser.SyncKeyInfo, properties: [PropertyInfo]) -> DeclSyntax {
+        let propertyNames = syncKeyInfo.propertyNames
+
+        if propertyNames.count == 1 {
+            // Single sync key: id is the value directly
+            let propName = propertyNames[0]
+            // Find the property type
+            if let prop = properties.first(where: { $0.name == propName }) {
+                return """
+                    public var id: \(raw: prop.type) { \(raw: propName) }
+                    """
+            }
+            // Fallback if property not found
+            return """
+                public var id: String { String(describing: \(raw: propName)) }
+                """
+        } else {
+            // Composite sync key: create a struct to hold all key values
+            // Generate a nested SyncKeyID struct
+            var structFields: [String] = []
+            var fieldAssignments: [String] = []
+
+            for propName in propertyNames {
+                if let prop = properties.first(where: { $0.name == propName }) {
+                    structFields.append("public let \(propName): \(prop.type)")
+                    fieldAssignments.append("\(propName): self.\(propName)")
+                }
+            }
+
+            let fieldsCode = structFields.joined(separator: "\n            ")
+            let assignmentsCode = fieldAssignments.joined(separator: ", ")
+
+            return """
+                public struct SyncKeyID: Hashable, Sendable {
+                    \(raw: fieldsCode)
+                }
+
+                public var id: SyncKeyID { SyncKeyID(\(raw: assignmentsCode)) }
+                """
+        }
     }
 
     /// Validate that required fields exist with correct types

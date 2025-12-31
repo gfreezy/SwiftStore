@@ -15,7 +15,7 @@
 ///     var fontSize: Int = 14
 /// }
 /// ```
-public protocol Default {
+public protocol Default: Codable, Sendable {
     /// Internal marker to prevent manual conformance.
     /// Only @Default macro can implement this.
     static var _defaultMacroMarker: _DefaultMacroMarker { get }

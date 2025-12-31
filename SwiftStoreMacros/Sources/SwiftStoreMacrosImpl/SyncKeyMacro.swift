@@ -31,6 +31,8 @@ struct SyncKeyMarkerParser {
     struct SyncKeyInfo {
         /// Column names for the sync key (snake_case)
         let columns: [String]
+        /// Property names for the sync key (camelCase, as declared in source)
+        let propertyNames: [String]
     }
 
     /// Parse #SyncKey marker from struct members
@@ -49,12 +51,14 @@ struct SyncKeyMarkerParser {
 
     private static func parseSyncKeyMacro(_ arguments: LabeledExprListSyntax) -> SyncKeyInfo? {
         var columns: [String] = []
+        var propertyNames: [String] = []
 
         for arg in arguments {
             // All arguments should be keypaths (no labels)
             if arg.label == nil {
-                if let columnName = extractColumnName(from: arg.expression) {
+                if let (columnName, propertyName) = extractColumnAndPropertyName(from: arg.expression) {
                     columns.append(columnName)
+                    propertyNames.append(propertyName)
                 }
             }
         }
@@ -63,12 +67,12 @@ struct SyncKeyMarkerParser {
             return nil
         }
 
-        return SyncKeyInfo(columns: columns)
+        return SyncKeyInfo(columns: columns, propertyNames: propertyNames)
     }
 
-    /// Extract column name from a keypath expression
-    /// e.g., \.email -> "email", \.companyId -> "company_id"
-    private static func extractColumnName(from keyPath: ExprSyntax) -> String? {
+    /// Extract column name and property name from a keypath expression
+    /// e.g., \.email -> ("email", "email"), \.companyId -> ("company_id", "companyId")
+    private static func extractColumnAndPropertyName(from keyPath: ExprSyntax) -> (columnName: String, propertyName: String)? {
         guard let keyPathExpr = keyPath.as(KeyPathExprSyntax.self) else {
             return nil
         }
@@ -80,6 +84,7 @@ struct SyncKeyMarkerParser {
         }
 
         let propertyName = property.declName.baseName.text
-        return MacroHelpers.camelToSnakeCase(propertyName)
+        let columnName = MacroHelpers.camelToSnakeCase(propertyName)
+        return (columnName, propertyName)
     }
 }
