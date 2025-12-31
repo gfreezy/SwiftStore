@@ -1,70 +1,51 @@
-.PHONY: test test-all test-core test-macros test-sync test-change-tracker build clean
+.PHONY: test test-all build clean
 
-# Run all tests (continues on failure)
+# Run all tests
 test: test-all
 
 test-all:
 	@echo "=== Running all tests ==="
-	@$(MAKE) test-core || true
-	@$(MAKE) test-macros || true
-	@$(MAKE) test-sync || true
-	@$(MAKE) test-change-tracker || true
+	swift test
 	@echo "=== All tests completed ==="
 
-# Run only stable tests (core + macros)
-test-stable: test-core test-macros
-	@echo "Stable tests completed!"
-
-# Individual package tests
+# Run specific test target
 test-core:
-	@echo ""
 	@echo "=== SwiftStoreCore Tests ==="
-	@cd SwiftStoreCore && swift test
+	swift test --filter SwiftStoreTests
 
 test-macros:
-	@echo ""
 	@echo "=== SwiftStoreMacros Tests ==="
-	@cd SwiftStoreMacros && swift test
+	swift test --filter SwiftStoreMacroTests
 
 test-sync:
-	@echo ""
 	@echo "=== SwiftStoreSync Tests ==="
-	@cd SwiftStoreSync && swift test
+	swift test --filter SwiftStoreSyncTests
 
 test-change-tracker:
-	@echo ""
 	@echo "=== SwiftStoreChangeTracker Tests ==="
-	@cd SwiftStoreChangeTracker && swift test
+	swift test --filter SwiftStoreChangeTrackerTests
 
-# Build all packages
+# Build all
 build:
-	@echo "Building all packages..."
-	@cd SwiftStoreProtocols && swift build
-	@cd SwiftStoreMacros && swift build
-	@cd SwiftStoreCore && swift build
-	@cd SwiftStoreChangeTracker && swift build
-	@cd SwiftStoreSync && swift build
-	@cd SwiftStoreConnectionQueue && swift build
+	@echo "Building..."
+	swift build
 	@echo "Build completed!"
 
-# Clean all build artifacts
+# Build release
+release:
+	@echo "Building release..."
+	swift build -c release
+	@echo "Release build completed!"
+
+# Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	@cd SwiftStoreProtocols && swift package clean
-	@cd SwiftStoreMacros && swift package clean
-	@cd SwiftStoreCore && swift package clean
-	@cd SwiftStoreChangeTracker && swift package clean
-	@cd SwiftStoreSync && swift package clean
-	@cd SwiftStoreConnectionQueue && swift package clean
-	@rm -rf .build
+	swift package clean
+	rm -rf .build
 	@echo "Clean completed!"
 
-# Run tests in parallel (faster but output may be interleaved)
+# Run tests in parallel
 test-parallel:
 	@echo "Running all tests in parallel..."
-	@cd SwiftStoreCore && swift test &
-	@cd SwiftStoreMacros && swift test &
-	@cd SwiftStoreSync && swift test &
-	@cd SwiftStoreChangeTracker && swift test &
-	@wait
+	swift test --parallel
 	@echo "All tests completed!"

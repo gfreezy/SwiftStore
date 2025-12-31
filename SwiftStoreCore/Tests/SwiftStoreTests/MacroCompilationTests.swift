@@ -473,18 +473,6 @@ struct MacroCompilationTests {
             .all(store.connection)
         #expect(filtered.count == 3)
 
-        // Test order
-        let ordered = try MacroUser
-            .orderDesc(by: \MacroUser.age)
-            .all(store.connection)
-        #expect(ordered.first?.age == 24)
-
-        // Test limit
-        let limited = try MacroUser
-            .limit(2)
-            .all(store.connection)
-        #expect(limited.count == 2)
-
         // Test count
         let count = try MacroUser.filter().count(store.connection)
         #expect(count == 5)

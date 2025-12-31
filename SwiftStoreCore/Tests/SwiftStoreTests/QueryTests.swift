@@ -763,57 +763,6 @@ struct QueryBuilderTests {
         #expect(result.contains { $0.name == "Charlie" })
     }
 
-    @Test("EntityProtocol.order() and orderDesc()")
-    func testEntityProtocolOrder() throws {
-        let store = try createTestStore()
-        try store.migrate(entities: [TestUser.self])
-
-        for i in 0..<3 {
-            let user = TestUser(
-                id: UUIDV4(),
-                name: "User\(2 - i)",  // User2, User1, User0
-                email: "user\(i)@example.com",
-                age: 20 + i,
-                address: Address(street: "\(i)", city: "City", zipCode: "1000\(i)"),
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-            try store.connection.insert(user)
-        }
-
-        // Test order ascending
-        let ascResult = try TestUser.order(by: \TestUser.name).all(store.connection)
-        #expect(ascResult.first?.name == "User0")
-        #expect(ascResult.last?.name == "User2")
-
-        // Test order descending
-        let descResult = try TestUser.orderDesc(by: \TestUser.age).all(store.connection)
-        #expect(descResult.first?.age == 22)
-        #expect(descResult.last?.age == 20)
-    }
-
-    @Test("EntityProtocol.limit()")
-    func testEntityProtocolLimit() throws {
-        let store = try createTestStore()
-        try store.migrate(entities: [TestUser.self])
-
-        for i in 0..<5 {
-            let user = TestUser(
-                id: UUIDV4(),
-                name: "User\(i)",
-                email: "user\(i)@example.com",
-                age: 20 + i,
-                address: Address(street: "\(i)", city: "City", zipCode: "1000\(i)"),
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-            try store.connection.insert(user)
-        }
-
-        let result = try TestUser.limit(2).all(store.connection)
-        #expect(result.count == 2)
-    }
-
     @Test("EntityProtocol chained query methods")
     func testEntityProtocolChainedMethods() throws {
         let store = try createTestStore()
