@@ -866,6 +866,378 @@ struct EntityMacroTests {
         )
     }
 
+    // MARK: - SqliteDecode Default Value Tests
+
+    @Test("Entity sqliteDecode uses built-in defaults for id, createdAt, updatedAt")
+    func testEntitySqliteDecodeUsesBuiltInDefaults() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Article {
+                let id: UUIDV4
+                var title: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Article {
+                let id: UUIDV4
+                var title: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "article"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "title", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["title"] = .text(self.title)
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = {
+                            if statement.isNull(Int32(0)) {
+                                return UUIDV4()
+                            }
+                            guard let data = statement.columnData(Int32(0)),
+                                  let value = UUIDV4(data: data) else {
+                                return UUIDV4()
+                            }
+                            return value
+                        }()
+                    let _title = statement.columnString(Int32(1)) ?? ""
+                    let _createdAt = {
+                            if statement.isNull(Int32(2)) {
+                                return Date()
+                            }
+                            return Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
+                        }()
+                    let _updatedAt = {
+                            if statement.isNull(Int32(3)) {
+                                return Date()
+                            }
+                            return Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
+                        }()
+                    return Self(
+                        id: _id,
+                        title: _title,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public init(
+                    id: UUIDV4 = UUIDV4(),
+                    title: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.title = title
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case title
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.title = try container.decode(String.self, forKey: .title)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+            }
+
+            extension Article: EntityProtocol {
+            }
+
+            extension Article: SQLiteCodable {
+            }
+
+            extension Article: Identifiable {
+            }
+
+            extension Article: Sendable {
+            }
+
+            extension Article: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity sqliteDecode uses explicit property defaults")
+    func testEntitySqliteDecodeUsesExplicitDefaults() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct Config {
+                let id: UUIDV4
+                var name: String = "default"
+                var count: Int = 0
+                var isEnabled: Bool = true
+                var uuid: UUID = UUID()
+                var website: URL = URL(string: "https://example.com")!
+                var settings: NestedSettings = NestedSettings()
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct Config {
+                let id: UUIDV4
+                var name: String = "default"
+                var count: Int = 0
+                var isEnabled: Bool = true
+                var uuid: UUID = UUID()
+                var website: URL = URL(string: "https://example.com")!
+                var settings: NestedSettings = NestedSettings()
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "config"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "count", type: .integer),
+                        ColumnDefinition(name: "is_enabled", type: .integer),
+                        ColumnDefinition(name: "uuid", type: .text),
+                        ColumnDefinition(name: "website", type: .text),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["name"] = .text(self.name)
+                    result["count"] = .integer(Int64(self.count))
+                    result["is_enabled"] = .integer(self.isEnabled ? 1 : 0)
+                    result["uuid"] = .text(self.uuid.uuidString)
+                    result["website"] = .text(self.website.absoluteString)
+                    result["settings"] = try {
+                            let jsonData = try JSONEncoder().encode(self.settings)
+                            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                                throw StoreError.encodingFailed("Failed to encode \\(self.settings) to JSON")
+                            }
+                            return .text(jsonString)
+                        }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = {
+                            if statement.isNull(Int32(0)) {
+                                return UUIDV4()
+                            }
+                            guard let data = statement.columnData(Int32(0)),
+                                  let value = UUIDV4(data: data) else {
+                                return UUIDV4()
+                            }
+                            return value
+                        }()
+                    let _name = {
+                            if statement.isNull(Int32(1)) {
+                                return "default"
+                            }
+                            return statement.columnString(Int32(1)) ?? "default"
+                        }()
+                    let _count = {
+                            if statement.isNull(Int32(2)) {
+                                return 0
+                            }
+                            return Int(statement.columnInt64(Int32(2)))
+                        }()
+                    let _isEnabled = {
+                            if statement.isNull(Int32(3)) {
+                                return true
+                            }
+                            return statement.columnInt64(Int32(3)) != 0
+                        }()
+                    let _uuid = {
+                            if statement.isNull(Int32(4)) {
+                                return UUID()
+                            }
+                            guard let uuidString = statement.columnString(Int32(4)),
+                                  let value = UUID(uuidString: uuidString) else {
+                                return UUID()
+                            }
+                            return value
+                        }()
+                    let _website = {
+                            if statement.isNull(Int32(5)) {
+                                return URL(string: "https://example.com")!
+                            }
+                            guard let urlString = statement.columnString(Int32(5)),
+                                  let value = URL(string: urlString) else {
+                                return URL(string: "https://example.com")!
+                            }
+                            return value
+                        }()
+                    let _settings = {
+                            if statement.isNull(Int32(6)) {
+                                return NestedSettings()
+                            }
+                            guard let jsonString = statement.columnString(Int32(6)),
+                                  let jsonData = jsonString.data(using: .utf8) else {
+                                return NestedSettings()
+                            }
+                            do {
+                                return try JSONDecoder().decode(NestedSettings.self, from: jsonData)
+                            } catch {
+                                return NestedSettings()
+                            }
+                        }()
+                    let _createdAt = {
+                            if statement.isNull(Int32(7)) {
+                                return Date()
+                            }
+                            return Date(timeIntervalSince1970: statement.columnDouble(Int32(7)))
+                        }()
+                    let _updatedAt = {
+                            if statement.isNull(Int32(8)) {
+                                return Date()
+                            }
+                            return Date(timeIntervalSince1970: statement.columnDouble(Int32(8)))
+                        }()
+                    return Self(
+                        id: _id,
+                        name: _name,
+                        count: _count,
+                        isEnabled: _isEnabled,
+                        uuid: _uuid,
+                        website: _website,
+                        settings: _settings,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public init(
+                    id: UUIDV4 = UUIDV4(),
+                    name: String = "default",
+                    count: Int = 0,
+                    isEnabled: Bool = true,
+                    uuid: UUID = UUID(),
+                    website: URL = URL(string: "https://example.com")!,
+                    settings: NestedSettings = NestedSettings(),
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.count = count
+                    self.isEnabled = isEnabled
+                    self.uuid = uuid
+                    self.website = website
+                    self.settings = settings
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case count
+                    case isEnabled
+                    case uuid
+                    case website
+                    case settings
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "default"
+                    self.count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
+                    self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+                    self.uuid = try container.decodeIfPresent(UUID.self, forKey: .uuid) ?? UUID()
+                    self.website = try container.decodeIfPresent(URL.self, forKey: .website) ?? URL(string: "https://example.com")!
+                    self.settings = try Self._decodeNestedIfPresent(NestedSettings.self, from: container, forKey: .settings) ?? NestedSettings()
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                /// Helper to decode nested types with Default constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNested<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                    try container.decode(T.self, forKey: key)
+                }
+
+                /// Helper to decode optional nested types with Default constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNestedIfPresent<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                    try container.decodeIfPresent(T.self, forKey: key)
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+            }
+
+            extension Config: EntityProtocol {
+            }
+
+            extension Config: SQLiteCodable {
+            }
+
+            extension Config: Identifiable {
+            }
+
+            extension Config: Sendable {
+            }
+
+            extension Config: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     // MARK: - URL Type Tests
 
     @Test("Entity macro supports URL type")
@@ -926,12 +1298,12 @@ struct EntityMacroTests {
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
                     let _title = statement.columnString(Int32(1)) ?? ""
-                    let _url = URL(string: statement.columnString(Int32(2)) ?? "about:blank") ?? URL(string: "about:blank")!
+                    let _url = URL(string: statement.columnString(Int32(2)) ?? "") ?? URL(string: "about:blank")!
                     let _favicon = {
                             if statement.isNull(Int32(3)) {
                                 return Optional<URL>.none
                             }
-                            return URL(string: statement.columnString(Int32(3)) ?? "about:blank") ?? URL(string: "about:blank")!
+                            return URL(string: statement.columnString(Int32(3)) ?? "") ?? URL(string: "about:blank")!
                         }()
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(5)))

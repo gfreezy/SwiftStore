@@ -476,8 +476,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     private static func generateDecodeExpression(for prop: PropertyInfo, index: Int, hasSyncKey: Bool) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
-        // Check if decoding needs try (JSON types - all non-primitive types except UUIDV4)
-        let needsTry = !prop.isPrimitive && baseType != "UUIDV4"
+        // Check if this is a nested Codable type (non-primitive, not UUIDV4)
+        let isNestedCodable = !prop.isPrimitive && baseType != "UUIDV4"
 
         // Determine the effective default value (explicit or built-in)
         let effectiveDefault: String?
@@ -497,34 +497,106 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         }
 
         if prop.isOptional {
-            // For optional types:
-            // - The inner closure call needs try if it throws
-            // - The outer closure call also needs try because it contains a throwing call
-            let innerTry = needsTry ? "try " : ""
-            let outerTry = needsTry ? "try " : ""
+            // For optional nested Codable types
+            if isNestedCodable {
+                return """
+                    try {
+                            if statement.isNull(Int32(\(index))) {
+                                return Optional<\(baseType)>.none
+                            }
+                            guard let jsonString = statement.columnString(Int32(\(index))),
+                                  let jsonData = jsonString.data(using: .utf8) else {
+                                throw StoreError.decodingFailed("Failed to decode \(baseType) from column \(index)")
+                            }
+                            return try JSONDecoder().decode(\(baseType).self, from: jsonData)
+                        }()
+                    """
+            }
+            // For optional primitive types
             return """
-                \(outerTry){
+                {
                         if statement.isNull(Int32(\(index))) {
                             return Optional<\(baseType)>.none
                         }
-                        return \(innerTry)\(decodeValue(type: baseType, index: index, defaultValue: nil))
+                        return \(decodeValue(type: baseType, index: index, defaultValue: nil))
                     }()
                 """
         } else if let defaultVal = effectiveDefault {
-            // For non-optional types with default value, use closure to handle NULL
-            let innerTry = needsTry ? "try " : ""
-            let outerTry = needsTry ? "try " : ""
-            return """
-                \(outerTry){
-                        if statement.isNull(Int32(\(index))) {
-                            return \(defaultVal)
-                        }
-                        return \(innerTry)\(decodeValue(type: baseType, index: index, defaultValue: defaultVal))
-                    }()
-                """
+            // For non-optional nested Codable types with default value
+            // Any error should fall back to default, not throw
+            if isNestedCodable {
+                return """
+                    {
+                            if statement.isNull(Int32(\(index))) {
+                                return \(defaultVal)
+                            }
+                            guard let jsonString = statement.columnString(Int32(\(index))),
+                                  let jsonData = jsonString.data(using: .utf8) else {
+                                return \(defaultVal)
+                            }
+                            do {
+                                return try JSONDecoder().decode(\(baseType).self, from: jsonData)
+                            } catch {
+                                return \(defaultVal)
+                            }
+                        }()
+                    """
+            }
+            // For non-optional primitive types with default value
+            // Use guard pattern for types with failable initializers
+            switch baseType {
+            case "UUIDV4":
+                return """
+                    {
+                            if statement.isNull(Int32(\(index))) {
+                                return \(defaultVal)
+                            }
+                            guard let data = statement.columnData(Int32(\(index))),
+                                  let value = UUIDV4(data: data) else {
+                                return \(defaultVal)
+                            }
+                            return value
+                        }()
+                    """
+            case "UUID":
+                return """
+                    {
+                            if statement.isNull(Int32(\(index))) {
+                                return \(defaultVal)
+                            }
+                            guard let uuidString = statement.columnString(Int32(\(index))),
+                                  let value = UUID(uuidString: uuidString) else {
+                                return \(defaultVal)
+                            }
+                            return value
+                        }()
+                    """
+            case "URL":
+                return """
+                    {
+                            if statement.isNull(Int32(\(index))) {
+                                return \(defaultVal)
+                            }
+                            guard let urlString = statement.columnString(Int32(\(index))),
+                                  let value = URL(string: urlString) else {
+                                return \(defaultVal)
+                            }
+                            return value
+                        }()
+                    """
+            default:
+                return """
+                    {
+                            if statement.isNull(Int32(\(index))) {
+                                return \(defaultVal)
+                            }
+                            return \(decodeValue(type: baseType, index: index, defaultValue: defaultVal))
+                        }()
+                    """
+            }
         } else {
             // For non-optional types without default value
-            if needsTry {
+            if isNestedCodable {
                 return "try \(decodeValue(type: baseType, index: index, defaultValue: nil))"
             }
             return decodeValue(type: baseType, index: index, defaultValue: nil)
@@ -578,7 +650,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         case "UUID":
             return "UUID(uuidString: statement.columnString(Int32(\(index))) ?? \"\") ?? \(uuidFallback)"
         case "URL":
-            return "URL(string: statement.columnString(Int32(\(index))) ?? \"about:blank\") ?? \(urlFallback)"
+            return "URL(string: statement.columnString(Int32(\(index))) ?? \"\") ?? \(urlFallback)"
         case "UUIDV4":
             return "UUIDV4(data: statement.columnData(Int32(\(index))) ?? Data()) ?? \(uuidv4Fallback)"
         case "Data":
