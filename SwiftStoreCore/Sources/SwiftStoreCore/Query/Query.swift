@@ -371,6 +371,7 @@ public struct Query<T: EntityProtocol> {
     // MARK: - Batch Operations
 
     /// Delete all records matching the query
+    @discardableResult
     public func deleteAll(_ connection: SQLiteConnection) throws -> Int {
         var sql = "DELETE FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -385,6 +386,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Update all records matching the query with given values (raw SQL values)
+    @discardableResult
     public func updateAll( _ connection: SQLiteConnection, _ assignments: [String: SQLiteValue]) throws -> Int {
         guard !assignments.isEmpty else { return 0 }
 
@@ -403,6 +405,7 @@ public struct Query<T: EntityProtocol> {
 
     /// Update all records matching the query using KeyPath assignments
     /// Example: `query.updateAll([\.status <- "active", \.updatedAt <- Date()])`
+    @discardableResult
     public func updateAll(_ connection: SQLiteConnection, _ assignments: [ColumnAssignment<T>]) throws -> Int {
         guard !assignments.isEmpty else { return 0 }
 
@@ -421,6 +424,7 @@ public struct Query<T: EntityProtocol> {
 
     /// Update all records matching the query using result builder syntax
     /// Example: `query.updateAll { $0.score += 100 }`
+    @discardableResult
     public func updateAll(_ connection: SQLiteConnection, @AssignmentBuilder<T> _ buildAssignments: (Columns<T>) -> [ColumnAssignment<T>]) throws -> Int {
         try updateAll(connection, buildAssignments(Columns()))
     }
