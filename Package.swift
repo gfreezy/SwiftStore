@@ -31,6 +31,7 @@ let package = Package(
         .package(path: "./SwiftStoreChangeTracker"),
         .package(path: "./SwiftStoreSync"),
         .package(path: "./SwiftStoreConnectionQueue"),
+        .package(path: "./SwiftStoreMacros"),
     ],
     targets: [
         // Re-export all SwiftStore sub-packages
