@@ -1,16 +1,16 @@
 # SwiftStoreSync
 
-SwiftStore 的同步层，提供多设备数据同步功能。
+Sync layer for SwiftStore, providing multi-device data synchronization functionality.
 
-## 概述
+## Overview
 
-此 package 实现了基于变更日志的同步机制，支持与远程服务器进行双向同步。采用 Last-Write-Wins (LWW) 策略解决冲突，通过逻辑时钟保证变更顺序。
+This package implements changelog-based synchronization mechanism, supporting bidirectional sync with remote servers. It uses Last-Write-Wins (LWW) strategy for conflict resolution and logical clocks to ensure change ordering.
 
-## 主要功能
+## Features
 
 ### SyncManager
 
-同步管理器，协调本地变更追踪和远程同步：
+Sync manager coordinating local change tracking and remote synchronization:
 
 ```swift
 let syncManager = try SyncManager(
@@ -23,37 +23,37 @@ let syncManager = try SyncManager(
         transport: myTransport,
         syncableEntities: [User.self, Post.self],
         schemaVersion: 1,
-        ntpToleranceMs: 5000  // NTP 时间校验容差
+        ntpToleranceMs: 5000  // NTP time validation tolerance
     )
 )
 
-// 执行同步
+// Perform sync
 let result = try await syncManager.sync()
 ```
 
 ### SyncConfig
 
-同步配置：
+Sync configuration:
 
 ```swift
 SyncConfig(
-    changeLogDbPath: String,          // 变更日志数据库路径
-    deviceId: UUIDV4,                 // 设备 ID
-    pendingDeletesTable: String,      // 待删除表名
-    registeredEntities: [EntityProtocol.Type],  // 追踪的实体类型
-    tickClock: () -> Int64,           // 时钟函数
-    transport: SyncTransport,         // 传输层实现
-    syncableEntities: [SyncableEntity.Type],    // 可同步的实体类型
-    syncConfiguration: SyncConfiguration,       // 批处理配置
-    initialState: SyncState,          // 初始同步状态
-    schemaVersion: Int,               // Schema 版本（用于兼容性）
-    ntpToleranceMs: Int64?            // NTP 容差（nil 禁用检查）
+    changeLogDbPath: String,          // Changelog database path
+    deviceId: UUIDV4,                 // Device ID
+    pendingDeletesTable: String,      // Pending deletes table name
+    registeredEntities: [EntityProtocol.Type],  // Entity types to track
+    tickClock: () -> Int64,           // Clock function
+    transport: SyncTransport,         // Transport layer implementation
+    syncableEntities: [SyncableEntity.Type],    // Syncable entity types
+    syncConfiguration: SyncConfiguration,       // Batch processing config
+    initialState: SyncState,          // Initial sync state
+    schemaVersion: Int,               // Schema version (for compatibility)
+    ntpToleranceMs: Int64?            // NTP tolerance (nil to disable)
 )
 ```
 
 ### SyncTransport
 
-传输层协议，需要实现与远程服务器的通信：
+Transport layer protocol, implement to communicate with remote server:
 
 ```swift
 public protocol SyncTransport: Sendable {
@@ -64,51 +64,51 @@ public protocol SyncTransport: Sendable {
 
 ### NTPClient
 
-NTP 时间校验客户端，确保设备时间同步：
+NTP time validation client, ensures device time synchronization:
 
 ```swift
 let result = try await NTPClient.verifyTime(toleranceMs: 5000)
 if !result.isValid {
-    // 设备时间偏差过大
+    // Device time offset too large
 }
 ```
 
 ### EntityApplier
 
-实体应用器，将远程变更应用到本地数据库：
+Entity applier, applies remote changes to local database:
 
 ```swift
-// 自动从 SyncableEntity 类型生成
+// Auto-generated from SyncableEntity types
 let registry = EntityApplierRegistry(syncableEntities: [User.self, Post.self])
 try registry.apply(change: syncChange, to: connection)
 ```
 
-## 同步流程
+## Sync Flow
 
-1. **Pull** - 从远程拉取变更
-   - 获取 `sinceClock` 之后的所有变更
-   - 过滤掉本设备的变更和高版本 schema 变更
-   - 批量应用到本地数据库（暂停 ChangeTracker）
+1. **Pull** - Pull changes from remote
+   - Get all changes after `sinceClock`
+   - Filter out changes from this device and higher schema version changes
+   - Apply to local database in batches (pausing ChangeTracker)
 
-2. **Push** - 推送本地变更到远程
-   - 读取本地 changelog 中的新变更
-   - 发送到远程服务器
-   - 更新本地同步状态
+2. **Push** - Push local changes to remote
+   - Read new changes from local changelog
+   - Send to remote server
+   - Update local sync state
 
-## Schema 版本兼容性
+## Schema Version Compatibility
 
-- 高版本设备可以处理低版本数据
-- 低版本设备会忽略高版本数据
-- 通过 `schemaVersion` 字段实现向前兼容
+- Higher version devices can process lower version data
+- Lower version devices ignore higher version data
+- Implemented via `schemaVersion` field for forward compatibility
 
-## 支持平台
+## Supported Platforms
 
 - macOS 14+
 - iOS 17+
 - tvOS 17+
 - watchOS 10+
 
-## 依赖
+## Dependencies
 
 - SwiftStoreCore
 - SwiftStoreChangeTracker

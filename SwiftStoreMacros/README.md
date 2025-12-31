@@ -1,16 +1,16 @@
 # SwiftStoreMacros
 
-SwiftStore 的宏定义层，提供 Swift 宏用于自动生成实体代码。
+Macro definitions layer for SwiftStore, providing Swift macros for auto-generating entity code.
 
-## 概述
+## Overview
 
-此 package 使用 Swift 宏技术自动生成 EntityProtocol 所需的样板代码，包括表名、列定义、编解码实现等。
+This package uses Swift macro technology to auto-generate boilerplate code required by EntityProtocol, including table names, column definitions, encoding/decoding implementations, etc.
 
-## 宏列表
+## Macros
 
 ### @Entity
 
-主宏，用于标记实体 struct：
+Main macro for marking entity structs:
 
 ```swift
 @Entity
@@ -23,29 +23,29 @@ struct User {
     let updatedAt: Date
 }
 
-// 自定义表名
+// Custom table name
 @Entity(tableName: "users_table")
 struct User { ... }
 ```
 
-自动生成：
-- `tableName` 静态属性
-- `columns` 列定义数组
-- `sqliteEncode()` / `sqliteDecode(from:)` 方法
-- `init` 带默认值的初始化器
-- `CodingKeys` 枚举
-- `EntityProtocol` / `SQLiteCodable` / `Identifiable` 协议遵循
+Auto-generates:
+- `tableName` static property
+- `columns` column definition array
+- `sqliteEncode()` / `sqliteDecode(from:)` methods
+- `init` initializer with default values
+- `CodingKeys` enum
+- `EntityProtocol` / `SQLiteCodable` / `Identifiable` conformance
 
 ### #Index
 
-在实体内部定义索引：
+Define indexes inside entity:
 
 ```swift
 @Entity
 struct User {
-    #Index<Self>(\.email, unique: true)           // 唯一索引
-    #Index<Self>(\.firstName, \.lastName)         // 复合索引
-    #Index<Self>(\.address.city)                  // 嵌套字段索引
+    #Index<Self>(\.email, unique: true)           // Unique index
+    #Index<Self>(\.firstName, \.lastName)         // Composite index
+    #Index<Self>(\.address.city)                  // Nested field index
 
     let id: UUIDV4
     var email: String
@@ -59,12 +59,12 @@ struct User {
 
 ### #SyncKey
 
-定义同步键，用于多设备同步场景：
+Define sync key for multi-device sync scenarios:
 
 ```swift
 @Entity
 struct Employee {
-    #SyncKey<Self>(\.companyId, \.employeeCode)  // 复合同步键
+    #SyncKey<Self>(\.companyId, \.employeeCode)  // Composite sync key
 
     var companyId: UUIDV4
     var employeeCode: String
@@ -74,29 +74,29 @@ struct Employee {
 }
 ```
 
-注意：使用 `#SyncKey` 时不需要 `id` 字段，两者互斥。
+Note: `#SyncKey` and `id` field are mutually exclusive.
 
 ### @Default
 
-为 Codable 结构体生成容错解码实现：
+Generate fault-tolerant Decodable conformance for Codable structs:
 
 ```swift
 @Default
 struct UserSettings: Codable {
-    var theme: String = "light"   // 缺失时使用默认值
-    var fontSize: Int = 14        // 缺失时使用默认值
-    var userId: String            // 必需字段
+    var theme: String = "light"   // Uses default if missing
+    var fontSize: Int = 14        // Uses default if missing
+    var userId: String            // Required field
 }
 ```
 
-## 支持平台
+## Supported Platforms
 
 - macOS 14+
 - iOS 17+
 - tvOS 17+
 - watchOS 10+
 
-## 依赖
+## Dependencies
 
 - swift-syntax 600.0.0+
 - SwiftStoreProtocols

@@ -1,18 +1,18 @@
 # SwiftStore
 
-基于 SQLite 的轻量级数据持久化框架，提供类似 SwiftData 的开发体验，支持多设备数据同步。
+A lightweight SQLite-based data persistence framework for Swift, with multi-device sync support.
 
-## 特性
+## Features
 
-- **声明式 API** - 使用 Swift 宏自动生成样板代码
-- **类型安全查询** - 编译时检查的查询构建器
-- **自动迁移** - 智能 Schema 迁移，无需手写 SQL
-- **多设备同步** - 基于变更日志的双向同步机制
-- **高性能** - SQLite WAL 模式 + 单写多读连接池
+- **Declarative API** - Swift macros auto-generate boilerplate code
+- **Type-safe Queries** - Compile-time checked query builder
+- **Auto Migration** - Smart schema migration without manual SQL
+- **Multi-device Sync** - Changelog-based bidirectional synchronization
+- **High Performance** - SQLite WAL mode + single-writer multiple-reader connection pool
 
-## 快速开始
+## Quick Start
 
-### 定义实体
+### Define Entities
 
 ```swift
 import SwiftStoreCore
@@ -28,43 +28,42 @@ struct User {
 }
 ```
 
-### 数据库操作
+### Database Operations
 
 ```swift
-// 创建连接
+// Create connection
 let connection = try SQLiteConnection(path: "database.sqlite")
 
-// 自动迁移
+// Auto migrate
 let migrator = Migrator(connection: connection)
 try migrator.apply(try migrator.plan(for: [User.self]))
 
-// 插入
+// Insert
 let user = User(name: "Alice", email: "alice@example.com", age: 25)
-try connection.insert(user)
+try user.insert(connection)
 
-// 查询
-let users: [User] = try connection.query {
-    $0.where(\.age > 18)
-      .orderBy(\.name)
-      .limit(10)
-}
+// Query
+let users = try User.filter { $0.age > 18 }
+    .order(by: \.name)
+    .limit(10)
+    .all(connection)
 
-// 更新
+// Update
 var updatedUser = user
 updatedUser.name = "Alice Smith"
-try connection.update(updatedUser)
+try updatedUser.update(connection)
 
-// 删除
-try connection.delete(user)
+// Delete
+try user.delete(connection)
 ```
 
-### 索引定义
+### Index Definition
 
 ```swift
 @Entity
 struct User {
-    #Index<Self>(\.email, unique: true)           // 唯一索引
-    #Index<Self>(\.firstName, \.lastName)         // 复合索引
+    #Index<Self>(\.email, unique: true)           // Unique index
+    #Index<Self>(\.firstName, \.lastName)         // Composite index
 
     let id: UUIDV4
     var email: String
@@ -75,10 +74,10 @@ struct User {
 }
 ```
 
-### 多设备同步
+### Multi-device Sync
 
 ```swift
-// 使用连接管理器（带同步功能）
+// Create connection manager with sync
 let manager = try ConnectionManager(
     path: "database.sqlite",
     syncConfig: SyncConfig(
@@ -91,22 +90,22 @@ let manager = try ConnectionManager(
     )
 )
 
-// 执行同步
+// Perform sync
 let result = try await manager.sync()
 print("Pulled: \(result.pulledCount), Pushed: \(result.pushedCount)")
 ```
 
-## 完整示例
+## Complete Example
 
-以下示例展示了 SwiftStore 的所有核心功能：
+The following example demonstrates all core features of SwiftStore:
 
-### 1. 定义模型
+### 1. Define Models
 
 ```swift
 import SwiftStoreCore
 import SwiftStoreConnectionQueue
 
-// MARK: - 嵌套 Codable 类型（支持 @Default 容错解码）
+// MARK: - Nested Codable Types (with @Default fault-tolerant decoding)
 
 @Default
 struct Address: Codable, Sendable {
@@ -129,22 +128,22 @@ struct UserSettings: Codable, Sendable {
     var notifications: Bool = true
 }
 
-// MARK: - 普通实体（使用 id 作为主键）
+// MARK: - Standard Entity (using id as primary key)
 
 @Entity
 struct User {
-    #Index<Self>(\.email, unique: true)              // 唯一索引
-    #Index<Self>(\.name)                             // 普通索引
-    #Index<Self>(\.address.city)                     // 嵌套字段索引
-    #Index<Self>(\.profile.settings.theme)           // 深层嵌套索引
+    #Index<Self>(\.email, unique: true)              // Unique index
+    #Index<Self>(\.name)                             // Regular index
+    #Index<Self>(\.address.city)                     // Nested field index
+    #Index<Self>(\.profile.settings.theme)           // Deep nested index
 
     let id: UUIDV4
     var name: String
     var email: String
     var age: Int?
-    var address: Address                             // 嵌套 Codable 类型
-    var profile: Profile                             // 深层嵌套类型
-    var tags: [String]                               // 数组类型
+    var address: Address                             // Nested Codable type
+    var profile: Profile                             // Deep nested type
+    var tags: [String]                               // Array type
     let createdAt: Date
     let updatedAt: Date
 }
@@ -152,7 +151,7 @@ struct User {
 @Entity
 struct Post {
     #Index<Self>(\.authorId)
-    #Index<Self>(\.status, \.createdAt)              // 复合索引
+    #Index<Self>(\.status, \.createdAt)              // Composite index
 
     let id: UUIDV4
     var authorId: UUIDV4
@@ -163,11 +162,11 @@ struct Post {
     let updatedAt: Date
 }
 
-// MARK: - 同步实体（使用 #SyncKey 作为主键，无 id 字段）
+// MARK: - Sync Entity (using #SyncKey as primary key, no id field)
 
 @Entity
 struct UserDevice {
-    #SyncKey<Self>(\.userId, \.deviceId)             // 复合同步键
+    #SyncKey<Self>(\.userId, \.deviceId)             // Composite sync key
 
     var userId: UUIDV4
     var deviceId: String
@@ -179,7 +178,7 @@ struct UserDevice {
 
 @Entity
 struct Favorite {
-    #SyncKey<Self>(\.userId, \.postId)               // 多对多关系的同步键
+    #SyncKey<Self>(\.userId, \.postId)               // Many-to-many sync key
 
     var userId: UUIDV4
     var postId: UUIDV4
@@ -188,20 +187,20 @@ struct Favorite {
 }
 ```
 
-### 2. 基础数据库操作
+### 2. Basic Database Operations
 
 ```swift
-// 创建数据库连接
+// Create database connection
 let dbPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("app.sqlite").path
 let connection = try SQLiteConnection(path: dbPath, options: .init(walMode: true))
 
-// 自动迁移 Schema
+// Auto migrate schema
 let migrator = Migrator(connection: connection)
 let plan = try migrator.plan(for: [User.self, Post.self, UserDevice.self, Favorite.self])
 try migrator.apply(plan)
 
-// 插入数据（实例方法风格）
+// Insert data (instance method style)
 let user = User(
     name: "Alice",
     email: "alice@example.com",
@@ -220,7 +219,7 @@ let post = Post(
 )
 try post.insert(connection)
 
-// 插入同步实体（使用 SyncKey）
+// Insert sync entity (using SyncKey)
 let device = UserDevice(
     userId: user.id,
     deviceId: "iPhone-001",
@@ -233,90 +232,90 @@ let favorite = Favorite(userId: user.id, postId: post.id)
 try favorite.insert(connection)
 ```
 
-### 3. 类型安全查询
+### 3. Type-safe Queries
 
 ```swift
-// 简单条件查询
+// Simple condition query
 let adultUsers = try User.filter { $0.age >= 18 }.all(connection)
 
-// 多条件查询
+// Multiple conditions
 let activeUsers = try User
     .filter { $0.age >= 18 && $0.profile.settings.theme == "dark" }
     .order(by: \.createdAt, ascending: false)
     .limit(20)
     .all(connection)
 
-// 嵌套字段查询
+// Nested field query
 let beijingUsers = try User.filter { $0.address.city == "Beijing" }.all(connection)
 
-// 可选字段查询
+// Optional field query
 let usersWithAge = try User.filter { $0.age != nil }.all(connection)
 
-// 复合条件
+// Compound conditions
 let publishedPosts = try Post
     .filter { $0.status == "published" && $0.authorId == user.id }
     .orderDesc(by: \.createdAt)
     .all(connection)
 
-// 通过同步键查询
+// Query by sync key
 let userDevices = try UserDevice.filter { $0.userId == user.id }.all(connection)
 
-// 通过 ID 查询
-let foundUser = try User.find(user.id, connection)        // 返回 Optional
-let requiredUser = try User.get(user.id, connection)      // 不存在则抛错
+// Query by ID
+let foundUser = try User.find(user.id, connection)        // Returns Optional
+let requiredUser = try User.get(user.id, connection)      // Throws if not found
 
-// 聚合查询
+// Aggregate queries
 let totalUsers = try User.count(connection)
 let hasUsers = try User.exists(connection)
 let firstUser = try User.first(connection)
 
-// 批量操作
+// Batch operations
 let deletedCount = try User.filter { $0.age < 18 }.deleteAll(connection)
 let updatedCount = try User.filter { $0.status == "inactive" }
     .updateAll(connection, [\.status <- "archived"])
 ```
 
-### 4. 更新和删除
+### 4. Update and Delete
 
 ```swift
-// 更新实体（实例方法）
+// Update entity (instance method)
 var updatedUser = user
 updatedUser.name = "Alice Smith"
 updatedUser.profile.bio = "Senior Swift Developer"
 try updatedUser.update(connection)
 
-// 保存实体（自动判断插入或更新）
+// Save entity (auto insert or update)
 var newOrExisting = User(name: "Bob", email: "bob@example.com", ...)
-try newOrExisting.save(connection)  // 不存在则插入，存在则更新
+try newOrExisting.save(connection)  // Insert if new, update if exists
 
-// 重新加载实体
+// Reload entity
 if let reloaded = try updatedUser.reload(connection) {
     print("Latest data: \(reloaded.name)")
 }
 
-// 删除实体（实例方法）
+// Delete entity (instance method)
 try post.delete(connection)
 try favorite.delete(connection)
 
-// 通过 ID 删除
+// Delete by ID
 try User.delete(user.id, connection)
 
-// 批量删除
+// Batch delete
 try User.filter { $0.age < 18 }.deleteAll(connection)
-try User.deleteAll(connection)  // 删除所有
+try User.deleteAll(connection)  // Delete all
 ```
 
-### 5. 连接池管理（单写多读）
+### 5. Connection Pool (Single-Writer Multiple-Reader)
 
 ```swift
-// 创建连接管理器
+// Create connection manager
 let manager = try ConnectionManager(
     path: dbPath,
     options: .init(walMode: true),
     maxReadConnections: 4
 )
 
-// 并发读取（使用连接池）
+// Concurrent reads (using connection pool)
 async let users1 = manager.read { conn in
     try User.filter { $0.age > 20 }.all(conn)
 }
@@ -325,7 +324,7 @@ async let users2 = manager.read { conn in
 }
 let (result1, result2) = try await (users1, users2)
 
-// 写操作（串行执行）
+// Write operations (serialized)
 try await manager.write { conn in
     try User(
         name: "Bob",
@@ -337,7 +336,7 @@ try await manager.write { conn in
     ).insert(conn)
 }
 
-// 便捷静态方法
+// Convenience static methods
 try await manager.read { conn in
     let count = try User.count(conn)
     let first = try User.first(conn)
@@ -345,15 +344,15 @@ try await manager.read { conn in
 }
 ```
 
-### 6. 多设备同步
+### 6. Multi-device Sync
 
 ```swift
-// 实现 SyncTransport 协议
+// Implement SyncTransport protocol
 struct MySyncTransport: SyncTransport {
     let serverURL: URL
 
     func pull(sinceClock: Int64, deviceId: UUIDV4) async throws -> PullResponse {
-        // 从服务器拉取变更
+        // Pull changes from server
         var request = URLRequest(url: serverURL.appendingPathComponent("pull"))
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode([
@@ -365,7 +364,7 @@ struct MySyncTransport: SyncTransport {
     }
 
     func push(changes: [SyncChange], deviceId: UUIDV4) async throws -> PushResponse {
-        // 推送本地变更到服务器
+        // Push local changes to server
         var request = URLRequest(url: serverURL.appendingPathComponent("push"))
         request.httpMethod = "POST"
         request.httpBody = try JSONEncoder().encode([
@@ -377,10 +376,10 @@ struct MySyncTransport: SyncTransport {
     }
 }
 
-// 创建混合逻辑时钟
+// Create hybrid logical clock
 let clock = HybridClock()
 
-// 配置同步
+// Configure sync
 let deviceId = UUIDV4()
 let syncConfig = SyncConfig(
     changeLogDbPath: dbPath.replacingOccurrences(of: ".sqlite", with: "_changelog.sqlite"),
@@ -392,20 +391,20 @@ let syncConfig = SyncConfig(
     syncableEntities: [User.self, Post.self, UserDevice.self, Favorite.self],
     syncConfiguration: SyncConfiguration(batchSize: 50, yieldBetweenBatches: true),
     schemaVersion: 1,
-    ntpToleranceMs: 5000  // 时间偏差容忍度 5 秒
+    ntpToleranceMs: 5000  // Time offset tolerance: 5 seconds
 )
 
-// 创建带同步功能的连接管理器
+// Create connection manager with sync
 let syncManager = try ConnectionManager(
     path: dbPath,
     syncConfig: syncConfig
 )
 
-// 检查同步状态
+// Check sync status
 if await syncManager.hasSyncEnabled {
     print("Sync is enabled")
 
-    // 执行同步
+    // Perform sync
     do {
         let result = try await syncManager.sync()
         print("""
@@ -421,7 +420,7 @@ if await syncManager.hasSyncEnabled {
         print("Sync error: \(error)")
     }
 
-    // 获取当前同步状态
+    // Get current sync state
     if let state = await syncManager.syncState {
         print("Last server clock: \(state.lastServerClock)")
         print("Last local clock: \(state.lastLocalClock)")
@@ -429,23 +428,23 @@ if await syncManager.hasSyncEnabled {
 }
 ```
 
-### 7. @Default 容错解码示例
+### 7. @Default Fault-tolerant Decoding
 
 ```swift
-// @Default 宏让解码更健壮，缺失字段使用默认值
+// @Default macro makes decoding more robust, missing fields use default values
 let json = """
 {
     "street": "456 Oak Ave"
 }
 """.data(using: .utf8)!
 
-// 即使缺少 city 和 zipCode，也能正常解码
+// Even if city and zipCode are missing, decoding succeeds
 let address = try JSONDecoder().decode(Address.self, from: json)
 print(address.street)   // "456 Oak Ave"
-print(address.city)     // "" (默认值)
-print(address.zipCode)  // "" (默认值)
+print(address.city)     // "" (default value)
+print(address.zipCode)  // "" (default value)
 
-// 嵌套场景也能正常工作
+// Nested scenarios also work
 let profileJson = """
 {
     "bio": "Hello"
@@ -454,28 +453,28 @@ let profileJson = """
 
 let profile = try JSONDecoder().decode(Profile.self, from: profileJson)
 print(profile.bio)                      // "Hello"
-print(profile.settings.theme)           // "light" (嵌套默认值)
-print(profile.settings.notifications)   // true (嵌套默认值)
+print(profile.settings.theme)           // "light" (nested default)
+print(profile.settings.notifications)   // true (nested default)
 ```
 
-## 架构
+## Architecture
 
 ```
 SwiftStore
-├── SwiftStoreProtocols     # 协议定义层
-├── SwiftStoreMacros        # 宏定义层
-├── SwiftStoreCore          # 核心层（连接、查询、迁移）
-├── SwiftStoreChangeTracker # 变更追踪层
-├── SwiftStoreSync          # 同步层
-└── SwiftStoreConnectionQueue # 连接管理层
+├── SwiftStoreProtocols     # Protocol definitions
+├── SwiftStoreMacros        # Macro definitions
+├── SwiftStoreCore          # Core (connection, query, migration)
+├── SwiftStoreChangeTracker # Change tracking
+├── SwiftStoreSync          # Sync layer
+└── SwiftStoreConnectionQueue # Connection management
 ```
 
-### 依赖关系
+### Dependency Graph
 
 ```
-SwiftStoreProtocols (无依赖)
+SwiftStoreProtocols (no dependencies)
        ↓
-SwiftStoreMacros (依赖 swift-syntax)
+SwiftStoreMacros (depends on swift-syntax)
        ↓
 SwiftStoreCore
        ↓
@@ -488,44 +487,44 @@ SwiftStoreConnectionQueue
 
 ## Packages
 
-| Package | 说明 |
-|---------|------|
-| [SwiftStoreProtocols](./SwiftStoreProtocols/) | 协议定义 - EntityProtocol、SQLiteCodable 等 |
-| [SwiftStoreMacros](./SwiftStoreMacros/) | 宏定义 - @Entity、#Index、#SyncKey、@Default |
-| [SwiftStoreCore](./SwiftStoreCore/) | 核心功能 - SQLite 连接、查询构建、迁移 |
-| [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | 变更追踪 - SQLite update hook 记录变更 |
-| [SwiftStoreSync](./SwiftStoreSync/) | 数据同步 - 双向同步、冲突解决、NTP 校验 |
-| [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | 连接管理 - 单写多读连接池 |
+| Package | Description |
+|---------|-------------|
+| [SwiftStoreProtocols](./SwiftStoreProtocols/) | Protocol definitions - EntityProtocol, SQLiteCodable, etc. |
+| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity, #Index, #SyncKey, @Default |
+| [SwiftStoreCore](./SwiftStoreCore/) | Core functionality - SQLite connection, query builder, migration |
+| [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
+| [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
+| [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool |
 
-## 支持平台
+## Supported Platforms
 
 - macOS 14+
 - iOS 17+
 - tvOS 17+
 - watchOS 10+
 
-## 要求
+## Requirements
 
 - Swift 6.0+
 - Xcode 16+
 
-## 安装
+## Installation
 
 ### Swift Package Manager
 
 ```swift
 dependencies: [
-    .package(path: "path/to/SwiftStore")
+    .package(url: "https://github.com/gfreezy/SwiftStore", from: "1.0.0")
 ]
 ```
 
-根据需要选择导入的模块：
+Import the modules you need:
 
 ```swift
-// 基础功能
+// Basic functionality
 import SwiftStoreCore
 
-// 带同步功能
+// With sync support
 import SwiftStoreConnectionQueue
 ```
 

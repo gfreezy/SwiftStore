@@ -1,16 +1,16 @@
 # SwiftStoreProtocols
 
-SwiftStore 的协议定义层，提供所有实体必须遵循的基础协议和类型定义。
+Protocol definitions layer for SwiftStore, providing base protocols and type definitions that all entities must conform to.
 
-## 概述
+## Overview
 
-此 package 定义了 SwiftStore 框架的核心协议，是整个框架的基础依赖。它不包含任何具体实现，仅提供协议和类型定义。
+This package defines the core protocols for the SwiftStore framework and serves as the foundation dependency. It contains no concrete implementations, only protocol and type definitions.
 
-## 主要内容
+## Contents
 
 ### EntityProtocol
 
-所有实体必须遵循的协议：
+The protocol that all entities must conform to:
 
 ```swift
 public protocol EntityProtocol: Codable, Sendable {
@@ -26,7 +26,7 @@ public protocol EntityProtocol: Codable, Sendable {
 
 ### SQLiteCodable
 
-SQLite 编解码协议，用于实体与 SQLite 值之间的转换：
+SQLite encoding/decoding protocols for converting between entities and SQLite values:
 
 ```swift
 public protocol SQLiteEncodable {
@@ -40,19 +40,19 @@ public protocol SQLiteDecodable {
 public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 ```
 
-### 其他类型
+### Other Types
 
-- `ColumnDefinition` - 列定义，描述数据库列的名称和类型
-- `SQLiteValue` - SQLite 值类型枚举
-- `SQLiteStatementProtocol` - SQLite 语句协议
-- `StoreError` - 错误类型定义
-- `UUIDV4` - UUID v4 类型，存储为 16 字节 BLOB
+- `ColumnDefinition` - Column definition describing database column name and type
+- `SQLiteValue` - SQLite value type enumeration
+- `SQLiteStatementProtocol` - SQLite statement protocol
+- `StoreError` - Error type definitions
+- `UUIDV4` - UUID v4 type, stored as 16-byte BLOB
 
-## 支持平台
+## Supported Platforms
 
 - macOS 14+
 - iOS 17+
 
-## 依赖
+## Dependencies
 
-无外部依赖。
+No external dependencies.

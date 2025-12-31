@@ -1,16 +1,16 @@
 # SwiftStoreChangeTracker
 
-SwiftStore 的变更追踪层，记录数据库所有变更用于同步。
+Change tracking layer for SwiftStore, recording all database changes for synchronization.
 
-## 概述
+## Overview
 
-此 package 使用 SQLite 的 update hook 机制自动捕获数据库变更（INSERT/UPDATE/DELETE），将变更记录写入独立的 changelog 数据库。这是实现多设备数据同步的基础设施。
+This package uses SQLite's update hook mechanism to automatically capture database changes (INSERT/UPDATE/DELETE) and writes change records to a separate changelog database. This is the infrastructure for implementing multi-device data synchronization.
 
-## 主要功能
+## Features
 
 ### ChangeTracker
 
-核心类，负责监听数据库变更：
+Core class responsible for listening to database changes:
 
 ```swift
 let tracker = try ChangeTracker(
@@ -23,27 +23,27 @@ let tracker = try ChangeTracker(
     schemaVersion: 1
 )
 
-// 开始追踪
+// Start tracking
 try tracker.start()
 
-// 停止追踪
+// Stop tracking
 tracker.stop()
 ```
 
 ### ChangeLog
 
-变更记录实体：
+Change record entity:
 
 ```swift
 struct ChangeLog {
     let id: UUIDV4
-    let entityType: String      // 表名
-    let syncKey: Data           // 同步键（二进制编码）
+    let entityType: String      // Table name
+    let syncKey: Data           // Sync key (binary encoded)
     let operation: ChangeOperation  // insert/update/delete
-    let payload: String?        // JSON 格式的实体数据
-    let deviceId: UUIDV4        // 来源设备
-    let logicalClock: Int64     // 逻辑时钟值
-    let schemaVersion: Int      // Schema 版本
+    let payload: String?        // JSON format entity data
+    let deviceId: UUIDV4        // Source device
+    let logicalClock: Int64     // Logical clock value
+    let schemaVersion: Int      // Schema version
     let createdAt: Date
     let updatedAt: Date
 }
@@ -51,37 +51,37 @@ struct ChangeLog {
 
 ### HybridClock
 
-混合逻辑时钟实现，用于分布式时间排序：
+Hybrid logical clock implementation for distributed time ordering:
 
 ```swift
 let clock = HybridClock()
-let timestamp = clock.tick()  // 返回单调递增的时钟值
+let timestamp = clock.tick()  // Returns monotonically increasing clock value
 ```
 
 ### SyncKeyEncoder
 
-同步键编码器，将多字段同步键编码为紧凑的二进制格式：
+Sync key encoder, encodes multi-field sync keys into compact binary format:
 
 ```swift
 let encoded = SyncKeyEncoder.encode([.text("value"), .integer(123)])
 let decoded = SyncKeyEncoder.decode(encoded)
 ```
 
-## 工作原理
+## How It Works
 
-1. SQLite update hook 在每次 INSERT/UPDATE/DELETE 时触发
-2. ChangeTracker 捕获变更并提取实体数据
-3. 变更记录写入独立的 changelog 数据库
-4. DELETE 通过 pending_deletes 表间接捕获（因为删除后无法读取数据）
+1. SQLite update hook triggers on each INSERT/UPDATE/DELETE
+2. ChangeTracker captures the change and extracts entity data
+3. Change records are written to a separate changelog database
+4. DELETE is captured indirectly via pending_deletes table (since data cannot be read after deletion)
 
-## 支持平台
+## Supported Platforms
 
 - macOS 14+
 - iOS 17+
 - tvOS 17+
 - watchOS 10+
 
-## 依赖
+## Dependencies
 
 - SwiftStoreCore
 - SwiftStoreMacros
