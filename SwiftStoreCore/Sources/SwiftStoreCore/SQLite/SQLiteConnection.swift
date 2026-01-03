@@ -439,7 +439,10 @@ public final class SQLiteConnection {
 public extension SQLiteConnection {
     /// Get entity by ID (only available for entities with id field)
     func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV4) throws -> E? where E.ID == UUIDV4 {
-        let sql: SQL = "SELECT * FROM \(E.self) WHERE id = \(id)"
+        // Use explicit column names from entity definition to ensure correct ordering
+        // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
+        let columnList = E.columns.filter { $0.generatedAs == nil }.map { $0.name }.joined(separator: ", ")
+        let sql: SQL = "SELECT \(raw: columnList) FROM \(E.self) WHERE id = \(id)"
         let stmt = try prepareAndBind(sql.sql, values: sql.values)
 
         guard try stmt.step() else {

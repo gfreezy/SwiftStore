@@ -1,13 +1,46 @@
 import Foundation
 
 /// Migration plan containing SQL statements to be executed
-public struct MigrationPlan: Sendable {
+public struct MigrationPlan: Sendable, CustomStringConvertible {
     public let statements: [String]
 
     public var hasChanges: Bool { !statements.isEmpty }
 
     public var script: String {
         statements.joined(separator: ";\n") + (statements.isEmpty ? "" : ";")
+    }
+
+    public var description: String {
+        guard hasChanges else {
+            return "MigrationPlan: No changes needed"
+        }
+
+        var lines: [String] = []
+        lines.append("MigrationPlan: \(statements.count) statement(s)")
+
+        // Count statement types
+        let createTables = statements.filter { $0.uppercased().hasPrefix("CREATE TABLE") }.count
+        let alterTables = statements.filter { $0.uppercased().hasPrefix("ALTER TABLE") }.count
+        let createIndexes = statements.filter {
+            $0.uppercased().hasPrefix("CREATE INDEX") || $0.uppercased().hasPrefix("CREATE UNIQUE INDEX")
+        }.count
+        let createTriggers = statements.filter { $0.uppercased().hasPrefix("CREATE TRIGGER") }.count
+
+        var summary: [String] = []
+        if createTables > 0 { summary.append("\(createTables) CREATE TABLE") }
+        if alterTables > 0 { summary.append("\(alterTables) ALTER TABLE") }
+        if createIndexes > 0 { summary.append("\(createIndexes) CREATE INDEX") }
+        if createTriggers > 0 { summary.append("\(createTriggers) CREATE TRIGGER") }
+
+        if !summary.isEmpty {
+            lines.append("  " + summary.joined(separator: ", "))
+        }
+
+        lines.append("")
+        lines.append("SQL:")
+        lines.append(script)
+
+        return lines.joined(separator: "\n")
     }
 }
 

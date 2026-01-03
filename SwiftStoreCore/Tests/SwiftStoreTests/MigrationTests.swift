@@ -854,3 +854,337 @@ struct MigratorPlanSQLTests {
         #expect(!sql.contains("foreign key"))
     }
 }
+
+// MARK: - Entity Add Field Migration Tests
+
+/// V2 entity with additional fields (bio, score, isActive)
+@Entity(tableName: "migration_user")
+struct MigrationUserV2 {
+    let id: UUIDV4
+    var name: String
+    var email: String
+    var bio: String = ""
+    var score: Int = 0
+    var isActive: Bool = true
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+/// V3 entity with optional field and nested Codable
+@Default
+struct MigrationSettings: Codable, Sendable {
+    var theme: String = "light"
+    var language: String = "en"
+}
+
+@Entity(tableName: "migration_user")
+struct MigrationUserV3 {
+    let id: UUIDV4
+    var name: String
+    var email: String
+    var bio: String = ""
+    var score: Int = 0
+    var isActive: Bool = true
+    var age: Int?
+    var settings: MigrationSettings = MigrationSettings()
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+@Suite("Entity Add Field Migration Tests")
+struct EntityAddFieldMigrationTests {
+
+    @Test("Migration adds new non-nullable String field with default")
+    func testMigrationAddsStringField() throws {
+        let store = try createTestStore()
+
+        // Create V1 table (without bio field)
+        try store.connection.execute("""
+            CREATE TABLE migration_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                score INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+
+        // Insert V1 data
+        let id1 = UUIDV4()
+        let id2 = UUIDV4()
+        let now = Date().timeIntervalSince1970
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email, score, is_active, created_at, updated_at)
+            VALUES (?, 'Alice', 'alice@example.com', 100, 1, ?, ?)
+        """, values: [.blob(id1.data), .real(now), .real(now)])
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email, score, is_active, created_at, updated_at)
+            VALUES (?, 'Bob', 'bob@example.com', 200, 0, ?, ?)
+        """, values: [.blob(id2.data), .real(now), .real(now)])
+
+        // Migrate to V2 (adds bio field)
+        try store.migrate(entities: [MigrationUserV2.self])
+
+        // Verify column exists
+        let columns = try store.connection.tableInfo("migration_user")
+        let bioColumn = columns.first { ($0["name"] as? String) == "bio" }
+        #expect(bioColumn != nil)
+
+        // Verify existing data can be read with new entity
+        let users = try MigrationUserV2.filter().all(store.connection)
+        #expect(users.count == 2)
+
+        let alice = users.first { $0.name == "Alice" }
+        #expect(alice != nil)
+        #expect(alice?.email == "alice@example.com")
+        #expect(alice?.bio == "")  // Default value
+        #expect(alice?.score == 100)
+        #expect(alice?.isActive == true)
+
+        let bob = users.first { $0.name == "Bob" }
+        #expect(bob != nil)
+        #expect(bob?.bio == "")  // Default value
+        #expect(bob?.score == 200)
+        #expect(bob?.isActive == false)
+    }
+
+    @Test("Migration adds new optional field")
+    func testMigrationAddsOptionalField() throws {
+        let store = try createTestStore()
+
+        // Create table without age field
+        try store.connection.execute("""
+            CREATE TABLE migration_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                bio TEXT NOT NULL DEFAULT '',
+                score INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+
+        // Insert data
+        let id = UUIDV4()
+        let now = Date().timeIntervalSince1970
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email, bio, score, is_active, created_at, updated_at)
+            VALUES (?, 'Charlie', 'charlie@example.com', 'Hello', 50, 1, ?, ?)
+        """, values: [.blob(id.data), .real(now), .real(now)])
+
+        // Migrate to V3 (adds age and settings fields)
+        try store.migrate(entities: [MigrationUserV3.self])
+
+        // Verify columns exist
+        let columns = try store.connection.tableInfo("migration_user")
+        let ageColumn = columns.first { ($0["name"] as? String) == "age" }
+        let settingsColumn = columns.first { ($0["name"] as? String) == "settings" }
+        #expect(ageColumn != nil)
+        #expect(settingsColumn != nil)
+
+        // Verify existing data
+        let user = try MigrationUserV3.filter { $0.name == "Charlie" }.first(store.connection)
+        #expect(user != nil)
+        #expect(user?.email == "charlie@example.com")
+        #expect(user?.bio == "Hello")
+        #expect(user?.age == nil)  // Optional field defaults to nil
+        #expect(user?.settings.theme == "light")  // Nested Codable default
+        #expect(user?.settings.language == "en")
+    }
+
+    @Test("Migration preserves data and allows CRUD with new fields")
+    func testMigrationPreservesDataAndAllowsCRUD() throws {
+        let store = try createTestStore()
+
+        // Create V1 table
+        try store.connection.execute("""
+            CREATE TABLE migration_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Insert V1 data
+        let id = UUIDV4()
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email)
+            VALUES (?, 'David', 'david@example.com')
+        """, values: [.blob(id.data)])
+
+        // Migrate to V2
+        try store.migrate(entities: [MigrationUserV2.self])
+
+        // Read existing record
+        // Note: Migrated rows get SQL defaults (0 for INTEGER), not entity defaults
+        var user = try store.connection.get(MigrationUserV2.self, id: id)!
+        #expect(user.name == "David")
+        #expect(user.bio == "")  // SQL default for TEXT
+        #expect(user.score == 0)  // SQL default for INTEGER
+        #expect(user.isActive == false)  // SQL default 0 = false (not entity default true)
+
+        // Update with new fields
+        user.bio = "Software Engineer"
+        user.score = 500
+        user.isActive = true
+        try store.connection.update(user)
+
+        // Verify update
+        let updated = try store.connection.get(MigrationUserV2.self, id: id)!
+        #expect(updated.bio == "Software Engineer")
+        #expect(updated.score == 500)
+        #expect(updated.isActive == true)
+
+        // Insert new record with all fields
+        let newUser = MigrationUserV2(
+            id: UUIDV4(),
+            name: "Eve",
+            email: "eve@example.com",
+            bio: "Designer",
+            score: 300,
+            isActive: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(newUser)
+
+        // Verify new record
+        let eve = try store.connection.get(MigrationUserV2.self, id: newUser.id)!
+        #expect(eve.name == "Eve")
+        #expect(eve.bio == "Designer")
+        #expect(eve.score == 300)
+        #expect(eve.isActive == true)
+    }
+
+    @Test("Migration adds multiple fields at once")
+    func testMigrationAddsMultipleFields() throws {
+        let store = try createTestStore()
+
+        // Create minimal table with DEFAULT for timestamps
+        try store.connection.execute("""
+            CREATE TABLE migration_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Insert data
+        let id = UUIDV4()
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email)
+            VALUES (?, 'Frank', 'frank@example.com')
+        """, values: [.blob(id.data)])
+
+        // Get migration plan
+        let migrator = Migrator(connection: store.connection)
+        let plan = try migrator.plan(for: [MigrationUserV3.self])
+
+        // Should have ALTER TABLE statements for bio, score, is_active, age, settings
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.count == 5)
+
+        // Verify each field is added
+        let addedColumns = ["bio", "score", "is_active", "age", "settings"]
+        for col in addedColumns {
+            #expect(alterStatements.contains { normalizeSQL($0).contains(col) })
+        }
+
+        // Apply migration
+        try migrator.apply(plan)
+
+        // Verify data (migrated rows get SQL defaults, not entity defaults)
+        let user = try store.connection.get(MigrationUserV3.self, id: id)!
+        #expect(user.name == "Frank")
+        #expect(user.bio == "")  // SQL default for TEXT
+        #expect(user.score == 0)  // SQL default for INTEGER
+        #expect(user.isActive == false)  // SQL default 0 = false
+        #expect(user.age == nil)  // Optional field defaults to nil
+        #expect(user.settings.theme == "light")  // Decoded from SQL default '' = empty JSON, uses Default
+    }
+
+    @Test("Migration is idempotent - running twice has no effect")
+    func testMigrationIdempotent() throws {
+        let store = try createTestStore()
+
+        // Create table and insert data with DEFAULT for timestamps
+        try store.connection.execute("""
+            CREATE TABLE migration_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let id = UUIDV4()
+
+        try store.connection.execute("""
+            INSERT INTO migration_user (id, name, email)
+            VALUES (?, 'Grace', 'grace@example.com')
+        """, values: [.blob(id.data)])
+
+        // First migration
+        try store.migrate(entities: [MigrationUserV2.self])
+
+        // Update data
+        var user = try store.connection.get(MigrationUserV2.self, id: id)!
+        user.bio = "Updated bio"
+        try store.connection.update(user)
+
+        // Second migration (should be no-op for columns)
+        try store.migrate(entities: [MigrationUserV2.self])
+
+        // Verify data is preserved
+        let afterSecondMigration = try store.connection.get(MigrationUserV2.self, id: id)!
+        #expect(afterSecondMigration.bio == "Updated bio")
+        #expect(afterSecondMigration.name == "Grace")
+    }
+
+    @Test("Migration plan shows no column changes when table is up to date")
+    func testMigrationPlanNoChangesWhenUpToDate() throws {
+        let store = try createTestStore()
+
+        // Create complete table
+        try store.migrate(entities: [MigrationUserV2.self])
+
+        // Insert data
+        let user = MigrationUserV2(
+            id: UUIDV4(),
+            name: "Henry",
+            email: "henry@example.com",
+            bio: "Bio",
+            score: 100,
+            isActive: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        try store.connection.insert(user)
+
+        // Get migration plan
+        let migrator = Migrator(connection: store.connection)
+        let plan = try migrator.plan(for: [MigrationUserV2.self])
+
+        // Should have no ALTER TABLE statements
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.isEmpty)
+
+        // Should have no CREATE TABLE statements
+        let createStatements = plan.statements.filter { $0.uppercased().contains("CREATE TABLE") }
+        #expect(createStatements.isEmpty)
+    }
+}

@@ -103,7 +103,10 @@ public struct Query<T: EntityProtocol> {
         if let columns = selectedColumns {
             selectClause = columns.joined(separator: ", ")
         } else {
-            selectClause = "*"
+            // Use explicit column names from entity definition to ensure correct ordering
+            // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
+            let entityColumns = T.columns.filter { $0.generatedAs == nil }.map { $0.name }
+            selectClause = entityColumns.joined(separator: ", ")
         }
 
         let distinctClause = isDistinct ? "DISTINCT " : ""
