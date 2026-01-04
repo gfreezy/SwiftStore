@@ -58,8 +58,16 @@ public final class ConnectionManager: Sendable {
 
     /// Execute a block with the write connection.
     /// Only one write operation can happen at a time.
-    public func write<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T) async throws -> T {
-        try await writer.run(block)
+    public func write<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true) async throws -> T {
+        try await writer.run { conn in
+            if transaction {
+                try conn.transaction {
+                    try block(conn)
+                }
+            } else {
+                try block(conn)
+            }
+        }
     }
 
     /// Execute a block with one of the read connections.
