@@ -15,7 +15,7 @@ struct IndexMacroTests {
             struct User {
                 #Index(\\.email, unique: true)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 let createdAt: Date
@@ -25,7 +25,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct User {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 let createdAt: Date
@@ -56,7 +56,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _email = statement.columnString(Int32(2)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -96,7 +96,7 @@ struct IndexMacroTests {
                 #Index(\\.email, unique: true)
                 #Index(\\.name)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 let createdAt: Date
@@ -107,7 +107,7 @@ struct IndexMacroTests {
             struct User {
 
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 let createdAt: Date
@@ -138,7 +138,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _email = statement.columnString(Int32(2)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -178,7 +178,7 @@ struct IndexMacroTests {
             struct User {
                 #Index(\\.firstName, \\.lastName, unique: true)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var firstName: String
                 var lastName: String
                 let createdAt: Date
@@ -188,7 +188,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct User {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var firstName: String
                 var lastName: String
                 let createdAt: Date
@@ -219,7 +219,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _firstName = statement.columnString(Int32(1)) ?? ""
                     let _lastName = statement.columnString(Int32(2)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -258,7 +258,7 @@ struct IndexMacroTests {
             struct User {
                 #Index(\\.email, name: "custom_email_idx")
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var email: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -267,7 +267,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct User {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var email: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -295,7 +295,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _email = statement.columnString(Int32(1)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -332,7 +332,7 @@ struct IndexMacroTests {
             struct Profile {
                 #Index(\\.settings.theme)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var bio: String
                 var settings: UserSettings
                 let createdAt: Date
@@ -342,7 +342,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct Profile {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var bio: String
                 var settings: UserSettings
                 let createdAt: Date
@@ -380,7 +380,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _bio = statement.columnString(Int32(1)) ?? ""
                     let _settings = try {
                         guard let jsonString = statement.columnString(Int32(2)),
@@ -425,7 +425,7 @@ struct IndexMacroTests {
             struct Profile {
                 #Index(\\.settings.theme, \\.settings.notifications)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -434,7 +434,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct Profile {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -470,7 +470,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _settings = try {
                         guard let jsonString = statement.columnString(Int32(1)),
                               let jsonData = jsonString.data(using: .utf8) else {
@@ -513,7 +513,7 @@ struct IndexMacroTests {
             struct Profile {
                 #Index(\\.settings.theme, \\.id)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -522,7 +522,7 @@ struct IndexMacroTests {
             expandedSource: """
             struct Profile {
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -557,7 +557,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _settings = try {
                         guard let jsonString = statement.columnString(Int32(1)),
                               let jsonData = jsonString.data(using: .utf8) else {
@@ -601,7 +601,7 @@ struct IndexMacroTests {
                 #Index(\\.settings.theme, \\.settings.notifications)
                 #Index(\\.settings.theme, \\.id)
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -611,7 +611,7 @@ struct IndexMacroTests {
             struct Profile {
 
 
-                let id: UUIDV4
+                let id: UUIDV7
                 var settings: UserSettings
                 let createdAt: Date
                 let updatedAt: Date
@@ -647,7 +647,7 @@ struct IndexMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _settings = try {
                         guard let jsonString = statement.columnString(Int32(1)),
                               let jsonData = jsonString.data(using: .utf8) else {

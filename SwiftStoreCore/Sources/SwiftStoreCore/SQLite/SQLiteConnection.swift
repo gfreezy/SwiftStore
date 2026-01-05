@@ -438,7 +438,7 @@ public final class SQLiteConnection {
 
 public extension SQLiteConnection {
     /// Get entity by ID (only available for entities with id field)
-    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV4) throws -> E? where E.ID == UUIDV4 {
+    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV7) throws -> E? where E.ID == UUIDV7 {
         // Use explicit column names from entity definition to ensure correct ordering
         // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
         let columnList = E.columns.filter { $0.generatedAs == nil }.map { $0.name }.joined(separator: ", ")
@@ -454,7 +454,7 @@ public extension SQLiteConnection {
 
     /// Update an existing entity (only available for entities with id field)
     /// Timestamp (updated_at) is set automatically by trigger
-    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV4 {
+    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV7 {
         var values = try encoder.encode(entity)
         // Remove id, created_at, updated_at - trigger will set updated_at
         values.removeValue(forKey: "id")
@@ -484,12 +484,12 @@ public extension SQLiteConnection {
     }
 
     /// Delete an entity (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV4 {
+    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV7 {
         try delete(E.self, id: entity.id)
     }
 
     /// Delete entity by ID (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV4) throws where E.ID == UUIDV4 {
+    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV7) throws where E.ID == UUIDV7 {
         let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(id)"
         try execute(sql)
     }

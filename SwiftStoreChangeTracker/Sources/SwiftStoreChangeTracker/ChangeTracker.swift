@@ -6,7 +6,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let mainConnection: SQLiteConnection
     private let changeLogConnection: SQLiteConnection
     private let registeredEntities: [String: any EntityProtocol.Type]
-    private let deviceId: UUIDV4
+    private let deviceId: UUIDV7
     private let pendingDeletesTable: String
     private let tickClock: () -> Int64
     private let schemaVersion: Int
@@ -24,7 +24,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     public init(
         connection: SQLiteConnection,
         changeLogDbPath: String,
-        deviceId: UUIDV4,
+        deviceId: UUIDV7,
         pendingDeletesTable: String,
         registeredEntities: [any EntityProtocol.Type],
         tickClock: @escaping () -> Int64,
@@ -169,8 +169,8 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
                 dict[propertyName] = stmt.columnDouble(columnIndex)
             case .blob:
                 if let data = stmt.columnData(columnIndex) {
-                    // Convert UUIDV4 blob to string
-                    if let uuid = UUIDV4(data: data) {
+                    // Convert UUIDV7 blob to string
+                    if let uuid = UUIDV7(data: data) {
                         dict[propertyName] = uuid.uuidString
                     } else {
                         dict[propertyName] = data.base64EncodedString()
@@ -256,12 +256,12 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
                     values.append(.null)
                 }
             case .blob:
-                // For blob (UUIDV4), the JSON trigger stores as hex string using hex() function
+                // For blob (UUIDV7), the JSON trigger stores as hex string using hex() function
                 if let str = value as? String {
                     // Try to parse as hex string first (from SQLite hex() function)
                     if let data = Data(hexString: str) {
                         values.append(.blob(data))
-                    } else if let uuid = UUIDV4(uuidString: str) {
+                    } else if let uuid = UUIDV7(uuidString: str) {
                         // Try to parse as UUID string
                         values.append(.blob(uuid.data))
                     } else if let data = Data(base64Encoded: str) {

@@ -100,8 +100,8 @@ public struct SQL: ExpressibleByStringInterpolation, Sendable {
             values.append(.text(value.uuidString))
         }
 
-        /// Interpolate UUIDV4 value as parameter
-        public mutating func appendInterpolation(_ value: UUIDV4) {
+        /// Interpolate UUIDV7 value as parameter
+        public mutating func appendInterpolation(_ value: UUIDV7) {
             sql += "?"
             values.append(.blob(value.data))
         }
@@ -240,9 +240,9 @@ extension Data: SQLiteExtractable {
     }
 }
 
-extension UUIDV4: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> UUIDV4? {
-        if case .blob(let v) = value { return UUIDV4(data: v) }
+extension UUIDV7: SQLiteExtractable {
+    public static func extract(from value: SQLiteValue) -> UUIDV7? {
+        if case .blob(let v) = value { return UUIDV7(data: v) }
         return nil
     }
 }

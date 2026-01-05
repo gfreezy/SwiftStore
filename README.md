@@ -19,7 +19,7 @@ import SwiftStoreCore
 
 @Entity
 struct User {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var age: Int?
@@ -65,7 +65,7 @@ struct User {
     #Index<Self>(\.email, unique: true)           // Unique index
     #Index<Self>(\.firstName, \.lastName)         // Composite index
 
-    let id: UUIDV4
+    let id: UUIDV7
     var email: String
     var firstName: String
     var lastName: String
@@ -137,7 +137,7 @@ struct User {
     #Index<Self>(\.address.city)                     // Nested field index
     #Index<Self>(\.profile.settings.theme)           // Deep nested index
 
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var age: Int?
@@ -153,8 +153,8 @@ struct Post {
     #Index<Self>(\.authorId)
     #Index<Self>(\.status, \.createdAt)              // Composite index
 
-    let id: UUIDV4
-    var authorId: UUIDV4
+    let id: UUIDV7
+    var authorId: UUIDV7
     var title: String
     var content: String
     var status: String
@@ -168,7 +168,7 @@ struct Post {
 struct UserDevice {
     #SyncKey<Self>(\.userId, \.deviceId)             // Composite sync key
 
-    var userId: UUIDV4
+    var userId: UUIDV7
     var deviceId: String
     var deviceName: String
     var lastActiveAt: Date
@@ -180,8 +180,8 @@ struct UserDevice {
 struct Favorite {
     #SyncKey<Self>(\.userId, \.postId)               // Many-to-many sync key
 
-    var userId: UUIDV4
-    var postId: UUIDV4
+    var userId: UUIDV7
+    var postId: UUIDV7
     let createdAt: Date
     let updatedAt: Date
 }
@@ -351,7 +351,7 @@ try await manager.read { conn in
 struct MySyncTransport: SyncTransport {
     let serverURL: URL
 
-    func pull(sinceClock: Int64, deviceId: UUIDV4) async throws -> PullResponse {
+    func pull(sinceClock: Int64, deviceId: UUIDV7) async throws -> PullResponse {
         // Pull changes from server
         var request = URLRequest(url: serverURL.appendingPathComponent("pull"))
         request.httpMethod = "POST"
@@ -363,7 +363,7 @@ struct MySyncTransport: SyncTransport {
         return try JSONDecoder().decode(PullResponse.self, from: data)
     }
 
-    func push(changes: [SyncChange], deviceId: UUIDV4) async throws -> PushResponse {
+    func push(changes: [SyncChange], deviceId: UUIDV7) async throws -> PushResponse {
         // Push local changes to server
         var request = URLRequest(url: serverURL.appendingPathComponent("push"))
         request.httpMethod = "POST"
@@ -380,7 +380,7 @@ struct MySyncTransport: SyncTransport {
 let clock = HybridClock()
 
 // Configure sync
-let deviceId = UUIDV4()
+let deviceId = UUIDV7()
 let syncConfig = SyncConfig(
     changeLogDbPath: dbPath.replacingOccurrences(of: ".sqlite", with: "_changelog.sqlite"),
     deviceId: deviceId,

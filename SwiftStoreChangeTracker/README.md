@@ -36,12 +36,12 @@ Change record entity:
 
 ```swift
 struct ChangeLog {
-    let id: UUIDV4
+    let id: UUIDV7
     let entityType: String      // Table name
     let syncKey: Data           // Sync key (binary encoded)
     let operation: ChangeOperation  // insert/update/delete
     let payload: String?        // JSON format entity data
-    let deviceId: UUIDV4        // Source device
+    let deviceId: UUIDV7        // Source device
     let logicalClock: Int64     // Logical clock value
     let schemaVersion: Int      // Schema version
     let createdAt: Date

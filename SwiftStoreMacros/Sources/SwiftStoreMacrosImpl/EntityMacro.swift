@@ -54,7 +54,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 isPrimaryKey = prop.name == "id"
             }
             let colType = prop.sqliteType
-            let isJSON = !prop.isPrimitive && prop.type != "UUIDV4"
+            let isJSON = !prop.isPrimitive && prop.type != "UUIDV7"
             // Add default value for Date columns (createdAt/updatedAt)
             let isTimestamp = prop.type == "Date" && (prop.name == "createdAt" || prop.name == "updatedAt")
 
@@ -212,7 +212,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             if let propDefault = prop.defaultValue {
                 defaultValue = propDefault
             } else if propName == "id" && !hasSyncKey {
-                defaultValue = "UUIDV4()"
+                defaultValue = "UUIDV7()"
             } else if propName == "createdAt" || propName == "updatedAt" {
                 defaultValue = "Date()"
             } else {
@@ -229,9 +229,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 }
             } else if let defaultVal = defaultValue {
                 // Non-optional with default: use decodeIfPresent with fallback
-                // For empty array literals, we need explicit type annotation
+                // For empty array/set literals, we need explicit type annotation
                 let typedDefault: String
-                if defaultVal == "[]" {
+                if defaultVal == "[]" || defaultVal == "Set()" {
                     typedDefault = "\(baseType)()"
                 } else {
                     typedDefault = defaultVal
@@ -291,7 +291,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
     /// Generate init method with default values
     /// Priority: 1. Property's own default value (from source)
-    ///           2. Built-in defaults for id (UUIDV4()), createdAt/updatedAt (Date())
+    ///           2. Built-in defaults for id (UUIDV7()), createdAt/updatedAt (Date())
     private static func generateInitMethod(properties: [PropertyInfo], hasSyncKey: Bool) -> DeclSyntax {
         var params: [String] = []
 
@@ -306,8 +306,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 // Use the property's own default value from source
                 defaultValue = propDefault
             } else if paramName == "id" && !hasSyncKey {
-                // id has default value UUIDV4() for non-sync-key entities
-                defaultValue = "UUIDV4()"
+                // id has default value UUIDV7() for non-sync-key entities
+                defaultValue = "UUIDV7()"
             } else if paramName == "createdAt" || paramName == "updatedAt" {
                 // createdAt and updatedAt have default value Date()
                 defaultValue = "Date()"
@@ -366,8 +366,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let propName = prop.name
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
-        // Check if encoding needs try (JSON encoded types - all non-primitive types except UUIDV4)
-        let needsTry = !prop.isPrimitive && baseType != "UUIDV4"
+        // Check if encoding needs try (JSON encoded types - all non-primitive types except UUIDV7)
+        let needsTry = !prop.isPrimitive && baseType != "UUIDV7"
 
         if prop.isOptional {
             // For optional types, the outer closure needs try if inner code throws
@@ -428,7 +428,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             return ".text(\(name).uuidString)"
         case "URL":
             return ".text(\(name).absoluteString)"
-        case "UUIDV4":
+        case "UUIDV7":
             return ".blob(\(name).data)"
         case "Data":
             return ".blob(\(name))"
@@ -476,20 +476,20 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     private static func generateDecodeExpression(for prop: PropertyInfo, index: Int, hasSyncKey: Bool) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
 
-        // Check if this is a nested Codable type (non-primitive, not UUIDV4)
-        let isNestedCodable = !prop.isPrimitive && baseType != "UUIDV4"
+        // Check if this is a nested Codable type (non-primitive, not UUIDV7)
+        let isNestedCodable = !prop.isPrimitive && baseType != "UUIDV7"
 
         // Determine the effective default value (explicit or built-in)
         let effectiveDefault: String?
         if let propDefault = prop.defaultValue {
             // Use explicit default value
-            if propDefault == "[]" {
+            if propDefault == "[]" || propDefault == "Set()" {
                 effectiveDefault = "\(baseType)()"
             } else {
                 effectiveDefault = propDefault
             }
         } else if prop.name == "id" && !hasSyncKey {
-            effectiveDefault = "UUIDV4()"
+            effectiveDefault = "UUIDV7()"
         } else if prop.name == "createdAt" || prop.name == "updatedAt" {
             effectiveDefault = "Date()"
         } else {
@@ -545,14 +545,14 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             // For non-optional primitive types with default value
             // Use guard pattern for types with failable initializers
             switch baseType {
-            case "UUIDV4":
+            case "UUIDV7":
                 return """
                     {
                             if statement.isNull(Int32(\(index))) {
                                 return \(defaultVal)
                             }
                             guard let data = statement.columnData(Int32(\(index))),
-                                  let value = UUIDV4(data: data) else {
+                                  let value = UUIDV7(data: data) else {
                                 return \(defaultVal)
                             }
                             return value
@@ -612,7 +612,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // For types that need a fallback, use the default value if provided
         let stringFallback = defaultValue ?? "\"\""
         let dataFallback = defaultValue ?? "Data()"
-        let uuidv4Fallback = defaultValue ?? "UUIDV4()"
+        let uuidv4Fallback = defaultValue ?? "UUIDV7()"
         let uuidFallback = defaultValue ?? "UUID()"
         let urlFallback = defaultValue ?? "URL(string: \"about:blank\")!"
 
@@ -651,8 +651,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             return "UUID(uuidString: statement.columnString(Int32(\(index))) ?? \"\") ?? \(uuidFallback)"
         case "URL":
             return "URL(string: statement.columnString(Int32(\(index))) ?? \"\") ?? \(urlFallback)"
-        case "UUIDV4":
-            return "UUIDV4(data: statement.columnData(Int32(\(index))) ?? Data()) ?? \(uuidv4Fallback)"
+        case "UUIDV7":
+            return "UUIDV7(data: statement.columnData(Int32(\(index))) ?? Data()) ?? \(uuidv4Fallback)"
         case "Data":
             return "statement.columnData(Int32(\(index))) ?? \(dataFallback)"
         default:
@@ -784,21 +784,21 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 throw MacroError.syncKeyAndIdMutuallyExclusive(structName: structName)
             }
         } else {
-            // When no #SyncKey, id: UUIDV4 is required
+            // When no #SyncKey, id: UUIDV7 is required
             guard let idProp = properties.first(where: { $0.name == "id" }) else {
                 throw MacroError.missingRequiredField(
                     structName: structName,
                     fieldName: "id",
-                    expectedType: "UUIDV4"
+                    expectedType: "UUIDV7"
                 )
             }
 
             let idBaseType = idProp.type.replacingOccurrences(of: "?", with: "")
-            if idBaseType != "UUIDV4" {
+            if idBaseType != "UUIDV7" {
                 throw MacroError.wrongFieldType(
                     structName: structName,
                     fieldName: "id",
-                    expectedType: "UUIDV4",
+                    expectedType: "UUIDV7",
                     actualType: idProp.type
                 )
             }
@@ -891,7 +891,7 @@ public enum MacroError: Error, CustomStringConvertible {
         case .invalidKeyPath(let keyPath):
             return "Invalid KeyPath: '\(keyPath)'"
         case .syncKeyAndIdMutuallyExclusive(let structName):
-            return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV4', not both."
+            return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV7', not both."
         case .missingTypeAnnotation(let structName, let fieldName):
             return "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
         }

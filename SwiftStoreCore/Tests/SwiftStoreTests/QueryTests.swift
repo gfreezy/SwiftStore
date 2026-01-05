@@ -11,7 +11,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 30,
@@ -21,7 +21,7 @@ struct QueryBuilderTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 25,
@@ -49,7 +49,7 @@ struct QueryBuilderTests {
 
         for i in 0..<5 {
             let user = TestUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 20 + i,
@@ -81,7 +81,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -107,7 +107,7 @@ struct QueryBuilderTests {
         #expect(existsBefore == false)
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -129,7 +129,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -139,7 +139,7 @@ struct QueryBuilderTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -214,7 +214,7 @@ struct QueryBuilderTests {
 
         for i in 0..<5 {
             let user = TestUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 20 + i,
@@ -243,7 +243,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -277,7 +277,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -287,7 +287,7 @@ struct QueryBuilderTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -297,7 +297,7 @@ struct QueryBuilderTests {
         )
 
         let user3 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Charlie",
             email: "charlie@example.com",
             age: 20,
@@ -341,7 +341,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -382,7 +382,7 @@ struct QueryBuilderTests {
         // Replaced by migrate
         try store.migrate(entities: [TestUser.self])
 
-        let userId = UUIDV4()
+        let userId = UUIDV7()
         let user = TestUser(
             id: userId,
             name: "Bob",
@@ -411,11 +411,11 @@ struct QueryBuilderTests {
         let sqlDate: SQL = "SELECT * FROM \(TestUser.self) WHERE created_at > \(date)"
         #expect(sqlDate.values.first == .real(1000000))
 
-        // Test with UUIDV4
+        // Test with UUIDV7
         let sqlUUID: SQL = "SELECT * FROM \(TestUser.self) WHERE \(\TestUser.id) = \(userId)"
         #expect(sqlUUID.sql == "SELECT * FROM test_user WHERE id = ?")
 
-        // Test query execution with UUIDV4
+        // Test query execution with UUIDV7
         let rows = try store.connection.query(sqlUUID.sql, values: sqlUUID.values)
         #expect(rows.count == 1)
     }
@@ -428,7 +428,7 @@ struct QueryBuilderTests {
 
         for i in 0..<3 {
             let user = TestUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 20 + i,
@@ -456,7 +456,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Charlie",
             email: "charlie@example.com",
             age: 28,
@@ -499,7 +499,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -509,7 +509,7 @@ struct QueryBuilderTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -519,7 +519,7 @@ struct QueryBuilderTests {
         )
 
         let user3 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Charlie",
             email: "charlie@example.com",
             age: 20,
@@ -565,7 +565,7 @@ struct QueryBuilderTests {
         // Replaced by migrate
         try store.migrate(entities: [TestUser.self])
 
-        let userId = UUIDV4()
+        let userId = UUIDV7()
         let user = TestUser(
             id: userId,
             name: "Alice",
@@ -585,7 +585,7 @@ struct QueryBuilderTests {
         let row = rows.first!
         let name: String = row[\TestUser.name]
         let age: Int? = row[\TestUser.age]  // age is optional in TestUser
-        let id: UUIDV4 = row[\TestUser.id]
+        let id: UUIDV7 = row[\TestUser.id]
 
         #expect(name == "Alice")
         #expect(age == 25)
@@ -603,7 +603,7 @@ struct QueryBuilderTests {
 
         // Test with multiple rows
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -628,7 +628,7 @@ struct QueryBuilderTests {
         // Insert users with same age
         for i in 0..<3 {
             let user = TestUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 25,  // Same age
@@ -656,7 +656,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -678,7 +678,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -687,7 +687,7 @@ struct QueryBuilderTests {
             updatedAt: Date()
         )
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -714,7 +714,7 @@ struct QueryBuilderTests {
         let store = try createTestStore()
         try store.migrate(entities: [TestUser.self])
 
-        let userId = UUIDV4()
+        let userId = UUIDV7()
         let user = TestUser(
             id: userId,
             name: "Alice",
@@ -732,7 +732,7 @@ struct QueryBuilderTests {
         #expect(result?.name == "Alice")
 
         // Test with non-existent id
-        let nonExistent = try TestUser.filter(id: UUIDV4()).first(store.connection)
+        let nonExistent = try TestUser.filter(id: UUIDV7()).first(store.connection)
         #expect(nonExistent == nil)
     }
 
@@ -741,9 +741,9 @@ struct QueryBuilderTests {
         let store = try createTestStore()
         try store.migrate(entities: [TestUser.self])
 
-        let id1 = UUIDV4()
-        let id2 = UUIDV4()
-        let id3 = UUIDV4()
+        let id1 = UUIDV7()
+        let id2 = UUIDV7()
+        let id3 = UUIDV7()
 
         let user1 = TestUser(id: id1, name: "Alice", email: "alice@example.com", age: 25,
             address: Address(street: "1", city: "A", zipCode: "1"), createdAt: Date(), updatedAt: Date())
@@ -770,7 +770,7 @@ struct QueryBuilderTests {
 
         for i in 0..<10 {
             let user = TestUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 20 + i,

@@ -112,7 +112,7 @@ enum MacroHelpers {
         switch baseType {
         case "String", "UUID", "URL":
             return "text"
-        case "UUIDV4", "Data":
+        case "UUIDV7", "Data":
             return "blob"
         case "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64", "Bool":
             return "integer"
@@ -134,7 +134,7 @@ enum MacroHelpers {
         let baseType = typeString.replacingOccurrences(of: "?", with: "")
         let primitives = ["String", "Int", "Int8", "Int16", "Int32", "Int64",
                          "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
-                         "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV4", "URL"]
+                         "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV7", "URL"]
         return primitives.contains(baseType)
     }
 
@@ -148,8 +148,8 @@ enum MacroHelpers {
             return false
         }
 
-        // Skip UUIDV4 (special-cased as primitive for encoding)
-        if baseType == "UUIDV4" {
+        // Skip UUIDV7 (special-cased as primitive for encoding)
+        if baseType == "UUIDV7" {
             return false
         }
 

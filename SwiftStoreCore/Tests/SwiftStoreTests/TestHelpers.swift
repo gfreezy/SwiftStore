@@ -74,7 +74,7 @@ struct Address: Codable, Sendable {
 @Entity(tableName: "test_user")
 struct TestUser {
     #Index<Self>(\.email, unique: true)
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var age: Int?
@@ -85,7 +85,7 @@ struct TestUser {
 
 @Entity(tableName: "test_tag")
 struct TestTag {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     let createdAt: Date
     let updatedAt: Date
@@ -94,9 +94,9 @@ struct TestTag {
 @Entity(tableName: "test_user_tags")
 struct TestUserTags {
     #Index<Self>(\.userId, \.tagId, unique: true, name: "idx_test_user_tags_unique")
-    let id: UUIDV4
-    let userId: UUIDV4
-    let tagId: UUIDV4
+    let id: UUIDV7
+    let userId: UUIDV7
+    let tagId: UUIDV7
     let createdAt: Date
     let updatedAt: Date
 }

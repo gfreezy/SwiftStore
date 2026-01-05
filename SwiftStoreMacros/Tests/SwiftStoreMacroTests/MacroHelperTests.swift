@@ -55,7 +55,7 @@ struct MacroHelperTests {
     func testSqliteType() {
         #expect(MacroHelpers.sqliteType(for: "String") == "text")
         #expect(MacroHelpers.sqliteType(for: "UUID") == "text")
-        #expect(MacroHelpers.sqliteType(for: "UUIDV4") == "blob")
+        #expect(MacroHelpers.sqliteType(for: "UUIDV7") == "blob")
         #expect(MacroHelpers.sqliteType(for: "Int") == "integer")
         #expect(MacroHelpers.sqliteType(for: "Int64") == "integer")
         #expect(MacroHelpers.sqliteType(for: "Bool") == "integer")
@@ -80,7 +80,7 @@ struct MacroHelperTests {
         #expect(MacroHelpers.isPrimitive("String") == true)
         #expect(MacroHelpers.isPrimitive("Int") == true)
         #expect(MacroHelpers.isPrimitive("UUID") == true)
-        #expect(MacroHelpers.isPrimitive("UUIDV4") == true)
+        #expect(MacroHelpers.isPrimitive("UUIDV7") == true)
         #expect(MacroHelpers.isPrimitive("Date") == true)
         #expect(MacroHelpers.isPrimitive("Address") == false)
         #expect(MacroHelpers.isPrimitive("UserSettings") == false)

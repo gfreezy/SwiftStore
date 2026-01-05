@@ -4,25 +4,25 @@ import SwiftStoreChangeTracker
 
 /// A change record for sync transmission
 public struct SyncChange: Codable, Sendable {
-    public let id: UUIDV4
+    public let id: UUIDV7
     public let entityType: String
     /// Binary encoded sync key values (using SyncKeyEncoder)
     public let syncKey: Data
     public let operation: ChangeOperation
     public let payload: String?
-    public let deviceId: UUIDV4
+    public let deviceId: UUIDV7
     public let logicalClock: Int64
     /// Schema version for migration compatibility
     public let schemaVersion: Int
     public let createdAt: Date
 
     public init(
-        id: UUIDV4,
+        id: UUIDV7,
         entityType: String,
         syncKey: Data,
         operation: ChangeOperation,
         payload: String?,
-        deviceId: UUIDV4,
+        deviceId: UUIDV7,
         logicalClock: Int64,
         schemaVersion: Int = 1,
         createdAt: Date
@@ -89,12 +89,12 @@ public protocol SyncTransport: Sendable {
     ///   - sinceClock: The clock value to get changes after
     ///   - deviceId: The local device ID (to exclude own changes if needed)
     /// - Returns: Pull response with remote changes
-    func pull(sinceClock: Int64, deviceId: UUIDV4) async throws -> PullResponse
+    func pull(sinceClock: Int64, deviceId: UUIDV7) async throws -> PullResponse
 
     /// Push local changes to remote
     /// - Parameters:
     ///   - changes: The changes to push
     ///   - deviceId: The local device ID
     /// - Returns: Push response with result
-    func push(changes: [SyncChange], deviceId: UUIDV4) async throws -> PushResponse
+    func push(changes: [SyncChange], deviceId: UUIDV7) async throws -> PushResponse
 }

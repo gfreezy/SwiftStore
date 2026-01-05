@@ -23,7 +23,7 @@ public struct SyncKeyEncoder {
         for value in values {
             switch value {
             case .blob(let bytes):
-                // Check if it's a UUIDV4 (16 bytes)
+                // Check if it's a UUIDV7 (16 bytes)
                 if bytes.count == 16 {
                     data.append(ValueType.uuid.rawValue)
                     // No length needed for fixed-size UUID

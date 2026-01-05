@@ -26,13 +26,13 @@ struct EntityMacroValidationTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(message: "@Entity requires 'InvalidUser' to have a 'id: UUIDV4' field", line: 1, column: 1)
+                DiagnosticSpec(message: "@Entity requires 'InvalidUser' to have a 'id: UUIDV7' field", line: 1, column: 1)
             ],
             macros: testMacros
         )
     }
 
-    @Test("Entity macro rejects id with wrong type (UUID instead of UUIDV4)")
+    @Test("Entity macro rejects id with wrong type (UUID instead of UUIDV7)")
     func testWrongIdType() {
         assertMacroExpansion(
             """
@@ -51,7 +51,7 @@ struct EntityMacroValidationTests {
             }
             """,
             diagnostics: [
-                DiagnosticSpec(message: "@Entity requires 'InvalidUser.id' to be of type 'UUIDV4', but found 'UUID'", line: 1, column: 1)
+                DiagnosticSpec(message: "@Entity requires 'InvalidUser.id' to be of type 'UUIDV7', but found 'UUID'", line: 1, column: 1)
             ],
             macros: testMacros
         )
@@ -63,14 +63,14 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4?
+                let id: UUIDV7?
                 let createdAt: Date
                 let updatedAt: Date
             }
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4?
+                let id: UUIDV7?
                 let createdAt: Date
                 let updatedAt: Date
             }
@@ -88,13 +88,13 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let updatedAt: Date
             }
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let updatedAt: Date
             }
             """,
@@ -111,13 +111,13 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date
             }
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date
             }
             """,
@@ -134,14 +134,14 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: String
                 let updatedAt: Date
             }
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: String
                 let updatedAt: Date
             }
@@ -159,14 +159,14 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date?
                 let updatedAt: Date
             }
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date?
                 let updatedAt: Date
             }
@@ -185,7 +185,7 @@ struct EntityMacroValidationTests {
             @Entity
             struct InvalidUser {
                 #SyncKey<InvalidUser>(\\.email)
-                let id: UUIDV4
+                let id: UUIDV7
                 var email: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -193,14 +193,14 @@ struct EntityMacroValidationTests {
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 var email: String
                 let createdAt: Date
                 let updatedAt: Date
             }
             """,
             diagnostics: [
-                DiagnosticSpec(message: "@Entity 'InvalidUser': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV4', not both.", line: 1, column: 1)
+                DiagnosticSpec(message: "@Entity 'InvalidUser': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV7', not both.", line: 1, column: 1)
             ],
             macros: testMacros
         )
@@ -212,7 +212,7 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name = "default"
                 let createdAt: Date
                 let updatedAt: Date
@@ -220,7 +220,7 @@ struct EntityMacroValidationTests {
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name = "default"
                 let createdAt: Date
                 let updatedAt: Date
@@ -239,7 +239,7 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let status = "active"
                 let createdAt: Date
                 let updatedAt: Date
@@ -247,7 +247,7 @@ struct EntityMacroValidationTests {
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 let status = "active"
                 let createdAt: Date
                 let updatedAt: Date
@@ -267,7 +267,7 @@ struct EntityMacroValidationTests {
             """
             @Entity
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name = "default"
                 var age = 0
                 let createdAt: Date
@@ -276,7 +276,7 @@ struct EntityMacroValidationTests {
             """,
             expandedSource: """
             struct InvalidUser {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name = "default"
                 var age = 0
                 let createdAt: Date

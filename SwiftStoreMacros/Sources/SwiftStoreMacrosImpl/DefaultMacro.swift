@@ -121,9 +121,9 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
                 decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
             } else if let defaultValue = prop.defaultValue {
                 // Non-optional with default: use decodeIfPresent with fallback
-                // For empty array literals, we need explicit type annotation
+                // For empty array/set literals, we need explicit type annotation
                 let typedDefault: String
-                if defaultValue == "[]" {
+                if defaultValue == "[]" || defaultValue == "Set()" {
                     typedDefault = "\(baseType)()"
                 } else {
                     typedDefault = defaultValue

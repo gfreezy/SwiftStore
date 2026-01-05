@@ -323,14 +323,14 @@ struct MigrationDryRunTests {
 
         // Insert some profiles
         let profile1 = MacroProfile(
-            id: UUIDV4(),
+            id: UUIDV7(),
             bio: "Bio 1",
             settings: UserSettings(theme: "dark", notifications: true),
             createdAt: Date(),
             updatedAt: Date()
         )
         let profile2 = MacroProfile(
-            id: UUIDV4(),
+            id: UUIDV7(),
             bio: "Bio 2",
             settings: UserSettings(theme: "light", notifications: false),
             createdAt: Date(),
@@ -362,7 +362,7 @@ struct MigrationDryRunTests {
 
         // Insert a profile
         let profile = MacroProfile(
-            id: UUIDV4(),
+            id: UUIDV7(),
             bio: "Test Bio",
             settings: UserSettings(theme: "dark", notifications: true),
             createdAt: Date(),
@@ -860,7 +860,7 @@ struct MigratorPlanSQLTests {
 /// V2 entity with additional fields (bio, score, isActive)
 @Entity(tableName: "migration_user")
 struct MigrationUserV2 {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var bio: String = ""
@@ -879,7 +879,7 @@ struct MigrationSettings: Codable, Sendable {
 
 @Entity(tableName: "migration_user")
 struct MigrationUserV3 {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var bio: String = ""
@@ -912,8 +912,8 @@ struct EntityAddFieldMigrationTests {
         """)
 
         // Insert V1 data
-        let id1 = UUIDV4()
-        let id2 = UUIDV4()
+        let id1 = UUIDV7()
+        let id2 = UUIDV7()
         let now = Date().timeIntervalSince1970
 
         try store.connection.execute("""
@@ -971,7 +971,7 @@ struct EntityAddFieldMigrationTests {
         """)
 
         // Insert data
-        let id = UUIDV4()
+        let id = UUIDV7()
         let now = Date().timeIntervalSince1970
 
         try store.connection.execute("""
@@ -1015,7 +1015,7 @@ struct EntityAddFieldMigrationTests {
         """)
 
         // Insert V1 data
-        let id = UUIDV4()
+        let id = UUIDV7()
 
         try store.connection.execute("""
             INSERT INTO migration_user (id, name, email)
@@ -1047,7 +1047,7 @@ struct EntityAddFieldMigrationTests {
 
         // Insert new record with all fields
         let newUser = MigrationUserV2(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Eve",
             email: "eve@example.com",
             bio: "Designer",
@@ -1082,7 +1082,7 @@ struct EntityAddFieldMigrationTests {
         """)
 
         // Insert data
-        let id = UUIDV4()
+        let id = UUIDV7()
 
         try store.connection.execute("""
             INSERT INTO migration_user (id, name, email)
@@ -1131,7 +1131,7 @@ struct EntityAddFieldMigrationTests {
             )
         """)
 
-        let id = UUIDV4()
+        let id = UUIDV7()
 
         try store.connection.execute("""
             INSERT INTO migration_user (id, name, email)
@@ -1164,7 +1164,7 @@ struct EntityAddFieldMigrationTests {
 
         // Insert data
         let user = MigrationUserV2(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Henry",
             email: "henry@example.com",
             bio: "Bio",

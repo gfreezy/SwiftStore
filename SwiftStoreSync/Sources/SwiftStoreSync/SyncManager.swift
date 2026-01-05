@@ -58,7 +58,7 @@ public struct SyncConfig: Sendable {
     /// Path to the changelog database file
     public let changeLogDbPath: String
     /// Device ID for identifying the source of changes
-    public let deviceId: UUIDV4
+    public let deviceId: UUIDV7
     /// Name of the pending deletes table
     public let pendingDeletesTable: String
     /// Entity types to track changes for
@@ -83,7 +83,7 @@ public struct SyncConfig: Sendable {
 
     public init(
         changeLogDbPath: String,
-        deviceId: UUIDV4,
+        deviceId: UUIDV7,
         pendingDeletesTable: String = "__swiftstore_pending_deletes",
         registeredEntities: [any EntityProtocol.Type],
         tickClock: @escaping @Sendable () -> Int64,
@@ -116,7 +116,7 @@ public final class SyncManager {
     private let changeTracker: ChangeTracker
     private let changeLogReader: ChangeTrackerReader
     private let transport: any SyncTransport
-    private let deviceId: UUIDV4
+    private let deviceId: UUIDV7
     private let changeLogDbPath: String
     private let applierRegistry: EntityApplierRegistry
     private let configuration: SyncConfiguration

@@ -555,14 +555,14 @@ public extension Query {
 
 // MARK: - Identifiable Entity Extensions
 
-public extension Query where T: Identifiable, T.ID == UUIDV4 {
+public extension Query where T: Identifiable, T.ID == UUIDV7 {
     /// Filter by primary key (only available for entities with id field)
-    func filter(id: UUIDV4) -> Query<T> {
+    func filter(id: UUIDV7) -> Query<T> {
         filter(\T.id == id)
     }
 
     /// Filter by multiple primary keys (only available for entities with id field)
-    func filter(ids: [UUIDV4]) -> Query<T> {
+    func filter(ids: [UUIDV7]) -> Query<T> {
         filter(\T.id ~= ids)
     }
 }

@@ -46,7 +46,7 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 - `SQLiteValue` - SQLite value type enumeration
 - `SQLiteStatementProtocol` - SQLite statement protocol
 - `StoreError` - Error type definitions
-- `UUIDV4` - UUID v4 type, stored as 16-byte BLOB
+- `UUIDV7` - UUID v4 type, stored as 16-byte BLOB
 
 ## Supported Platforms
 

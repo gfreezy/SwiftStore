@@ -4,14 +4,14 @@ import SwiftStoreCore
 /// Reads local changes from the changelog database
 public final class ChangeTrackerReader {
     private let connection: SQLiteConnection
-    private let deviceId: UUIDV4
+    private let deviceId: UUIDV7
 
     /// Initialize with changelog database path and device ID
     /// Only changes from this device will be returned
     /// - Parameters:
     ///   - changeLogDbPath: Path to the changelog database
     ///   - deviceId: The device ID to filter changes by
-    public init(changeLogDbPath: String, deviceId: UUIDV4) throws {
+    public init(changeLogDbPath: String, deviceId: UUIDV7) throws {
         var options = SQLiteConnection.Options()
         options.readonly = true
         self.connection = try SQLiteConnection(path: changeLogDbPath, options: options)

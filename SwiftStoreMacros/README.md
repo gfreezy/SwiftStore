@@ -15,7 +15,7 @@ Main macro for marking entity structs:
 ```swift
 @Entity
 struct User {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var age: Int?
@@ -47,7 +47,7 @@ struct User {
     #Index<Self>(\.firstName, \.lastName)         // Composite index
     #Index<Self>(\.address.city)                  // Nested field index
 
-    let id: UUIDV4
+    let id: UUIDV7
     var email: String
     var firstName: String
     var lastName: String
@@ -66,7 +66,7 @@ Define sync key for multi-device sync scenarios:
 struct Employee {
     #SyncKey<Self>(\.companyId, \.employeeCode)  // Composite sync key
 
-    var companyId: UUIDV4
+    var companyId: UUIDV7
     var employeeCode: String
     var name: String
     let createdAt: Date

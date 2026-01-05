@@ -18,7 +18,7 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 /// Protocol that all entities must conform to
 ///
 /// Required fields (enforced by @Entity macro):
-/// - Either `id: UUIDV4` (standard entity) OR `#SyncKey` (syncable entity without id)
+/// - Either `id: UUIDV7` (standard entity) OR `#SyncKey` (syncable entity without id)
 /// - `createdAt: Date` - Creation timestamp (auto-filled on insert)
 /// - `updatedAt: Date` - Update timestamp (auto-filled on insert/update)
 ///

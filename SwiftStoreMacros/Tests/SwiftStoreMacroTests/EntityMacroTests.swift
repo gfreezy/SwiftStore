@@ -13,7 +13,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct User {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 var age: Int?
@@ -23,7 +23,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct User {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var email: String
                 var age: Int?
@@ -63,7 +63,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _email = statement.columnString(Int32(2)) ?? ""
                     let _age = {
@@ -110,7 +110,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct Profile {
-                let id: UUIDV4
+                let id: UUIDV7
                 var bio: String
                 var settings: UserSettings
                 let createdAt: Date
@@ -119,7 +119,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct Profile {
-                let id: UUIDV4
+                let id: UUIDV7
                 var bio: String
                 var settings: UserSettings
                 let createdAt: Date
@@ -156,7 +156,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _bio = statement.columnString(Int32(1)) ?? ""
                     let _settings = {
                             guard let jsonString = statement.columnString(Int32(2)),
@@ -202,14 +202,14 @@ struct EntityMacroTests {
             """
             @Entity
             struct UserProfile {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date
                 let updatedAt: Date
             }
             """,
             expandedSource: """
             struct UserProfile {
-                let id: UUIDV4
+                let id: UUIDV7
                 let createdAt: Date
                 let updatedAt: Date
 
@@ -234,7 +234,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(1)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
                     return Self(
@@ -276,7 +276,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct UserWithSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings
                 let createdAt: Date
@@ -285,7 +285,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct UserWithSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings
                 let createdAt: Date
@@ -322,7 +322,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _settings = try {
                             guard let jsonString = statement.columnString(Int32(2)),
@@ -347,7 +347,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String,
                     settings: NestedSettings,
                     createdAt: Date = Date(),
@@ -370,7 +370,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decode(String.self, forKey: .name)
                     self.settings = try Self._decodeNested(NestedSettings.self, from: container, forKey: .settings)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -422,7 +422,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct UserWithOptionalSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings?
                 let createdAt: Date
@@ -431,7 +431,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct UserWithOptionalSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings?
                 let createdAt: Date
@@ -474,7 +474,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _settings = try {
                             if statement.isNull(Int32(2)) {
@@ -504,7 +504,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String,
                     settings: NestedSettings? = nil,
                     createdAt: Date = Date(),
@@ -527,7 +527,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decode(String.self, forKey: .name)
                     self.settings = try Self._decodeNestedIfPresent(NestedSettings.self, from: container, forKey: .settings)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -579,7 +579,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct TaskWithStatus {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 var status: TaskStatus
                 let createdAt: Date
@@ -588,7 +588,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct TaskWithStatus {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 var status: TaskStatus
                 let createdAt: Date
@@ -625,7 +625,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _title = statement.columnString(Int32(1)) ?? ""
                     let _status = try {
                             guard let jsonString = statement.columnString(Int32(2)),
@@ -650,7 +650,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     title: String,
                     status: TaskStatus,
                     createdAt: Date = Date(),
@@ -673,7 +673,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.title = try container.decode(String.self, forKey: .title)
                     self.status = try Self._decodeNested(TaskStatus.self, from: container, forKey: .status)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -724,7 +724,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct UserWithDefaultSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings = NestedSettings()
                 let createdAt: Date
@@ -733,7 +733,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct UserWithDefaultSettings {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var settings: NestedSettings = NestedSettings()
                 let createdAt: Date
@@ -770,7 +770,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _settings = try {
                             if statement.isNull(Int32(2)) {
@@ -800,7 +800,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String,
                     settings: NestedSettings = NestedSettings(),
                     createdAt: Date = Date(),
@@ -823,7 +823,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decode(String.self, forKey: .name)
                     self.settings = try Self._decodeNestedIfPresent(NestedSettings.self, from: container, forKey: .settings) ?? NestedSettings()
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -874,7 +874,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct Article {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -882,7 +882,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct Article {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -912,11 +912,11 @@ struct EntityMacroTests {
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = {
                             if statement.isNull(Int32(0)) {
-                                return UUIDV4()
+                                return UUIDV7()
                             }
                             guard let data = statement.columnData(Int32(0)),
-                                  let value = UUIDV4(data: data) else {
-                                return UUIDV4()
+                                  let value = UUIDV7(data: data) else {
+                                return UUIDV7()
                             }
                             return value
                         }()
@@ -946,7 +946,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     title: String,
                     createdAt: Date = Date(),
                     updatedAt: Date = Date()
@@ -966,7 +966,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.title = try container.decode(String.self, forKey: .title)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
                     self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
@@ -1002,7 +1002,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct Config {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String = "default"
                 var count: Int = 0
                 var isEnabled: Bool = true
@@ -1015,7 +1015,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct Config {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String = "default"
                 var count: Int = 0
                 var isEnabled: Bool = true
@@ -1066,11 +1066,11 @@ struct EntityMacroTests {
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = {
                             if statement.isNull(Int32(0)) {
-                                return UUIDV4()
+                                return UUIDV7()
                             }
                             guard let data = statement.columnData(Int32(0)),
-                                  let value = UUIDV4(data: data) else {
-                                return UUIDV4()
+                                  let value = UUIDV7(data: data) else {
+                                return UUIDV7()
                             }
                             return value
                         }()
@@ -1156,7 +1156,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String = "default",
                     count: Int = 0,
                     isEnabled: Bool = true,
@@ -1191,7 +1191,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "default"
                     self.count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
                     self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
@@ -1246,7 +1246,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct Bookmark {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 var url: URL
                 var favicon: URL?
@@ -1256,7 +1256,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct Bookmark {
-                let id: UUIDV4
+                let id: UUIDV7
                 var title: String
                 var url: URL
                 var favicon: URL?
@@ -1296,7 +1296,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _title = statement.columnString(Int32(1)) ?? ""
                     let _url = URL(string: statement.columnString(Int32(2)) ?? "") ?? URL(string: "about:blank")!
                     let _favicon = {
@@ -1322,7 +1322,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     title: String,
                     url: URL,
                     favicon: URL? = nil,
@@ -1348,7 +1348,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.title = try container.decode(String.self, forKey: .title)
                     self.url = try container.decode(URL.self, forKey: .url)
                     self.favicon = try container.decodeIfPresent(URL.self, forKey: .favicon)
@@ -1388,7 +1388,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct UserWithComputed {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var fullName: String { name }
                 var displayName: String {
@@ -1400,7 +1400,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct UserWithComputed {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 var fullName: String { name }
                 var displayName: String {
@@ -1432,7 +1432,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -1449,7 +1449,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String,
                     createdAt: Date = Date(),
                     updatedAt: Date = Date()
@@ -1469,7 +1469,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decode(String.self, forKey: .name)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
                     self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
@@ -1507,7 +1507,7 @@ struct EntityMacroTests {
             """
             @Entity
             struct SimpleEntity {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -1515,7 +1515,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct SimpleEntity {
-                let id: UUIDV4
+                let id: UUIDV7
                 var name: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -1543,7 +1543,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _id = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -1560,7 +1560,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    id: UUIDV4 = UUIDV4(),
+                    id: UUIDV7 = UUIDV7(),
                     name: String,
                     createdAt: Date = Date(),
                     updatedAt: Date = Date()
@@ -1580,7 +1580,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.id = try container.decodeIfPresent(UUIDV4.self, forKey: .id) ?? UUIDV4()
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
                     self.name = try container.decode(String.self, forKey: .name)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
                     self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
@@ -1855,14 +1855,14 @@ struct EntityMacroTests {
         )
     }
 
-    @Test("Entity with UUIDV4 SyncKey generates id computed property with UUIDV4 type")
+    @Test("Entity with UUIDV7 SyncKey generates id computed property with UUIDV7 type")
     func testEntityWithUUIDV4SyncKeyGeneratesIdProperty() {
         assertMacroExpansion(
             """
             @Entity
             struct DeviceRecord {
                 #SyncKey<DeviceRecord>(\\.deviceId)
-                var deviceId: UUIDV4
+                var deviceId: UUIDV7
                 var name: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -1870,7 +1870,7 @@ struct EntityMacroTests {
             """,
             expandedSource: """
             struct DeviceRecord {
-                var deviceId: UUIDV4
+                var deviceId: UUIDV7
                 var name: String
                 let createdAt: Date
                 let updatedAt: Date
@@ -1898,7 +1898,7 @@ struct EntityMacroTests {
                 }
 
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                    let _deviceId = UUIDV4(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV4()
+                    let _deviceId = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
                     let _name = statement.columnString(Int32(1)) ?? ""
                     let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(2)))
                     let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(3)))
@@ -1915,7 +1915,7 @@ struct EntityMacroTests {
                 }
 
                 public init(
-                    deviceId: UUIDV4,
+                    deviceId: UUIDV7,
                     name: String,
                     createdAt: Date = Date(),
                     updatedAt: Date = Date()
@@ -1935,7 +1935,7 @@ struct EntityMacroTests {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.deviceId = try container.decode(UUIDV4.self, forKey: .deviceId)
+                    self.deviceId = try container.decode(UUIDV7.self, forKey: .deviceId)
                     self.name = try container.decode(String.self, forKey: .name)
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
                     self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
@@ -1945,7 +1945,7 @@ struct EntityMacroTests {
                     _makeDefaultMacroMarker()
                 }
 
-                public var id: UUIDV4 {
+                public var id: UUIDV7 {
                     deviceId
                 }
             }
@@ -1963,6 +1963,175 @@ struct EntityMacroTests {
             }
 
             extension DeviceRecord: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    @Test("Entity macro supports Set type")
+    func testEntityWithSetType() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct TaggedItem {
+                let id: UUIDV7
+                var name: String
+                var tags: Set<String> = Set()
+                var categories: Set<String>?
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct TaggedItem {
+                let id: UUIDV7
+                var name: String
+                var tags: Set<String> = Set()
+                var categories: Set<String>?
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "tagged_item"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "tags", type: .text),
+                        ColumnDefinition(name: "categories", type: .text, nullable: true),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = .blob(self.id.data)
+                    result["name"] = .text(self.name)
+                    result["tags"] = try {
+                            let jsonData = try JSONEncoder().encode(self.tags)
+                            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                                throw StoreError.encodingFailed("Failed to encode \\(self.tags) to JSON")
+                            }
+                            return .text(jsonString)
+                        }()
+                    result["categories"] = try {
+                            if let value = self.categories {
+                                return try {
+                            let jsonData = try JSONEncoder().encode(value)
+                            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                                throw StoreError.encodingFailed("Failed to encode \\(value) to JSON")
+                            }
+                            return .text(jsonString)
+                        }()
+                            } else {
+                                return .null
+                            }
+                        }()
+                    result["created_at"] = .real(self.createdAt.timeIntervalSince1970)
+                    result["updated_at"] = .real(self.updatedAt.timeIntervalSince1970)
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = UUIDV7(data: statement.columnData(Int32(0)) ?? Data()) ?? UUIDV7()
+                    let _name = statement.columnString(Int32(1)) ?? ""
+                    let _tags = {
+                            if statement.isNull(Int32(2)) {
+                                return Set<String>()
+                            }
+                            guard let jsonString = statement.columnString(Int32(2)),
+                                  let jsonData = jsonString.data(using: .utf8) else {
+                                return Set<String>()
+                            }
+                            do {
+                                return try JSONDecoder().decode(Set<String>.self, from: jsonData)
+                            } catch {
+                                return Set<String>()
+                            }
+                        }()
+                    let _categories = {
+                            if statement.isNull(Int32(3)) {
+                                return Optional<Set<String>>.none
+                            }
+                            guard let jsonString = statement.columnString(Int32(3)),
+                                  let jsonData = jsonString.data(using: .utf8) else {
+                                return Optional<Set<String>>.none
+                            }
+                            return try? JSONDecoder().decode(Set<String>.self, from: jsonData)
+                        }()
+                    let _createdAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(4)))
+                    let _updatedAt = Date(timeIntervalSince1970: statement.columnDouble(Int32(5)))
+                    return Self(
+                        id: _id,
+                        name: _name,
+                        tags: _tags,
+                        categories: _categories,
+                        createdAt: _createdAt,
+                        updatedAt: _updatedAt
+                    )
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public init(
+                    id: UUIDV7 = UUIDV7(),
+                    name: String,
+                    tags: Set<String> = Set(),
+                    categories: Set<String>? = nil,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.tags = tags
+                    self.categories = categories
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case tags
+                    case categories
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decodeIfPresent(UUIDV7.self, forKey: .id) ?? UUIDV7()
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.tags = try container.decodeIfPresent(Set<String>.self, forKey: .tags) ?? Set<String>()
+                    self.categories = try container.decodeIfPresent(Set<String>.self, forKey: .categories)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+                    self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker {
+                    _makeDefaultMacroMarker()
+                }
+            }
+
+            extension TaggedItem: EntityProtocol {
+            }
+
+            extension TaggedItem: SQLiteCodable {
+            }
+
+            extension TaggedItem: Identifiable {
+            }
+
+            extension TaggedItem: Sendable {
+            }
+
+            extension TaggedItem: Default {
             }
             """,
             macros: testMacros

@@ -6,7 +6,7 @@ import Foundation
 // MARK: - Test Entity (Manual implementation for reliable encoding)
 @Entity
 struct TestEntity {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var value: Int
     let createdAt: Date
@@ -16,10 +16,10 @@ struct TestEntity {
 // MARK: - Test Helpers
 
 /// Fixed device ID for testing
-let testDeviceId = UUIDV4()
+let testDeviceId = UUIDV7()
 
 /// Helper to verify sync key contains expected entity id
-func verifySyncKeyContainsId(_ syncKey: Data, expectedId: UUIDV4) -> Bool {
+func verifySyncKeyContainsId(_ syncKey: Data, expectedId: UUIDV7) -> Bool {
     let values = SyncKeyEncoder.decode(syncKey)
     guard values.count == 1, case .blob(let data) = values[0] else {
         return false
@@ -67,7 +67,7 @@ struct ChangeTrackerTests {
 
         // Insert entity
         let entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Test",
             value: 42,
             createdAt: Date(),
@@ -96,7 +96,7 @@ struct ChangeTrackerTests {
 
         // Insert entity before starting tracker
         var entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Original",
             value: 1,
             createdAt: Date(),
@@ -148,7 +148,7 @@ struct ChangeTrackerTests {
 
         // Insert entity before starting tracker
         let entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "ToDelete",
             value: 999,
             createdAt: Date(),
@@ -203,7 +203,7 @@ struct ChangeTrackerTests {
 
         // 1. Insert
         var entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "First",
             value: 1,
             createdAt: Date(),
@@ -272,12 +272,12 @@ struct ChangeTrackerTests {
         try changeTracker.start()
 
         // Insert into unregistered table
-        let id = UUIDV4()
+        let id = UUIDV7()
         try connection.execute("INSERT INTO unregistered_table (id, data) VALUES (?, 'test')", values: [.blob(id.data)])
 
         // Insert into registered table
         let entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Registered",
             value: 1,
             createdAt: Date(),
@@ -300,7 +300,7 @@ struct ChangeTrackerTests {
         let (connection, dbPath) = try createAndMigrateTestDatabase(trackDeletes: true)
 
         // Manually insert stale pending delete using the new sync_key_json schema
-        let staleId = UUIDV4()
+        let staleId = UUIDV7()
         let syncKeyJson = "{\"id\": \"\(staleId.data.map { String(format: "%02X", $0) }.joined())\"}"
         try connection.execute("""
             INSERT INTO \(Migrator.pendingDeletesTableName) (table_name, sync_key_json)
@@ -350,7 +350,7 @@ struct ChangeTrackerTests {
         try changeTracker.start()
 
         let entity = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "PayloadTest",
             value: 12345,
             createdAt: Date(),
@@ -398,7 +398,7 @@ struct ChangeTrackerTests {
 
         // Insert while tracking
         let entity1 = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Before",
             value: 1,
             createdAt: Date(),
@@ -410,7 +410,7 @@ struct ChangeTrackerTests {
 
         // Insert after stop
         let entity2 = TestEntity(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "After",
             value: 2,
             createdAt: Date(),
@@ -445,7 +445,7 @@ struct ChangeTrackerTests {
         // Insert 3 entities
         for i in 1...3 {
             let entity = TestEntity(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "Entity\(i)",
                 value: i,
                 createdAt: Date(),

@@ -38,7 +38,7 @@ Sync configuration:
 ```swift
 SyncConfig(
     changeLogDbPath: String,          // Changelog database path
-    deviceId: UUIDV4,                 // Device ID
+    deviceId: UUIDV7,                 // Device ID
     pendingDeletesTable: String,      // Pending deletes table name
     registeredEntities: [EntityProtocol.Type],  // Entity types to track
     tickClock: () -> Int64,           // Clock function
@@ -57,8 +57,8 @@ Transport layer protocol, implement to communicate with remote server:
 
 ```swift
 public protocol SyncTransport: Sendable {
-    func pull(sinceClock: Int64, deviceId: UUIDV4) async throws -> PullResponse
-    func push(changes: [SyncChange], deviceId: UUIDV4) async throws -> PushResponse
+    func pull(sinceClock: Int64, deviceId: UUIDV7) async throws -> PullResponse
+    func push(changes: [SyncChange], deviceId: UUIDV7) async throws -> PushResponse
 }
 ```
 

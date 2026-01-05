@@ -125,7 +125,7 @@ public struct DatabaseSchemaBuilder {
         let name = "__swiftstore_delete_\(tableName)"
 
         // Build json_object arguments from sync key columns
-        // For BLOB columns (like UUIDV4), we use hex() to convert to string
+        // For BLOB columns (like UUIDV7), we use hex() to convert to string
         // since json_object cannot handle BLOB values directly
         let syncKeyCols = entity.syncKeyColumns
         let jsonArgs = syncKeyCols.map { col -> String in

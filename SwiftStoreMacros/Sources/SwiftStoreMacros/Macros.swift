@@ -7,7 +7,7 @@
 
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
-/// - Auto-generates init with default values: id = UUIDV4(), createdAt = Date(), updatedAt = Date()
+/// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date()
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
 @attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(_defaultMacroMarker), named(id), named(SyncKeyID))
 @attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Sendable, Default)
@@ -36,7 +36,7 @@ public macro Index<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., unique: 
 ///
 /// Note: #SyncKey and `id` field are mutually exclusive:
 /// - Use #SyncKey for sync-based entities (no id field)
-/// - Use `id: UUIDV4` for standard entities (no #SyncKey)
+/// - Use `id: UUIDV7` for standard entities (no #SyncKey)
 ///
 /// Usage:
 ///   @Entity
@@ -51,7 +51,7 @@ public macro Index<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., unique: 
 ///   @Entity
 ///   struct Employee {
 ///       #SyncKey<Employee>(\.companyId, \.employeeCode)  // Composite key
-///       var companyId: UUIDV4
+///       var companyId: UUIDV7
 ///       var employeeCode: String
 ///       var name: String
 ///       let createdAt: Date

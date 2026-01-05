@@ -9,7 +9,7 @@ import SwiftStoreMacros
 /// Simple entity to test basic macro expansion
 @Entity
 struct MacroUser {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var email: String
     var age: Int?
@@ -28,7 +28,7 @@ struct UserSettings: Codable, Sendable {
 struct MacroProfile {
     #Index<Self>(\.settings.theme, \.settings.notifications)
     #Index<Self>(\.settings.theme, \.id)
-    let id: UUIDV4
+    let id: UUIDV7
     var bio: String
     var settings: UserSettings
     let createdAt: Date
@@ -45,7 +45,7 @@ enum TaskStatus: String, Codable, Sendable {
 
 @Entity
 struct MacroTask {
-    let id: UUIDV4
+    let id: UUIDV7
     var title: String
     var status: TaskStatus
     let createdAt: Date
@@ -62,7 +62,7 @@ enum Priority: Int, Codable, Sendable {
 
 @Entity
 struct MacroItem {
-    let id: UUIDV4
+    let id: UUIDV7
     var name: String
     var priority: Priority
     let createdAt: Date
@@ -72,7 +72,7 @@ struct MacroItem {
 /// Optional enum for testing Codable enum storage
 @Entity
 struct MacroOrder {
-    let id: UUIDV4
+    let id: UUIDV7
     var orderNumber: String
     var status: TaskStatus?
     let createdAt: Date
@@ -261,7 +261,7 @@ struct MacroCompilationTests {
 
         // Create
         let user = MacroUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -299,7 +299,7 @@ struct MacroCompilationTests {
         try store.migrate(entities: [MacroUser.self])
 
         let user = MacroUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: nil,
@@ -320,7 +320,7 @@ struct MacroCompilationTests {
 
         let settings = UserSettings(theme: "dark", notifications: true)
         let profile = MacroProfile(
-            id: UUIDV4(),
+            id: UUIDV7(),
             bio: "Hello world",
             settings: settings,
             createdAt: Date(),
@@ -350,7 +350,7 @@ struct MacroCompilationTests {
         try store.migrate(entities: [MacroTask.self])
 
         let task = MacroTask(
-            id: UUIDV4(),
+            id: UUIDV7(),
             title: "Test Task",
             status: .pending,
             createdAt: Date(),
@@ -385,7 +385,7 @@ struct MacroCompilationTests {
         try store.migrate(entities: [MacroItem.self])
 
         let item = MacroItem(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Test Item",
             priority: .low,
             createdAt: Date(),
@@ -414,7 +414,7 @@ struct MacroCompilationTests {
 
         // Test with nil status
         let orderWithNil = MacroOrder(
-            id: UUIDV4(),
+            id: UUIDV7(),
             orderNumber: "ORD-001",
             status: nil,
             createdAt: Date(),
@@ -428,7 +428,7 @@ struct MacroCompilationTests {
 
         // Test with non-nil status
         let orderWithStatus = MacroOrder(
-            id: UUIDV4(),
+            id: UUIDV7(),
             orderNumber: "ORD-002",
             status: .pending,
             createdAt: Date(),
@@ -457,7 +457,7 @@ struct MacroCompilationTests {
         // Insert multiple users
         for i in 0..<5 {
             let user = MacroUser(
-                id: UUIDV4(),
+                id: UUIDV7(),
                 name: "User\(i)",
                 email: "user\(i)@example.com",
                 age: 20 + i,
@@ -570,9 +570,9 @@ struct MacroCompilationTests {
 
         // Insert some profiles with different settings
         let profiles = [
-            MacroProfile(id: UUIDV4(), bio: "Bio 1", settings: UserSettings(theme: "dark", notifications: true), createdAt: Date(), updatedAt: Date()),
-            MacroProfile(id: UUIDV4(), bio: "Bio 2", settings: UserSettings(theme: "light", notifications: false), createdAt: Date(), updatedAt: Date()),
-            MacroProfile(id: UUIDV4(), bio: "Bio 3", settings: UserSettings(theme: "dark", notifications: false), createdAt: Date(), updatedAt: Date()),
+            MacroProfile(id: UUIDV7(), bio: "Bio 1", settings: UserSettings(theme: "dark", notifications: true), createdAt: Date(), updatedAt: Date()),
+            MacroProfile(id: UUIDV7(), bio: "Bio 2", settings: UserSettings(theme: "light", notifications: false), createdAt: Date(), updatedAt: Date()),
+            MacroProfile(id: UUIDV7(), bio: "Bio 3", settings: UserSettings(theme: "dark", notifications: false), createdAt: Date(), updatedAt: Date()),
         ]
 
         for profile in profiles {

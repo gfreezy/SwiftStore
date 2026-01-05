@@ -1050,4 +1050,45 @@ struct DefaultMacroTests {
             macros: testMacros
         )
     }
+
+    @Test("@Default with Set types")
+    func testDefaultWithSetTypes() {
+        assertMacroExpansion(
+            """
+            @Default
+            struct SetTypes: Codable {
+                var emptySet: Set<String> = Set()
+                var nonEmptySet: Set<Int> = [1, 2, 3]
+            }
+            """,
+            expandedSource: """
+            struct SetTypes: Codable {
+                var emptySet: Set<String> = Set()
+                var nonEmptySet: Set<Int> = [1, 2, 3]
+
+                private enum CodingKeys: String, CodingKey {
+                    case emptySet
+                    case nonEmptySet
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.emptySet = try container.decodeIfPresent(Set<String>.self, forKey: .emptySet) ?? Set<String>()
+                    self.nonEmptySet = try container.decodeIfPresent(Set<Int>.self, forKey: .nonEmptySet) ?? [1, 2, 3]
+                }
+
+                public init(emptySet: Set<String> = Set(), nonEmptySet: Set<Int> = [1, 2, 3]) {
+                    self.emptySet = emptySet
+                    self.nonEmptySet = nonEmptySet
+                }
+
+                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
+            }
+
+            extension SetTypes: Default {
+            }
+            """,
+            macros: testMacros
+        )
+    }
 }

@@ -23,7 +23,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -48,7 +48,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self])
 
         var user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -75,7 +75,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: nil,
@@ -97,7 +97,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -107,7 +107,7 @@ struct StoreTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -132,7 +132,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self])
 
         let user1 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -142,7 +142,7 @@ struct StoreTests {
         )
 
         let user2 = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Bob",
             email: "bob@example.com",
             age: 30,
@@ -166,7 +166,7 @@ struct StoreTests {
         try store.migrate(entities: [TestUser.self, TestTag.self, TestUserTags.self])
 
         let user = TestUser(
-            id: UUIDV4(),
+            id: UUIDV7(),
             name: "Alice",
             email: "alice@example.com",
             age: 25,
@@ -175,8 +175,8 @@ struct StoreTests {
             updatedAt: Date()
         )
 
-        let tag1 = TestTag(id: UUIDV4(), name: "swift", createdAt: Date(), updatedAt: Date())
-        let tag2 = TestTag(id: UUIDV4(), name: "ios", createdAt: Date(), updatedAt: Date())
+        let tag1 = TestTag(id: UUIDV7(), name: "swift", createdAt: Date(), updatedAt: Date())
+        let tag2 = TestTag(id: UUIDV7(), name: "ios", createdAt: Date(), updatedAt: Date())
 
         try store.connection.insert(user)
         try store.connection.insert(tag1)
@@ -184,14 +184,14 @@ struct StoreTests {
 
         // Create relations
         let relation1 = TestUserTags(
-            id: UUIDV4(),
+            id: UUIDV7(),
             userId: user.id,
             tagId: tag1.id,
             createdAt: Date(),
             updatedAt: Date()
         )
         let relation2 = TestUserTags(
-            id: UUIDV4(),
+            id: UUIDV7(),
             userId: user.id,
             tagId: tag2.id,
             createdAt: Date(),

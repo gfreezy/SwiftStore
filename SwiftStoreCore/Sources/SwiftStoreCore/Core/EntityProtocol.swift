@@ -15,7 +15,7 @@ public extension EntityProtocol {
     }
 }
 
-public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
+public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV7 {
     /// Update this entity in the database (only available for entities with id field)
     /// Timestamp (updated_at) is set automatically by trigger
     /// - Parameter connection: The database connection
@@ -49,13 +49,13 @@ public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
 
 // MARK: - Static CRUD Extensions for EntityProtocol
 
-public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
+public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV7 {
     /// Get entity by ID
     /// - Parameters:
     ///   - id: The entity ID
     ///   - connection: The database connection
     /// - Returns: The entity if found, nil otherwise
-    static func find(_ id: UUIDV4, _ connection: SQLiteConnection) throws -> Self? {
+    static func find(_ id: UUIDV7, _ connection: SQLiteConnection) throws -> Self? {
         try connection.get(Self.self, id: id)
     }
 
@@ -65,7 +65,7 @@ public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
     ///   - connection: The database connection
     /// - Returns: The entity
     /// - Throws: StoreError.entityNotFound if not found
-    static func get(_ id: UUIDV4, _ connection: SQLiteConnection) throws -> Self {
+    static func get(_ id: UUIDV7, _ connection: SQLiteConnection) throws -> Self {
         guard let entity = try find(id, connection) else {
             throw StoreError.entityNotFound(id)
         }
@@ -76,7 +76,7 @@ public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
     /// - Parameters:
     ///   - id: The entity ID
     ///   - connection: The database connection
-    static func delete(_ id: UUIDV4, _ connection: SQLiteConnection) throws {
+    static func delete(_ id: UUIDV7, _ connection: SQLiteConnection) throws {
         try connection.delete(Self.self, id: id)
     }
 }
@@ -150,14 +150,14 @@ public extension EntityProtocol {
 
 // MARK: - Identifiable Entity Extensions
 
-public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV4 {
+public extension EntityProtocol where Self: Identifiable, Self.ID == UUIDV7 {
     /// Filter by primary key (only available for entities with id field)
-    static func filter(id: UUIDV4) -> Query<Self> {
+    static func filter(id: UUIDV7) -> Query<Self> {
         Query(Self.self).filter(id: id)
     }
 
     /// Filter by multiple primary keys (only available for entities with id field)
-    static func filter(ids: [UUIDV4]) -> Query<Self> {
+    static func filter(ids: [UUIDV7]) -> Query<Self> {
         Query(Self.self).filter(ids: ids)
     }
 }
