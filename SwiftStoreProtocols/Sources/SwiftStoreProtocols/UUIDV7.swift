@@ -26,7 +26,7 @@ import Foundation
 /// - Time-ordered: UUIDs created later sort after earlier ones
 /// - Better database index performance (sequential inserts)
 /// - Timestamp can be extracted from UUID
-public struct UUIDV7: Hashable, Sendable, Codable, CustomStringConvertible, Comparable {
+public struct UUIDV7: Hashable, Sendable, Codable, CustomStringConvertible, Comparable, Equatable {
     public let uuid: UUID
 
     /// Create a new time-ordered UUID
