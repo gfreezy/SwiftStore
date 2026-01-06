@@ -12,7 +12,7 @@ public enum ChangeOperation: String, Codable, Sendable {
 /// Change log entry for sync
 @Entity
 public struct ChangeLog {
-    public let id: UUIDV7
+    public var id: UUIDV7 = UUIDV7()
     public var entityType: String
     /// Binary encoded sync key values (using SyncKeyEncoder)
     public var syncKey: Data
@@ -23,7 +23,7 @@ public struct ChangeLog {
     /// Schema version for migration compatibility
     /// Higher versions can process lower version data, lower versions ignore higher version data
     public var schemaVersion: Int
-    public let createdAt: Date
-    public let updatedAt: Date
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
 }
 

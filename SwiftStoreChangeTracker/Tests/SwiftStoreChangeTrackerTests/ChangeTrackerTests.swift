@@ -6,11 +6,11 @@ import Foundation
 // MARK: - Test Entity (Manual implementation for reliable encoding)
 @Entity
 struct TestEntity {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var value: Int
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 // MARK: - Test Helpers

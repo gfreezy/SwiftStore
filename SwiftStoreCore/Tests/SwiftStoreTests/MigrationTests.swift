@@ -860,14 +860,14 @@ struct MigratorPlanSQLTests {
 /// V2 entity with additional fields (bio, score, isActive)
 @Entity(tableName: "migration_user")
 struct MigrationUserV2 {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var email: String
     var bio: String = ""
     var score: Int = 0
     var isActive: Bool = true
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// V3 entity with optional field and nested Codable
@@ -879,7 +879,7 @@ struct MigrationSettings: Codable, Sendable {
 
 @Entity(tableName: "migration_user")
 struct MigrationUserV3 {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var email: String
     var bio: String = ""
@@ -887,8 +887,8 @@ struct MigrationUserV3 {
     var isActive: Bool = true
     var age: Int?
     var settings: MigrationSettings = MigrationSettings()
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 @Suite("Entity Add Field Migration Tests")

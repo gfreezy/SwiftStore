@@ -74,29 +74,29 @@ struct Address: Codable, Sendable {
 @Entity(tableName: "test_user")
 struct TestUser {
     #Index<Self>(\.email, unique: true)
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var email: String
     var age: Int?
     var address: Address
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 @Entity(tableName: "test_tag")
 struct TestTag {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 @Entity(tableName: "test_user_tags")
 struct TestUserTags {
     #Index<Self>(\.userId, \.tagId, unique: true, name: "idx_test_user_tags_unique")
-    let id: UUIDV7
-    let userId: UUIDV7
-    let tagId: UUIDV7
-    let createdAt: Date
-    let updatedAt: Date
+    var id: UUIDV7 = UUIDV7()
+    var userId: UUIDV7
+    var tagId: UUIDV7
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }

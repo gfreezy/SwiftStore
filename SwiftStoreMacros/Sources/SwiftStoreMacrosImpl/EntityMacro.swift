@@ -1,6 +1,6 @@
 import SwiftSyntax
-import SwiftSyntaxMacros
 import SwiftSyntaxBuilder
+import SwiftSyntaxMacros
 
 /// Entity macro that generates EntityProtocol conformance
 public struct EntityMacro: MemberMacro, ExtensionMacro {
@@ -22,15 +22,16 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Parse optional tableName argument
         let tableName: String
         if let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-           let tableNameArg = arguments.first(where: { $0.label?.text == "tableName" }),
-           let stringLiteral = tableNameArg.expression.as(StringLiteralExprSyntax.self),
-           let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self) {
+            let tableNameArg = arguments.first(where: { $0.label?.text == "tableName" }),
+            let stringLiteral = tableNameArg.expression.as(StringLiteralExprSyntax.self),
+            let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self)
+        {
             tableName = segment.content.text
         } else {
             tableName = MacroHelpers.camelToSnakeCase(structName)
         }
 
-        let properties = structDecl.extractProperties()
+        var properties = structDecl.extractProperties()
 
         // Parse #SyncKey marker (if any) FIRST - needed for validation
         let syncKeyInfo = SyncKeyMarkerParser.parse(from: structDecl.memberBlock.members)
@@ -38,7 +39,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let syncKeyColumns = syncKeyInfo?.columns ?? ["id"]
 
         // Validate required fields based on whether #SyncKey is used
-        try validateRequiredFields(properties: properties, structName: structName, hasSyncKey: hasSyncKey)
+        try validateAndAddDefaultValuesForRequiredFields(
+            properties: &properties, structName: structName, hasSyncKey: hasSyncKey
+        )
 
         // Generate column definitions
         var columnDefs: [String] = []
@@ -56,7 +59,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             let colType = prop.sqliteType
             let isJSON = !prop.isPrimitive && prop.type != "UUIDV7"
             // Add default value for Date columns (createdAt/updatedAt)
-            let isTimestamp = prop.type == "Date" && (prop.name == "createdAt" || prop.name == "updatedAt")
+            let isTimestamp =
+                prop.type == "Date" && (prop.name == "createdAt" || prop.name == "updatedAt")
 
             var def = "ColumnDefinition(name: \"\(prop.columnName)\", type: .\(colType)"
             if nullable {
@@ -75,7 +79,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             columnDefs.append(def)
         }
 
-        let columnsArray = columnDefs.joined(separator: ",\n        ")
+        let columnsArray = MacroHelpers.joinList(columnDefs, indent: 8)
 
         let tableNameDecl: DeclSyntax = """
             public static var tableName: String { "\(raw: tableName)" }
@@ -85,10 +89,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let encodeDecl = try generateSqliteEncode(properties: properties)
 
         // Generate sqliteDecode(from:) method
-        let decodeDecl = try generateSqliteDecode(properties: properties, structName: structName, hasSyncKey: hasSyncKey)
+        let decodeDecl = try generateSqliteDecode(
+            properties: properties, structName: structName, hasSyncKey: hasSyncKey)
 
         // Parse #Index markers from struct body
-        let indexInfos = IndexMarkerParser.parse(from: structDecl.memberBlock.members, tableName: tableName)
+        let indexInfos = IndexMarkerParser.parse(
+            from: structDecl.memberBlock.members, tableName: tableName)
 
         // Collect all virtual columns needed for nested property indexes
         var virtualColumnDefs: [String] = []
@@ -101,8 +107,10 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
                 // Generate virtual column definition
                 // json_extract returns TEXT by default for string values
-                let jsonExtract = "json_extract(\(virtualCol.jsonColumn!), '\(virtualCol.jsonPath!)')"
-                let def = "ColumnDefinition(name: \"\(virtualCol.columnName)\", type: .text, nullable: true, generatedAs: \"\(jsonExtract)\")"
+                let jsonExtract =
+                    "json_extract(\(virtualCol.jsonColumn!), '\(virtualCol.jsonPath!)')"
+                let def =
+                    "ColumnDefinition(name: \"\(virtualCol.columnName)\", type: .text, nullable: true, generatedAs: \"\(jsonExtract)\")"
                 virtualColumnDefs.append(def)
             }
         }
@@ -110,13 +118,13 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Append virtual columns to the columns array if any
         var finalColumnsArray = columnsArray
         if !virtualColumnDefs.isEmpty {
-            finalColumnsArray += ",\n        " + virtualColumnDefs.joined(separator: ",\n        ")
+            finalColumnsArray += ",\n" + MacroHelpers.joinList(virtualColumnDefs, indent: 8)
         }
 
         let columnsDecl: DeclSyntax = """
             public static var columns: [ColumnDefinition] {
                 [
-                    \(raw: finalColumnsArray)
+            \(raw: finalColumnsArray)
                 ]
             }
             """
@@ -127,13 +135,14 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             public static var syncKeyColumns: [String] { [\(raw: syncKeyColumnsStr)] }
             """
 
-        // Generate init method with default values for id, createdAt, updatedAt
-        let initDecl = generateInitMethod(properties: properties)
+        // Generate init method and Decodable init using shared implementation from EmbeddedMacro
+        let initDecl = EmbeddedMacro.generateMemberwiseInit(properties: properties)
+        let decodableInitDecl = EmbeddedMacro.generateDecodableInit(properties: properties)
 
-        // Generate custom Decodable init that handles missing keys with default values
-        let decodableInitDecl = generateDecodableInit(properties: properties)
-
-        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl]
+        var result: [DeclSyntax] = [
+            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl,
+            decodableInitDecl,
+        ]
 
         // Generate id computed property for #SyncKey entities (for Identifiable conformance)
         if let syncKeyInfo = syncKeyInfo {
@@ -160,20 +169,21 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Auto-generate unique index for sync key (unless it's just "id" which is already primary key)
         if syncKeyColumns != ["id"] {
             let syncKeyIndexName = "idx_\(tableName)_sync_key"
-            let syncKeyIndexDef = "IndexDefinition(name: \"\(syncKeyIndexName)\", columns: [\(syncKeyColumnsStr)], unique: true)"
+            let syncKeyIndexDef =
+                "IndexDefinition(name: \"\(syncKeyIndexName)\", columns: [\(syncKeyColumnsStr)], unique: true)"
             indexDefStrings.append(syncKeyIndexDef)
         }
 
         // Only add indexes property if there are any indexes
         if !indexDefStrings.isEmpty {
-            let indexesArray = indexDefStrings.joined(separator: ",\n        ")
+            let indexesArray = MacroHelpers.joinList(indexDefStrings, indent: 8)
             let indexesDecl: DeclSyntax = """
-            public static var indexes: [IndexDefinition] {
-                [
-                    \(raw: indexesArray)
-                ]
-            }
-            """
+                public static var indexes: [IndexDefinition] {
+                    [
+                \(raw: indexesArray)
+                    ]
+                }
+                """
             result.append(indexesDecl)
         }
 
@@ -181,124 +191,6 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // for proper fault-tolerant decoding. Add @Embedded to your nested structs.
 
         return result
-    }
-
-    /// Generate custom Decodable init(from decoder:) that handles missing keys with default values
-    /// This enables backward compatibility when new fields are added to entities
-    private static func generateDecodableInit(properties: [PropertyInfo]) -> DeclSyntax {
-        // Generate CodingKeys enum
-        let codingKeysEntries = properties.map { prop in
-            "case \(prop.name)"
-        }.joined(separator: "\n    ")
-
-        // Check if we have any nested struct types that need Embedded validation
-        let hasNestedTypes = properties.contains { MacroHelpers.isNestedStructType($0.type) }
-
-        // Generate decoding statements
-        var decodingStatements: [String] = []
-
-        for prop in properties {
-            let propName = prop.name
-            let baseType = prop.type.replacingOccurrences(of: "?", with: "")
-            let isNestedType = MacroHelpers.isNestedStructType(prop.type)
-
-            // Use property's own default value (validated to exist for id/createdAt/updatedAt)
-            let defaultValue = prop.defaultValue
-
-            if prop.isOptional {
-                // Optional types: use decodeIfPresent, default to nil
-                if isNestedType {
-                    // Use helper function for nested types to enforce Embedded constraint
-                    decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName))")
-                } else {
-                    decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
-                }
-            } else if let defaultVal = defaultValue {
-                // Non-optional with default: use do-catch to fallback on any error
-                if isNestedType {
-                    decodingStatements.append("do {\n        self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))\n    } catch {\n        self.\(propName) = \(defaultVal)\n    }")
-                } else {
-                    decodingStatements.append("do {\n        self.\(propName) = try container.decode(\(baseType).self, forKey: .\(propName))\n    } catch {\n        self.\(propName) = \(defaultVal)\n    }")
-                }
-            } else {
-                // Non-optional without default: required field
-                if isNestedType {
-                    // Use helper function for nested types to enforce Embedded constraint
-                    decodingStatements.append("self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))")
-                } else {
-                    decodingStatements.append("self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))")
-                }
-            }
-        }
-
-        let decodingCode = decodingStatements.joined(separator: "\n    ")
-
-        // Generate helper functions for nested type decoding if needed
-        let helperFunctions: String
-        if hasNestedTypes {
-            helperFunctions = """
-
-
-                /// Helper to decode nested types with Embedded constraint (compile-time validation)
-                @inline(__always)
-                private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
-                    try container.decode(T.self, forKey: key)
-                }
-
-                /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
-                @inline(__always)
-                private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
-                    try container.decodeIfPresent(T.self, forKey: key)
-                }
-            """
-        } else {
-            helperFunctions = ""
-        }
-
-        return """
-        private enum CodingKeys: String, CodingKey {
-            \(raw: codingKeysEntries)
-        }
-
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            \(raw: decodingCode)
-        }\(raw: helperFunctions)
-        """
-    }
-
-    /// Generate init method with default values from property declarations
-    private static func generateInitMethod(properties: [PropertyInfo]) -> DeclSyntax {
-        var params: [String] = []
-
-        for prop in properties {
-            let paramName = prop.name
-            let paramType = prop.type
-
-            // Use property's own default value (validated to exist for id/createdAt/updatedAt)
-            if let defaultVal = prop.defaultValue {
-                params.append("\(paramName): \(paramType) = \(defaultVal)")
-            } else {
-                params.append("\(paramName): \(paramType)")
-            }
-        }
-
-        let paramsStr = params.joined(separator: ",\n    ")
-
-        // Generate assignments
-        var assignments: [String] = []
-        for prop in properties {
-            assignments.append("self.\(prop.name) = \(prop.name)")
-        }
-        let assignmentsStr = assignments.joined(separator: "\n    ")
-
-        return """
-        public init(
-            \(raw: paramsStr)
-        ) {
-            \(raw: assignmentsStr)
-        }
-        """
     }
 
     /// Generate the sqliteEncode() method
@@ -313,21 +205,23 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             encodings.append("result[\"\(columnName)\"] = try self.\(prop.name).sqliteEncode()")
         }
 
-        let encodingCode = encodings.joined(separator: "\n        ")
+        let encodingCode = MacroHelpers.joinLines(encodings, indent: 4)
 
         return """
-        public func sqliteEncode() throws -> [String: SQLiteValue] {
-            var result: [String: SQLiteValue] = [:]
+            public func sqliteEncode() throws -> [String: SQLiteValue] {
+                var result: [String: SQLiteValue] = [:]
             \(raw: encodingCode)
-            return result
-        }
-        """
+                return result
+            }
+            """
     }
 
     /// Generate the sqliteDecode(from:) method
     /// Uses SQLiteValueDecodable.init(from:) for all types
     /// For properties with default values, uses do-catch to fallback to default on error
-    private static func generateSqliteDecode(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws -> DeclSyntax {
+    private static func generateSqliteDecode(
+        properties: [PropertyInfo], structName: String, hasSyncKey: Bool
+    ) throws -> DeclSyntax {
         var decodings: [String] = []
         var constructorArgs: [String] = []
 
@@ -338,12 +232,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             constructorArgs.append("\(prop.name): \(varName)")
         }
 
-        let decodingCode = decodings.joined(separator: "\n        ")
+        let decodingCode = MacroHelpers.joinLines(decodings, indent: 4)
         let constructorCode = constructorArgs.joined(separator: ", ")
 
         return """
             public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
-                \(raw: decodingCode)
+            \(raw: decodingCode)
                 return Self(\(raw: constructorCode))
             }
             """
@@ -351,26 +245,31 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
     /// Generate decode expression for a property
     /// Uses SQLiteValueDecodable.init(from:) with do-catch for default values
-    private static func generateDecodeExpression(for prop: PropertyInfo, varName: String, index: Int) -> String {
+    private static func generateDecodeExpression(
+        for prop: PropertyInfo, varName: String, index: Int
+    ) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
         let sqliteType = prop.sqliteType  // "text", "integer", "real", "blob"
 
-        if prop.isOptional {
-            // For optional types, use Optional<T>(from:) which handles .null -> nil
-            return "let \(varName) = try Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
-        } else if let defaultVal = prop.defaultValue {
+        if let defaultVal = prop.defaultValue {
             // For non-optional with default value: use var + do-catch block
             return """
-var \(varName): \(baseType)
-        do {
-            \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))
-        } catch {
-            \(varName) = \(defaultVal)
-        }
-"""
+                var \(varName): \(baseType)
+                do {
+                    \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))
+                } catch {
+                    os_log(.error, "Failed to decode '\(prop.name)': %{public}@", String(describing: error))
+                    \(varName) = \(defaultVal)
+                }
+                """
+        } else if prop.isOptional {
+            // For optional types, use Optional<T>(from:) which handles .null -> nil
+            return
+                "let \(varName) = try Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
         } else {
             // For non-optional without default value: just try decode
-            return "let \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+            return
+                "let \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
         }
     }
 
@@ -421,20 +320,14 @@ var \(varName): \(baseType)
             extensions.append(ext)
         }
 
-        // Embedded protocol conformance (marker protocol for embedded types)
-        let embeddedProtocol: DeclSyntax = """
-            extension \(type.trimmed): Embedded {}
-            """
-        if let ext = embeddedProtocol.as(ExtensionDeclSyntax.self) {
-            extensions.append(ext)
-        }
-
         return extensions
     }
 
     /// Generate id computed property for entities using #SyncKey
     /// This enables Identifiable conformance based on sync key fields
-    private static func generateSyncKeyIdProperty(syncKeyInfo: SyncKeyMarkerParser.SyncKeyInfo, properties: [PropertyInfo]) -> DeclSyntax {
+    private static func generateSyncKeyIdProperty(
+        syncKeyInfo: SyncKeyMarkerParser.SyncKeyInfo, properties: [PropertyInfo]
+    ) -> DeclSyntax {
         let propertyNames = syncKeyInfo.propertyNames
 
         if propertyNames.count == 1 {
@@ -463,12 +356,12 @@ var \(varName): \(baseType)
                 }
             }
 
-            let fieldsCode = structFields.joined(separator: "\n            ")
+            let fieldsCode = MacroHelpers.joinLines(structFields, indent: 4)
             let assignmentsCode = fieldAssignments.joined(separator: ", ")
 
             return """
                 public struct SyncKeyID: Hashable, Sendable {
-                    \(raw: fieldsCode)
+                \(raw: fieldsCode)
                 }
 
                 public var id: SyncKeyID { SyncKeyID(\(raw: assignmentsCode)) }
@@ -476,10 +369,12 @@ var \(varName): \(baseType)
         }
     }
 
-    /// Validate that required fields exist with correct types and default values
+    /// Validate that required fields exist with correct types and add default values if missing
     /// - hasSyncKey: If true, #SyncKey is used and id field is NOT allowed
     ///               If false, id field is required and #SyncKey is not allowed
-    private static func validateRequiredFields(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws {
+    private static func validateAndAddDefaultValuesForRequiredFields(
+        properties: inout [PropertyInfo], structName: String, hasSyncKey: Bool
+    ) throws {
         let hasIdField = properties.contains(where: { $0.name == "id" })
 
         if hasSyncKey {
@@ -489,7 +384,7 @@ var \(varName): \(baseType)
             }
         } else {
             // When no #SyncKey, id: UUIDV7 is required
-            guard let idProp = properties.first(where: { $0.name == "id" }) else {
+            guard let idIndex = properties.firstIndex(where: { $0.name == "id" }) else {
                 throw MacroError.missingRequiredField(
                     structName: structName,
                     fieldName: "id",
@@ -497,6 +392,7 @@ var \(varName): \(baseType)
                 )
             }
 
+            let idProp = properties[idIndex]
             let idBaseType = idProp.type.replacingOccurrences(of: "?", with: "")
             if idBaseType != "UUIDV7" {
                 throw MacroError.wrongFieldType(
@@ -514,18 +410,14 @@ var \(varName): \(baseType)
                 )
             }
 
-            // id field must have a default value
-            if idProp.defaultValue == nil {
-                throw MacroError.missingDefaultValue(
-                    structName: structName,
-                    fieldName: "id",
-                    expectedDefault: "UUIDV7()"
-                )
+            // Add default value for id if not present
+            if properties[idIndex].defaultValue == nil {
+                properties[idIndex].defaultValue = "UUIDV7()"
             }
         }
 
         // Check for createdAt: Date (always required)
-        guard let createdAtProp = properties.first(where: { $0.name == "createdAt" }) else {
+        guard let createdAtIndex = properties.firstIndex(where: { $0.name == "createdAt" }) else {
             throw MacroError.missingRequiredField(
                 structName: structName,
                 fieldName: "createdAt",
@@ -533,6 +425,7 @@ var \(varName): \(baseType)
             )
         }
 
+        let createdAtProp = properties[createdAtIndex]
         let createdAtBaseType = createdAtProp.type.replacingOccurrences(of: "?", with: "")
         if createdAtBaseType != "Date" {
             throw MacroError.wrongFieldType(
@@ -550,17 +443,13 @@ var \(varName): \(baseType)
             )
         }
 
-        // createdAt must have a default value
-        if createdAtProp.defaultValue == nil {
-            throw MacroError.missingDefaultValue(
-                structName: structName,
-                fieldName: "createdAt",
-                expectedDefault: "Date()"
-            )
+        // Add default value for createdAt if not present
+        if properties[createdAtIndex].defaultValue == nil {
+            properties[createdAtIndex].defaultValue = "Date()"
         }
 
         // Check for updatedAt: Date (always required)
-        guard let updatedAtProp = properties.first(where: { $0.name == "updatedAt" }) else {
+        guard let updatedAtIndex = properties.firstIndex(where: { $0.name == "updatedAt" }) else {
             throw MacroError.missingRequiredField(
                 structName: structName,
                 fieldName: "updatedAt",
@@ -568,6 +457,7 @@ var \(varName): \(baseType)
             )
         }
 
+        let updatedAtProp = properties[updatedAtIndex]
         let updatedAtBaseType = updatedAtProp.type.replacingOccurrences(of: "?", with: "")
         if updatedAtBaseType != "Date" {
             throw MacroError.wrongFieldType(
@@ -585,13 +475,9 @@ var \(varName): \(baseType)
             )
         }
 
-        // updatedAt must have a default value
-        if updatedAtProp.defaultValue == nil {
-            throw MacroError.missingDefaultValue(
-                structName: structName,
-                fieldName: "updatedAt",
-                expectedDefault: "Date()"
-            )
+        // Add default value for updatedAt if not present
+        if properties[updatedAtIndex].defaultValue == nil {
+            properties[updatedAtIndex].defaultValue = "Date()"
         }
     }
 }
@@ -600,7 +486,8 @@ var \(varName): \(baseType)
 public enum MacroError: Error, CustomStringConvertible {
     case message(String)
     case missingRequiredField(structName: String, fieldName: String, expectedType: String)
-    case wrongFieldType(structName: String, fieldName: String, expectedType: String, actualType: String)
+    case wrongFieldType(
+        structName: String, fieldName: String, expectedType: String, actualType: String)
     case fieldMustNotBeOptional(structName: String, fieldName: String)
     case fieldNotFound(structName: String, fieldName: String)
     case invalidKeyPath(keyPath: String)
@@ -613,9 +500,11 @@ public enum MacroError: Error, CustomStringConvertible {
         case .message(let msg):
             return msg
         case .missingRequiredField(let structName, let fieldName, let expectedType):
-            return "@Entity requires '\(structName)' to have a '\(fieldName): \(expectedType)' field"
+            return
+                "@Entity requires '\(structName)' to have a '\(fieldName): \(expectedType)' field"
         case .wrongFieldType(let structName, let fieldName, let expectedType, let actualType):
-            return "@Entity requires '\(structName).\(fieldName)' to be of type '\(expectedType)', but found '\(actualType)'"
+            return
+                "@Entity requires '\(structName).\(fieldName)' to be of type '\(expectedType)', but found '\(actualType)'"
         case .fieldMustNotBeOptional(let structName, let fieldName):
             return "@Entity requires '\(structName).\(fieldName)' to be non-optional"
         case .fieldNotFound(let structName, let fieldName):
@@ -623,11 +512,14 @@ public enum MacroError: Error, CustomStringConvertible {
         case .invalidKeyPath(let keyPath):
             return "Invalid KeyPath: '\(keyPath)'"
         case .syncKeyAndIdMutuallyExclusive(let structName):
-            return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV7', not both."
+            return
+                "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV7', not both."
         case .missingTypeAnnotation(let structName, let fieldName):
-            return "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
+            return
+                "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
         case .missingDefaultValue(let structName, let fieldName, let expectedDefault):
-            return "@Entity requires '\(structName).\(fieldName)' to have a default value. Use 'var \(fieldName): ... = \(expectedDefault)'"
+            return
+                "@Entity requires '\(structName).\(fieldName)' to have a default value. Use 'var \(fieldName): ... = \(expectedDefault)'"
         }
     }
 }

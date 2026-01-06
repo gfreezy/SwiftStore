@@ -2,6 +2,125 @@ import SwiftSyntax
 
 /// Helper functions for macro implementations
 enum MacroHelpers {
+
+    // MARK: - Indentation Helpers
+
+    /// Indent each line of a multi-line string by the specified number of spaces
+    /// - Parameters:
+    ///   - text: The text to indent
+    ///   - spaces: Number of spaces to add at the beginning of each line
+    /// - Returns: Indented text
+    static func indent(_ text: String, by spaces: Int) -> String {
+        let indentation = String(repeating: " ", count: spaces)
+        return text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.isEmpty ? String($0) : indentation + $0 }
+            .joined(separator: "\n")
+    }
+
+    /// Join lines with separator and indent each line
+    /// - Parameters:
+    ///   - lines: Array of lines to join (each element may contain multiple lines)
+    ///   - separator: Separator between lines (default: "\n")
+    ///   - indent: Number of spaces to indent each line (default: 0)
+    /// - Returns: Joined and indented string
+    static func joinLines(_ lines: [String], separator: String = "\n", indent spaces: Int = 0) -> String {
+        if spaces == 0 {
+            return lines.joined(separator: separator)
+        }
+        // Handle multiline strings within each element
+        return lines
+            .map { element in
+                indent(element, by: spaces)
+            }
+            .joined(separator: separator)
+    }
+
+    /// Join lines for array/list format with comma separator
+    /// - Parameters:
+    ///   - items: Array of items
+    ///   - indent: Number of spaces to indent each item
+    /// - Returns: Comma-separated string with each item on new line
+    static func joinList(_ items: [String], indent spaces: Int = 0) -> String {
+        joinLines(items, separator: ",\n", indent: spaces)
+    }
+
+    /// Create indentation string
+    /// - Parameter spaces: Number of spaces
+    /// - Returns: String of spaces
+    static func indentString(_ spaces: Int) -> String {
+        String(repeating: " ", count: spaces)
+    }
+
+    /// Wrap content in a block with proper indentation
+    /// - Parameters:
+    ///   - header: Block header (e.g., "do {", "if condition {")
+    ///   - content: Content inside the block
+    ///   - footer: Block footer (e.g., "}", "} catch {")
+    ///   - contentIndent: Indentation for content inside the block
+    /// - Returns: Formatted block string
+    static func wrapBlock(header: String, content: String, footer: String, contentIndent: Int = 4) -> String {
+        let indentedContent = indent(content, by: contentIndent)
+        return "\(header)\n\(indentedContent)\n\(footer)"
+    }
+
+    /// Create a do-catch block
+    /// - Parameters:
+    ///   - tryContent: Content in the do block
+    ///   - catchContent: Content in the catch block
+    ///   - logField: Optional field name to generate os_log error logging
+    ///   - indent: Base indentation for the block content
+    /// - Returns: Formatted do-catch block
+    static func doCatchBlock(
+        try tryContent: String,
+        catch catchContent: String,
+        logField: String? = nil,
+        indent: Int = 4
+    ) -> String {
+        let tryIndent = indentString(indent)
+        let catchIndent = indentString(indent)
+
+        var catchLines: [String] = []
+        if let fieldName = logField {
+            catchLines.append("os_log(.error, \"Failed to decode '\(fieldName)': %{public}@\", String(describing: error))")
+        }
+        catchLines.append(catchContent)
+
+        let catchCode = catchLines.map { "\(catchIndent)\($0)" }.joined(separator: "\n")
+
+        return """
+            do {
+            \(tryIndent)\(tryContent)
+            } catch {
+            \(catchCode)
+            }
+            """
+    }
+
+    /// Format parameters for function/init declaration
+    /// - Parameters:
+    ///   - params: Array of parameter strings (e.g., ["name: String", "age: Int = 0"])
+    ///   - indent: Indentation for each parameter
+    ///   - singleLine: If true and params fit, keep on single line
+    /// - Returns: Formatted parameters string
+    static func formatParams(_ params: [String], indent spaces: Int = 4, singleLine: Bool = false) -> String {
+        if singleLine && params.joined(separator: ", ").count < 80 {
+            return params.joined(separator: ", ")
+        }
+        return joinLines(params, separator: ",\n", indent: spaces)
+    }
+
+    /// Format assignments for init body
+    /// - Parameters:
+    ///   - assignments: Array of assignment strings (e.g., ["self.name = name"])
+    ///   - indent: Indentation for each assignment
+    /// - Returns: Formatted assignments string
+    static func formatAssignments(_ assignments: [String], indent spaces: Int = 4) -> String {
+        joinLines(assignments, separator: "\n", indent: spaces)
+    }
+
+    // MARK: - String Case Conversion
+
     /// Convert camelCase to snake_case
     static func camelToSnakeCase(_ input: String) -> String {
         var result = ""
@@ -192,7 +311,7 @@ struct PropertyInfo {
     let isOptional: Bool
     let isLet: Bool
     /// The default value expression as source code string (e.g., "\"\"", "0", "[]")
-    let defaultValue: String?
+    var defaultValue: String?
 
     var columnName: String {
         MacroHelpers.camelToSnakeCase(name)

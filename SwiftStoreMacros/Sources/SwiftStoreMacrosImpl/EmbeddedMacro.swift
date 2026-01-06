@@ -1,13 +1,15 @@
 import SwiftSyntax
-import SwiftSyntaxMacros
 import SwiftSyntaxBuilder
+import SwiftSyntaxMacros
 
 /// Embedded macro that generates:
-/// - Fault-tolerant Decodable conformance
+/// - Fault-tolerant Decodable conformance with do-catch for default values
+/// - Memberwise init with default values
 /// - Embedded protocol conformance
 /// - SQLiteValueCodable conformance (via Embedded protocol)
 ///
 /// Use this for types that will be embedded in @Entity structs as JSON.
+/// @Entity automatically conforms to Embedded, so you don't need to add it manually.
 public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
@@ -39,39 +41,6 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
         throw MacroError.message("@Embedded can only be applied to structs or enums")
     }
 
-    /// Generate memberwise init method with default values
-    private static func generateMemberwiseInit(properties: [PropertyInfo]) -> DeclSyntax {
-        var params: [String] = []
-
-        for prop in properties {
-            let paramName = prop.name
-            let paramType = prop.type
-
-            if let defaultValue = prop.defaultValue {
-                params.append("\(paramName): \(paramType) = \(defaultValue)")
-            } else if prop.isOptional {
-                params.append("\(paramName): \(paramType) = nil")
-            } else {
-                params.append("\(paramName): \(paramType)")
-            }
-        }
-
-        let paramsStr = params.joined(separator: ", ")
-
-        // Generate assignments
-        var assignments: [String] = []
-        for prop in properties {
-            assignments.append("self.\(prop.name) = \(prop.name)")
-        }
-        let assignmentsStr = assignments.joined(separator: "\n    ")
-
-        return """
-        public init(\(raw: paramsStr)) {
-            \(raw: assignmentsStr)
-        }
-        """
-    }
-
     // MARK: - ExtensionMacro
 
     public static func expansion(
@@ -99,52 +68,127 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
         return extensions
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Shared Init Generation (used by both @Embedded and @Entity)
 
-    /// Generate custom Decodable init(from decoder:) that handles missing keys with default values
-    private static func generateDecodableInit(properties: [PropertyInfo]) -> DeclSyntax {
-        // Generate CodingKeys enum
-        let codingKeysEntries = properties.map { prop in
-            "case \(prop.name)"
-        }.joined(separator: "\n    ")
-
-        // Generate decoding statements
-        var decodingStatements: [String] = []
-
-        for prop in properties {
-            let propName = prop.name
-            let baseType = prop.type.replacingOccurrences(of: "?", with: "")
-
-            if prop.isOptional {
-                // Optional types: use decodeIfPresent, default to nil
-                decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
-            } else if let defaultValue = prop.defaultValue {
-                // Non-optional with default: use decodeIfPresent with fallback
-                // For empty array/set literals, we need explicit type annotation
-                let typedDefault: String
-                if defaultValue == "[]" || defaultValue == "Set()" {
-                    typedDefault = "\(baseType)()"
-                } else {
-                    typedDefault = defaultValue
-                }
-                decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName)) ?? \(typedDefault)")
+    /// Generate memberwise init method with default values
+    /// This is called by both @Embedded and @Entity macros
+    static func generateMemberwiseInit(properties: [PropertyInfo]) -> DeclSyntax {
+        // Build parameter list
+        let params: [String] = properties.map { prop in
+            if let defaultValue = prop.defaultValue {
+                return "\(prop.name): \(prop.type) = \(defaultValue)"
             } else {
-                // Non-optional without default: required field
-                decodingStatements.append("self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))")
+                return "\(prop.name): \(prop.type)"
             }
         }
 
-        let decodingCode = decodingStatements.joined(separator: "\n    ")
+        // Build assignment list
+        let assignments: [String] = properties.map { prop in
+            "self.\(prop.name) = \(prop.name)"
+        }
+
+        let paramsStr = MacroHelpers.joinList(params, indent: 4)
+        let assignmentsStr = MacroHelpers.joinLines(assignments, indent: 4)
+
+        return """
+            public init(
+            \(raw: paramsStr)
+            ) {
+            \(raw: assignmentsStr)
+            }
+            """
+    }
+
+    /// Generate custom Decodable init(from decoder:) that handles missing keys with default values
+    /// Uses do-catch to fallback to default values on any decoding error
+    /// This is called by both @Embedded and @Entity macros
+    static func generateDecodableInit(properties: [PropertyInfo]) -> DeclSyntax {
+        // Generate CodingKeys enum entries
+        let codingKeysEntries = properties.map { "case \($0.name)" }
+        let codingKeysStr = MacroHelpers.joinLines(codingKeysEntries, indent: 4)
+
+        // Check if we have any nested struct types that need Embedded validation
+        let hasNestedTypes = properties.contains { MacroHelpers.isNestedStructType($0.type) }
+
+        // Generate decoding statements
+        let decodingStatements: [String] = properties.map { prop in
+            generateDecodingStatement(for: prop)
+        }
+        let decodingCode = MacroHelpers.joinLines(decodingStatements, indent: 4)
+
+        // Generate helper functions for nested type decoding if needed
+        let helperFunctions = hasNestedTypes ? generateNestedHelpers() : ""
 
         return """
         private enum CodingKeys: String, CodingKey {
-            \(raw: codingKeysEntries)
+        \(raw: codingKeysStr)
         }
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            \(raw: decodingCode)
+        \(raw: decodingCode)
         }
+        \(raw: helperFunctions)
         """
+    }
+
+    // MARK: - Private Helpers
+
+    /// Generate a single decoding statement for a property
+    private static func generateDecodingStatement(for prop: PropertyInfo) -> String {
+        let propName = prop.name
+        let baseType = prop.type.replacingOccurrences(of: "?", with: "")
+        let isNestedType = MacroHelpers.isNestedStructType(prop.type)
+
+        if let defaultVal = prop.defaultValue {
+            // Non-optional with default: use do-catch to fallback on any error
+            let tryExpr: String
+            if isNestedType {
+                tryExpr =
+                    "self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))"
+            } else {
+                tryExpr =
+                    "self.\(propName) = try container.decode(\(baseType).self, forKey: .\(propName))"
+            }
+            let catchExpr = "self.\(propName) = \(defaultVal)"
+            return MacroHelpers.doCatchBlock(try: tryExpr, catch: catchExpr, logField: propName)
+        } else if prop.isOptional {
+            // Optional types: use decodeIfPresent, default to nil
+            if isNestedType {
+                return
+                    "self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName))"
+            } else {
+                return
+                    "self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))"
+            }
+        } else {
+            // Non-optional without default: required field
+            if isNestedType {
+                return
+                    "self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))"
+            } else {
+                return
+                    "self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))"
+            }
+        }
+    }
+
+    /// Generate helper functions for nested type decoding
+    private static func generateNestedHelpers() -> String {
+        return """
+
+
+            /// Helper to decode nested types with Embedded constraint (compile-time validation)
+            @inline(__always)
+            private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                try container.decode(T.self, forKey: key)
+            }
+
+            /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+            @inline(__always)
+            private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                try container.decodeIfPresent(T.self, forKey: key)
+            }
+            """
     }
 }

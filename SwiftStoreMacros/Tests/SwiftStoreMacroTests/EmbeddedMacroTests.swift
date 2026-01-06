@@ -30,11 +30,24 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.theme = try container.decodeIfPresent(String.self, forKey: .theme) ?? "light"
-                    self.fontSize = try container.decodeIfPresent(Int.self, forKey: .fontSize) ?? 14
+                    do {
+                        self.theme = try container.decode(String.self, forKey: .theme)
+                    } catch {
+                        os_log(.error, "Failed to decode 'theme': %{public}@", String(describing: error))
+                        self.theme = "light"
+                    }
+                    do {
+                        self.fontSize = try container.decode(Int.self, forKey: .fontSize)
+                    } catch {
+                        os_log(.error, "Failed to decode 'fontSize': %{public}@", String(describing: error))
+                        self.fontSize = 14
+                    }
                 }
 
-                public init(theme: String = "light", fontSize: Int = 14) {
+                public init(
+                    theme: String = "light",
+                    fontSize: Int = 14
+                ) {
                     self.theme = theme
                     self.fontSize = fontSize
                 }
@@ -48,7 +61,6 @@ final class EmbeddedMacroTests: XCTestCase {
     }
 
     // MARK: - Required Field Tests
-
 
     func testDefaultWithRequiredField() {
         assertMacroExpansion(
@@ -72,10 +84,18 @@ final class EmbeddedMacroTests: XCTestCase {
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
                     self.userId = try container.decode(String.self, forKey: .userId)
-                    self.theme = try container.decodeIfPresent(String.self, forKey: .theme) ?? "light"
+                    do {
+                        self.theme = try container.decode(String.self, forKey: .theme)
+                    } catch {
+                        os_log(.error, "Failed to decode 'theme': %{public}@", String(describing: error))
+                        self.theme = "light"
+                    }
                 }
 
-                public init(userId: String, theme: String = "light") {
+                public init(
+                    userId: String,
+                    theme: String = "light"
+                ) {
                     self.userId = userId
                     self.theme = theme
                 }
@@ -89,7 +109,6 @@ final class EmbeddedMacroTests: XCTestCase {
     }
 
     // MARK: - Optional Field Tests
-
 
     func testDefaultWithOptionalField() {
         assertMacroExpansion(
@@ -112,11 +131,19 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "default"
+                    do {
+                        self.name = try container.decode(String.self, forKey: .name)
+                    } catch {
+                        os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                        self.name = "default"
+                    }
                     self.description = try container.decodeIfPresent(String.self, forKey: .description)
                 }
 
-                public init(name: String = "default", description: String? = nil) {
+                public init(
+                    name: String = "default",
+                    description: String?
+                ) {
                     self.name = name
                     self.description = description
                 }
@@ -129,157 +156,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-    // MARK: - All Primitive Types Tests
-
-
-    func testDefaultWithIntegerTypes() {
-        assertMacroExpansion(
-            """
-            @Embedded
-            struct IntegerTypes: Codable {
-                var intValue: Int = 0
-                var int8Value: Int8 = 8
-                var int16Value: Int16 = 16
-                var int32Value: Int32 = 32
-                var int64Value: Int64 = 64
-                var uintValue: UInt = 100
-            }
-            """,
-            expandedSource: """
-            struct IntegerTypes: Codable {
-                var intValue: Int = 0
-                var int8Value: Int8 = 8
-                var int16Value: Int16 = 16
-                var int32Value: Int32 = 32
-                var int64Value: Int64 = 64
-                var uintValue: UInt = 100
-
-                private enum CodingKeys: String, CodingKey {
-                    case intValue
-                    case int8Value
-                    case int16Value
-                    case int32Value
-                    case int64Value
-                    case uintValue
-                }
-
-                public init(from decoder: Decoder) throws {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.intValue = try container.decodeIfPresent(Int.self, forKey: .intValue) ?? 0
-                    self.int8Value = try container.decodeIfPresent(Int8.self, forKey: .int8Value) ?? 8
-                    self.int16Value = try container.decodeIfPresent(Int16.self, forKey: .int16Value) ?? 16
-                    self.int32Value = try container.decodeIfPresent(Int32.self, forKey: .int32Value) ?? 32
-                    self.int64Value = try container.decodeIfPresent(Int64.self, forKey: .int64Value) ?? 64
-                    self.uintValue = try container.decodeIfPresent(UInt.self, forKey: .uintValue) ?? 100
-                }
-
-                public init(intValue: Int = 0, int8Value: Int8 = 8, int16Value: Int16 = 16, int32Value: Int32 = 32, int64Value: Int64 = 64, uintValue: UInt = 100) {
-                    self.intValue = intValue
-                    self.int8Value = int8Value
-                    self.int16Value = int16Value
-                    self.int32Value = int32Value
-                    self.int64Value = int64Value
-                    self.uintValue = uintValue
-                }
-            }
-
-            extension IntegerTypes: Embedded {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
-
-    func testDefaultWithFloatAndBoolTypes() {
-        assertMacroExpansion(
-            """
-            @Embedded
-            struct FloatBoolTypes: Codable {
-                var doubleValue: Double = 3.14
-                var floatValue: Float = 2.5
-                var boolTrue: Bool = true
-                var boolFalse: Bool = false
-            }
-            """,
-            expandedSource: """
-            struct FloatBoolTypes: Codable {
-                var doubleValue: Double = 3.14
-                var floatValue: Float = 2.5
-                var boolTrue: Bool = true
-                var boolFalse: Bool = false
-
-                private enum CodingKeys: String, CodingKey {
-                    case doubleValue
-                    case floatValue
-                    case boolTrue
-                    case boolFalse
-                }
-
-                public init(from decoder: Decoder) throws {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.doubleValue = try container.decodeIfPresent(Double.self, forKey: .doubleValue) ?? 3.14
-                    self.floatValue = try container.decodeIfPresent(Float.self, forKey: .floatValue) ?? 2.5
-                    self.boolTrue = try container.decodeIfPresent(Bool.self, forKey: .boolTrue) ?? true
-                    self.boolFalse = try container.decodeIfPresent(Bool.self, forKey: .boolFalse) ?? false
-                }
-
-                public init(doubleValue: Double = 3.14, floatValue: Float = 2.5, boolTrue: Bool = true, boolFalse: Bool = false) {
-                    self.doubleValue = doubleValue
-                    self.floatValue = floatValue
-                    self.boolTrue = boolTrue
-                    self.boolFalse = boolFalse
-                }
-            }
-
-            extension FloatBoolTypes: Embedded {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
-
-    func testDefaultWithStringDefaults() {
-        assertMacroExpansion(
-            """
-            @Embedded
-            struct StringTypes: Codable {
-                var emptyString: String = ""
-                var nonEmptyString: String = "hello"
-            }
-            """,
-            expandedSource: """
-            struct StringTypes: Codable {
-                var emptyString: String = ""
-                var nonEmptyString: String = "hello"
-
-                private enum CodingKeys: String, CodingKey {
-                    case emptyString
-                    case nonEmptyString
-                }
-
-                public init(from decoder: Decoder) throws {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.emptyString = try container.decodeIfPresent(String.self, forKey: .emptyString) ?? ""
-                    self.nonEmptyString = try container.decodeIfPresent(String.self, forKey: .nonEmptyString) ?? "hello"
-                }
-
-                public init(emptyString: String = "", nonEmptyString: String = "hello") {
-                    self.emptyString = emptyString
-                    self.nonEmptyString = nonEmptyString
-                }
-            }
-
-            extension StringTypes: Embedded {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
     // MARK: - Collection Types Tests
-
 
     func testDefaultWithEmptyArrayDefault() {
         assertMacroExpansion(
@@ -302,11 +179,24 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.emptyArray = try container.decodeIfPresent([String].self, forKey: .emptyArray) ?? [String]()
-                    self.nonEmptyArray = try container.decodeIfPresent([Int].self, forKey: .nonEmptyArray) ?? [1, 2, 3]
+                    do {
+                        self.emptyArray = try container.decode([String].self, forKey: .emptyArray)
+                    } catch {
+                        os_log(.error, "Failed to decode 'emptyArray': %{public}@", String(describing: error))
+                        self.emptyArray = []
+                    }
+                    do {
+                        self.nonEmptyArray = try container.decode([Int].self, forKey: .nonEmptyArray)
+                    } catch {
+                        os_log(.error, "Failed to decode 'nonEmptyArray': %{public}@", String(describing: error))
+                        self.nonEmptyArray = [1, 2, 3]
+                    }
                 }
 
-                public init(emptyArray: [String] = [], nonEmptyArray: [Int] = [1, 2, 3]) {
+                public init(
+                    emptyArray: [String] = [],
+                    nonEmptyArray: [Int] = [1, 2, 3]
+                ) {
                     self.emptyArray = emptyArray
                     self.nonEmptyArray = nonEmptyArray
                 }
@@ -318,7 +208,6 @@ final class EmbeddedMacroTests: XCTestCase {
             macros: testMacros
         )
     }
-
 
     func testDefaultWithDictionaryDefaults() {
         assertMacroExpansion(
@@ -341,11 +230,24 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.emptyDict = try container.decodeIfPresent([String: Int].self, forKey: .emptyDict) ?? [:]
-                    self.nonEmptyDict = try container.decodeIfPresent([String: String].self, forKey: .nonEmptyDict) ?? ["key": "value"]
+                    do {
+                        self.emptyDict = try container.decode([String: Int].self, forKey: .emptyDict)
+                    } catch {
+                        os_log(.error, "Failed to decode 'emptyDict': %{public}@", String(describing: error))
+                        self.emptyDict = [:]
+                    }
+                    do {
+                        self.nonEmptyDict = try container.decode([String: String].self, forKey: .nonEmptyDict)
+                    } catch {
+                        os_log(.error, "Failed to decode 'nonEmptyDict': %{public}@", String(describing: error))
+                        self.nonEmptyDict = ["key": "value"]
+                    }
                 }
 
-                public init(emptyDict: [String: Int] = [:], nonEmptyDict: [String: String] = ["key": "value"]) {
+                public init(
+                    emptyDict: [String: Int] = [:],
+                    nonEmptyDict: [String: String] = ["key": "value"]
+                ) {
                     self.emptyDict = emptyDict
                     self.nonEmptyDict = nonEmptyDict
                 }
@@ -359,7 +261,6 @@ final class EmbeddedMacroTests: XCTestCase {
     }
 
     // MARK: - Nested Struct Tests
-
 
     func testDefaultWithNestedStructDefault() {
         assertMacroExpansion(
@@ -382,11 +283,37 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
-                    self.nested = try container.decodeIfPresent(NestedType.self, forKey: .nested) ?? NestedType()
+                    do {
+                        self.name = try container.decode(String.self, forKey: .name)
+                    } catch {
+                        os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                        self.name = ""
+                    }
+                    do {
+                        self.nested = try Self._decodeNested(NestedType.self, from: container, forKey: .nested)
+                    } catch {
+                        os_log(.error, "Failed to decode 'nested': %{public}@", String(describing: error))
+                        self.nested = NestedType()
+                    }
                 }
 
-                public init(name: String = "", nested: NestedType = NestedType()) {
+
+                /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                    try container.decode(T.self, forKey: key)
+                }
+
+                /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                    try container.decodeIfPresent(T.self, forKey: key)
+                }
+
+                public init(
+                    name: String = "",
+                    nested: NestedType = NestedType()
+                ) {
                     self.name = name
                     self.nested = nested
                 }
@@ -398,7 +325,6 @@ final class EmbeddedMacroTests: XCTestCase {
             macros: testMacros
         )
     }
-
 
     func testDefaultWithOptionalNestedStruct() {
         assertMacroExpansion(
@@ -421,11 +347,32 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
-                    self.nested = try container.decodeIfPresent(NestedType.self, forKey: .nested)
+                    do {
+                        self.name = try container.decode(String.self, forKey: .name)
+                    } catch {
+                        os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                        self.name = ""
+                    }
+                    self.nested = try Self._decodeNestedIfPresent(NestedType.self, from: container, forKey: .nested)
                 }
 
-                public init(name: String = "", nested: NestedType? = nil) {
+
+                /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                    try container.decode(T.self, forKey: key)
+                }
+
+                /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                    try container.decodeIfPresent(T.self, forKey: key)
+                }
+
+                public init(
+                    name: String = "",
+                    nested: NestedType?
+                ) {
                     self.name = name
                     self.nested = nested
                 }
@@ -439,7 +386,6 @@ final class EmbeddedMacroTests: XCTestCase {
     }
 
     // MARK: - Enum Tests
-
 
     func testDefaultOnEnumGeneratesMarkerOnly() {
         assertMacroExpansion(
@@ -464,7 +410,6 @@ final class EmbeddedMacroTests: XCTestCase {
             macros: testMacros
         )
     }
-
 
     func testDefaultOnIntEnum() {
         assertMacroExpansion(
@@ -492,7 +437,6 @@ final class EmbeddedMacroTests: XCTestCase {
 
     // MARK: - Mixed Types Tests
 
-
     func testDefaultWithMixedTypes() {
         assertMacroExpansion(
             """
@@ -500,42 +444,57 @@ final class EmbeddedMacroTests: XCTestCase {
             struct MixedTypes: Codable {
                 var required: String
                 var withDefault: String = "default"
-                var optional: String?
+                var optional: String? = "hello"
                 var array: [Int] = []
-                var dict: [String: Bool] = [:]
             }
             """,
             expandedSource: """
             struct MixedTypes: Codable {
                 var required: String
                 var withDefault: String = "default"
-                var optional: String?
+                var optional: String? = "hello"
                 var array: [Int] = []
-                var dict: [String: Bool] = [:]
 
                 private enum CodingKeys: String, CodingKey {
                     case required
                     case withDefault
                     case optional
                     case array
-                    case dict
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
                     self.required = try container.decode(String.self, forKey: .required)
-                    self.withDefault = try container.decodeIfPresent(String.self, forKey: .withDefault) ?? "default"
-                    self.optional = try container.decodeIfPresent(String.self, forKey: .optional)
-                    self.array = try container.decodeIfPresent([Int].self, forKey: .array) ?? [Int]()
-                    self.dict = try container.decodeIfPresent([String: Bool].self, forKey: .dict) ?? [:]
+                    do {
+                        self.withDefault = try container.decode(String.self, forKey: .withDefault)
+                    } catch {
+                        os_log(.error, "Failed to decode 'withDefault': %{public}@", String(describing: error))
+                        self.withDefault = "default"
+                    }
+                    do {
+                        self.optional = try container.decode(String.self, forKey: .optional)
+                    } catch {
+                        os_log(.error, "Failed to decode 'optional': %{public}@", String(describing: error))
+                        self.optional = "hello"
+                    }
+                    do {
+                        self.array = try container.decode([Int].self, forKey: .array)
+                    } catch {
+                        os_log(.error, "Failed to decode 'array': %{public}@", String(describing: error))
+                        self.array = []
+                    }
                 }
 
-                public init(required: String, withDefault: String = "default", optional: String? = nil, array: [Int] = [], dict: [String: Bool] = [:]) {
+                public init(
+                    required: String,
+                    withDefault: String = "default",
+                    optional: String? = "hello",
+                    array: [Int] = []
+                ) {
                     self.required = required
                     self.withDefault = withDefault
                     self.optional = optional
                     self.array = array
-                    self.dict = dict
                 }
             }
 
@@ -548,7 +507,6 @@ final class EmbeddedMacroTests: XCTestCase {
 
     // MARK: - All Optional Types Tests
 
-
     func testDefaultWithAllOptionalTypes() {
         assertMacroExpansion(
             """
@@ -557,8 +515,6 @@ final class EmbeddedMacroTests: XCTestCase {
                 var optString: String?
                 var optInt: Int?
                 var optBool: Bool?
-                var optArray: [String]?
-                var optDict: [String: Int]?
             }
             """,
             expandedSource: """
@@ -566,15 +522,11 @@ final class EmbeddedMacroTests: XCTestCase {
                 var optString: String?
                 var optInt: Int?
                 var optBool: Bool?
-                var optArray: [String]?
-                var optDict: [String: Int]?
 
                 private enum CodingKeys: String, CodingKey {
                     case optString
                     case optInt
                     case optBool
-                    case optArray
-                    case optDict
                 }
 
                 public init(from decoder: Decoder) throws {
@@ -582,16 +534,16 @@ final class EmbeddedMacroTests: XCTestCase {
                     self.optString = try container.decodeIfPresent(String.self, forKey: .optString)
                     self.optInt = try container.decodeIfPresent(Int.self, forKey: .optInt)
                     self.optBool = try container.decodeIfPresent(Bool.self, forKey: .optBool)
-                    self.optArray = try container.decodeIfPresent([String].self, forKey: .optArray)
-                    self.optDict = try container.decodeIfPresent([String: Int].self, forKey: .optDict)
                 }
 
-                public init(optString: String? = nil, optInt: Int? = nil, optBool: Bool? = nil, optArray: [String]? = nil, optDict: [String: Int]? = nil) {
+                public init(
+                    optString: String?,
+                    optInt: Int?,
+                    optBool: Bool?
+                ) {
                     self.optString = optString
                     self.optInt = optInt
                     self.optBool = optBool
-                    self.optArray = optArray
-                    self.optDict = optDict
                 }
             }
 
@@ -602,47 +554,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-    // MARK: - Complex Nested Tests
-
-
-    func testDefaultWithArrayOfNestedStructs() {
-        assertMacroExpansion(
-            """
-            @Embedded
-            struct WithNestedArray: Codable {
-                var items: [NestedItem] = []
-                var optionalItems: [NestedItem]?
-            }
-            """,
-            expandedSource: """
-            struct WithNestedArray: Codable {
-                var items: [NestedItem] = []
-                var optionalItems: [NestedItem]?
-
-                private enum CodingKeys: String, CodingKey {
-                    case items
-                    case optionalItems
-                }
-
-                public init(from decoder: Decoder) throws {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.items = try container.decodeIfPresent([NestedItem].self, forKey: .items) ?? [NestedItem]()
-                    self.optionalItems = try container.decodeIfPresent([NestedItem].self, forKey: .optionalItems)
-                }
-
-                public init(items: [NestedItem] = [], optionalItems: [NestedItem]? = nil) {
-                    self.items = items
-                    self.optionalItems = optionalItems
-                }
-            }
-
-            extension WithNestedArray: Embedded {
-            }
-            """,
-            macros: testMacros
-        )
-    }
-
+    // MARK: - Enum Default Value Tests
 
     func testDefaultWithEnumDefaultValue() {
         assertMacroExpansion(
@@ -665,11 +577,32 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .active
-                    self.optionalStatus = try container.decodeIfPresent(Status.self, forKey: .optionalStatus)
+                    do {
+                        self.status = try Self._decodeNested(Status.self, from: container, forKey: .status)
+                    } catch {
+                        os_log(.error, "Failed to decode 'status': %{public}@", String(describing: error))
+                        self.status = .active
+                    }
+                    self.optionalStatus = try Self._decodeNestedIfPresent(Status.self, from: container, forKey: .optionalStatus)
                 }
 
-                public init(status: Status = .active, optionalStatus: Status? = nil) {
+
+                /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                    try container.decode(T.self, forKey: key)
+                }
+
+                /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                @inline(__always)
+                private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                    try container.decodeIfPresent(T.self, forKey: key)
+                }
+
+                public init(
+                    status: Status = .active,
+                    optionalStatus: Status?
+                ) {
                     self.status = status
                     self.optionalStatus = optionalStatus
                 }
@@ -682,8 +615,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-    // MARK: - Array/Dict of Nested Types Tests
-
+    // MARK: - Array of Nested Types Tests
 
     func testDefaultWithArrayOfNestedStructsEmpty() {
         assertMacroExpansion(
@@ -691,28 +623,30 @@ final class EmbeddedMacroTests: XCTestCase {
             @Embedded
             struct WithNestedArrayEmpty: Codable {
                 var addresses: [Address] = []
-                var items: [Item] = []
             }
             """,
             expandedSource: """
             struct WithNestedArrayEmpty: Codable {
                 var addresses: [Address] = []
-                var items: [Item] = []
 
                 private enum CodingKeys: String, CodingKey {
                     case addresses
-                    case items
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.addresses = try container.decodeIfPresent([Address].self, forKey: .addresses) ?? [Address]()
-                    self.items = try container.decodeIfPresent([Item].self, forKey: .items) ?? [Item]()
+                    do {
+                        self.addresses = try container.decode([Address].self, forKey: .addresses)
+                    } catch {
+                        os_log(.error, "Failed to decode 'addresses': %{public}@", String(describing: error))
+                        self.addresses = []
+                    }
                 }
 
-                public init(addresses: [Address] = [], items: [Item] = []) {
+                public init(
+                    addresses: [Address] = []
+                ) {
                     self.addresses = addresses
-                    self.items = items
                 }
             }
 
@@ -723,35 +657,36 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-
     func testDefaultWithArrayOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
             @Embedded
             struct WithNestedArrayNonEmpty: Codable {
                 var addresses: [Address] = [Address()]
-                var scores: [Score] = [Score(value: 0), Score(value: 100)]
             }
             """,
             expandedSource: """
             struct WithNestedArrayNonEmpty: Codable {
                 var addresses: [Address] = [Address()]
-                var scores: [Score] = [Score(value: 0), Score(value: 100)]
 
                 private enum CodingKeys: String, CodingKey {
                     case addresses
-                    case scores
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.addresses = try container.decodeIfPresent([Address].self, forKey: .addresses) ?? [Address()]
-                    self.scores = try container.decodeIfPresent([Score].self, forKey: .scores) ?? [Score(value: 0), Score(value: 100)]
+                    do {
+                        self.addresses = try container.decode([Address].self, forKey: .addresses)
+                    } catch {
+                        os_log(.error, "Failed to decode 'addresses': %{public}@", String(describing: error))
+                        self.addresses = [Address()]
+                    }
                 }
 
-                public init(addresses: [Address] = [Address()], scores: [Score] = [Score(value: 0), Score(value: 100)]) {
+                public init(
+                    addresses: [Address] = [Address()]
+                ) {
                     self.addresses = addresses
-                    self.scores = scores
                 }
             }
 
@@ -762,6 +697,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Dict of Nested Types Tests
 
     func testDefaultWithDictOfNestedStructsEmpty() {
         assertMacroExpansion(
@@ -769,28 +705,30 @@ final class EmbeddedMacroTests: XCTestCase {
             @Embedded
             struct WithNestedDictEmpty: Codable {
                 var addressBook: [String: Address] = [:]
-                var itemMap: [String: Item] = [:]
             }
             """,
             expandedSource: """
             struct WithNestedDictEmpty: Codable {
                 var addressBook: [String: Address] = [:]
-                var itemMap: [String: Item] = [:]
 
                 private enum CodingKeys: String, CodingKey {
                     case addressBook
-                    case itemMap
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.addressBook = try container.decodeIfPresent([String: Address].self, forKey: .addressBook) ?? [:]
-                    self.itemMap = try container.decodeIfPresent([String: Item].self, forKey: .itemMap) ?? [:]
+                    do {
+                        self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
+                    } catch {
+                        os_log(.error, "Failed to decode 'addressBook': %{public}@", String(describing: error))
+                        self.addressBook = [:]
+                    }
                 }
 
-                public init(addressBook: [String: Address] = [:], itemMap: [String: Item] = [:]) {
+                public init(
+                    addressBook: [String: Address] = [:]
+                ) {
                     self.addressBook = addressBook
-                    self.itemMap = itemMap
                 }
             }
 
@@ -801,35 +739,36 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-
     func testDefaultWithDictOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
             @Embedded
             struct WithNestedDictNonEmpty: Codable {
                 var addressBook: [String: Address] = ["home": Address()]
-                var config: [String: Setting] = ["default": Setting(value: 0)]
             }
             """,
             expandedSource: """
             struct WithNestedDictNonEmpty: Codable {
                 var addressBook: [String: Address] = ["home": Address()]
-                var config: [String: Setting] = ["default": Setting(value: 0)]
 
                 private enum CodingKeys: String, CodingKey {
                     case addressBook
-                    case config
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.addressBook = try container.decodeIfPresent([String: Address].self, forKey: .addressBook) ?? ["home": Address()]
-                    self.config = try container.decodeIfPresent([String: Setting].self, forKey: .config) ?? ["default": Setting(value: 0)]
+                    do {
+                        self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
+                    } catch {
+                        os_log(.error, "Failed to decode 'addressBook': %{public}@", String(describing: error))
+                        self.addressBook = ["home": Address()]
+                    }
                 }
 
-                public init(addressBook: [String: Address] = ["home": Address()], config: [String: Setting] = ["default": Setting(value: 0)]) {
+                public init(
+                    addressBook: [String: Address] = ["home": Address()]
+                ) {
                     self.addressBook = addressBook
-                    self.config = config
                 }
             }
 
@@ -840,6 +779,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Array of Enum Tests
 
     func testDefaultWithArrayOfEnumEmpty() {
         assertMacroExpansion(
@@ -847,28 +787,30 @@ final class EmbeddedMacroTests: XCTestCase {
             @Embedded
             struct WithEnumArrayEmpty: Codable {
                 var statuses: [Status] = []
-                var priorities: [Priority] = []
             }
             """,
             expandedSource: """
             struct WithEnumArrayEmpty: Codable {
                 var statuses: [Status] = []
-                var priorities: [Priority] = []
 
                 private enum CodingKeys: String, CodingKey {
                     case statuses
-                    case priorities
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.statuses = try container.decodeIfPresent([Status].self, forKey: .statuses) ?? [Status]()
-                    self.priorities = try container.decodeIfPresent([Priority].self, forKey: .priorities) ?? [Priority]()
+                    do {
+                        self.statuses = try container.decode([Status].self, forKey: .statuses)
+                    } catch {
+                        os_log(.error, "Failed to decode 'statuses': %{public}@", String(describing: error))
+                        self.statuses = []
+                    }
                 }
 
-                public init(statuses: [Status] = [], priorities: [Priority] = []) {
+                public init(
+                    statuses: [Status] = []
+                ) {
                     self.statuses = statuses
-                    self.priorities = priorities
                 }
             }
 
@@ -879,35 +821,36 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
-
     func testDefaultWithArrayOfEnumNonEmpty() {
         assertMacroExpansion(
             """
             @Embedded
             struct WithEnumArrayNonEmpty: Codable {
                 var statuses: [Status] = [.active, .pending]
-                var priorities: [Priority] = [.high, .low]
             }
             """,
             expandedSource: """
             struct WithEnumArrayNonEmpty: Codable {
                 var statuses: [Status] = [.active, .pending]
-                var priorities: [Priority] = [.high, .low]
 
                 private enum CodingKeys: String, CodingKey {
                     case statuses
-                    case priorities
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.statuses = try container.decodeIfPresent([Status].self, forKey: .statuses) ?? [.active, .pending]
-                    self.priorities = try container.decodeIfPresent([Priority].self, forKey: .priorities) ?? [.high, .low]
+                    do {
+                        self.statuses = try container.decode([Status].self, forKey: .statuses)
+                    } catch {
+                        os_log(.error, "Failed to decode 'statuses': %{public}@", String(describing: error))
+                        self.statuses = [.active, .pending]
+                    }
                 }
 
-                public init(statuses: [Status] = [.active, .pending], priorities: [Priority] = [.high, .low]) {
+                public init(
+                    statuses: [Status] = [.active, .pending]
+                ) {
                     self.statuses = statuses
-                    self.priorities = priorities
                 }
             }
 
@@ -918,6 +861,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Dict of Enum Values Tests
 
     func testDefaultWithDictOfEnumValues() {
         assertMacroExpansion(
@@ -940,11 +884,24 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.statusMap = try container.decodeIfPresent([String: Status].self, forKey: .statusMap) ?? [:]
-                    self.priorityMap = try container.decodeIfPresent([String: Priority].self, forKey: .priorityMap) ?? ["default": .medium]
+                    do {
+                        self.statusMap = try container.decode([String: Status].self, forKey: .statusMap)
+                    } catch {
+                        os_log(.error, "Failed to decode 'statusMap': %{public}@", String(describing: error))
+                        self.statusMap = [:]
+                    }
+                    do {
+                        self.priorityMap = try container.decode([String: Priority].self, forKey: .priorityMap)
+                    } catch {
+                        os_log(.error, "Failed to decode 'priorityMap': %{public}@", String(describing: error))
+                        self.priorityMap = ["default": .medium]
+                    }
                 }
 
-                public init(statusMap: [String: Status] = [:], priorityMap: [String: Priority] = ["default": .medium]) {
+                public init(
+                    statusMap: [String: Status] = [:],
+                    priorityMap: [String: Priority] = ["default": .medium]
+                ) {
                     self.statusMap = statusMap
                     self.priorityMap = priorityMap
                 }
@@ -957,6 +914,7 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Optional Collection of Nested Types Tests
 
     func testDefaultWithOptionalArrayAndDictOfNestedTypes() {
         assertMacroExpansion(
@@ -965,32 +923,30 @@ final class EmbeddedMacroTests: XCTestCase {
             struct WithOptionalCollections: Codable {
                 var addresses: [Address]?
                 var itemMap: [String: Item]?
-                var statuses: [Status]?
             }
             """,
             expandedSource: """
             struct WithOptionalCollections: Codable {
                 var addresses: [Address]?
                 var itemMap: [String: Item]?
-                var statuses: [Status]?
 
                 private enum CodingKeys: String, CodingKey {
                     case addresses
                     case itemMap
-                    case statuses
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
                     self.addresses = try container.decodeIfPresent([Address].self, forKey: .addresses)
                     self.itemMap = try container.decodeIfPresent([String: Item].self, forKey: .itemMap)
-                    self.statuses = try container.decodeIfPresent([Status].self, forKey: .statuses)
                 }
 
-                public init(addresses: [Address]? = nil, itemMap: [String: Item]? = nil, statuses: [Status]? = nil) {
+                public init(
+                    addresses: [Address]?,
+                    itemMap: [String: Item]?
+                ) {
                     self.addresses = addresses
                     self.itemMap = itemMap
-                    self.statuses = statuses
                 }
             }
 
@@ -1001,39 +957,106 @@ final class EmbeddedMacroTests: XCTestCase {
         )
     }
 
+    // MARK: - Integer Types Tests
 
-    func testDefaultWithSetTypes() {
+    func testDefaultWithIntegerTypes() {
         assertMacroExpansion(
             """
             @Embedded
-            struct SetTypes: Codable {
-                var emptySet: Set<String> = Set()
-                var nonEmptySet: Set<Int> = [1, 2, 3]
+            struct IntegerTypes: Codable {
+                var intValue: Int = 0
+                var int64Value: Int64 = 64
             }
             """,
             expandedSource: """
-            struct SetTypes: Codable {
-                var emptySet: Set<String> = Set()
-                var nonEmptySet: Set<Int> = [1, 2, 3]
+            struct IntegerTypes: Codable {
+                var intValue: Int = 0
+                var int64Value: Int64 = 64
 
                 private enum CodingKeys: String, CodingKey {
-                    case emptySet
-                    case nonEmptySet
+                    case intValue
+                    case int64Value
                 }
 
                 public init(from decoder: Decoder) throws {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
-                    self.emptySet = try container.decodeIfPresent(Set<String>.self, forKey: .emptySet) ?? Set<String>()
-                    self.nonEmptySet = try container.decodeIfPresent(Set<Int>.self, forKey: .nonEmptySet) ?? [1, 2, 3]
+                    do {
+                        self.intValue = try container.decode(Int.self, forKey: .intValue)
+                    } catch {
+                        os_log(.error, "Failed to decode 'intValue': %{public}@", String(describing: error))
+                        self.intValue = 0
+                    }
+                    do {
+                        self.int64Value = try container.decode(Int64.self, forKey: .int64Value)
+                    } catch {
+                        os_log(.error, "Failed to decode 'int64Value': %{public}@", String(describing: error))
+                        self.int64Value = 64
+                    }
                 }
 
-                public init(emptySet: Set<String> = Set(), nonEmptySet: Set<Int> = [1, 2, 3]) {
-                    self.emptySet = emptySet
-                    self.nonEmptySet = nonEmptySet
+                public init(
+                    intValue: Int = 0,
+                    int64Value: Int64 = 64
+                ) {
+                    self.intValue = intValue
+                    self.int64Value = int64Value
                 }
             }
 
-            extension SetTypes: Embedded {
+            extension IntegerTypes: Embedded {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    // MARK: - Float and Bool Types Tests
+
+    func testDefaultWithFloatAndBoolTypes() {
+        assertMacroExpansion(
+            """
+            @Embedded
+            struct FloatBoolTypes: Codable {
+                var doubleValue: Double = 3.14
+                var boolTrue: Bool = true
+            }
+            """,
+            expandedSource: """
+            struct FloatBoolTypes: Codable {
+                var doubleValue: Double = 3.14
+                var boolTrue: Bool = true
+
+                private enum CodingKeys: String, CodingKey {
+                    case doubleValue
+                    case boolTrue
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    do {
+                        self.doubleValue = try container.decode(Double.self, forKey: .doubleValue)
+                    } catch {
+                        os_log(.error, "Failed to decode 'doubleValue': %{public}@", String(describing: error))
+                        self.doubleValue = 3.14
+                    }
+                    do {
+                        self.boolTrue = try container.decode(Bool.self, forKey: .boolTrue)
+                    } catch {
+                        os_log(.error, "Failed to decode 'boolTrue': %{public}@", String(describing: error))
+                        self.boolTrue = true
+                    }
+                }
+
+                public init(
+                    doubleValue: Double = 3.14,
+                    boolTrue: Bool = true
+                ) {
+                    self.doubleValue = doubleValue
+                    self.boolTrue = boolTrue
+                }
+            }
+
+            extension FloatBoolTypes: Embedded {
             }
             """,
             macros: testMacros

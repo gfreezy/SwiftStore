@@ -9,12 +9,12 @@ import SwiftStoreMacros
 /// Simple entity to test basic macro expansion
 @Entity
 struct MacroUser {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var email: String
     var age: Int?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Entity with nested Codable type (must use @Embedded for compile-time validation)
@@ -28,11 +28,11 @@ struct UserSettings: Codable, Sendable {
 struct MacroProfile {
     #Index<Self>(\.settings.theme, \.settings.notifications)
     #Index<Self>(\.settings.theme, \.id)
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var bio: String
     var settings: UserSettings
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Enum for testing Codable enum storage (stored as JSON)
@@ -45,11 +45,11 @@ enum TaskStatus: String, Codable, Sendable {
 
 @Entity
 struct MacroTask {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var title: String
     var status: TaskStatus
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Integer enum for testing Codable enum storage
@@ -62,21 +62,21 @@ enum Priority: Int, Codable, Sendable {
 
 @Entity
 struct MacroItem {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var priority: Priority
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Optional enum for testing Codable enum storage
 @Entity
 struct MacroOrder {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var orderNumber: String
     var status: TaskStatus?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 // MARK: - SyncKey Test Entities
@@ -88,8 +88,8 @@ struct SyncKeyUser {
     var email: String
     var name: String
     var age: Int?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Entity with composite sync key (no id field)
@@ -100,8 +100,8 @@ struct SyncKeyEmployee {
     var employeeCode: String
     var name: String
     var department: String?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 /// Entity with property default values
@@ -114,8 +114,8 @@ struct UserPosts {
     var views: Int = 0
     var isPublished: Bool = false
     var tags: [String] = []
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 // MARK: - @Embedded Test Structs
@@ -881,15 +881,15 @@ struct MacroCompilationTests {
         #expect(checkDefault(DefaultConfig.self))
     }
 
-    @Test("@Entity struct conforms to Embedded protocol")
-    func testEntityDefaultProtocolConformance() {
-        // This compiles only if Entity types conform to Default
-        func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
-        #expect(checkDefault(MacroUser.self))
-        #expect(checkDefault(MacroProfile.self))
-        #expect(checkDefault(MacroTask.self))
-        #expect(checkDefault(SyncKeyUser.self))
-        #expect(checkDefault(UserPosts.self))
+    @Test("@Entity struct conforms to expected protocols")
+    func testEntityProtocolConformance() {
+        // @Entity types conform to EntityProtocol
+        func checkEntityProtocol<T: EntityProtocol>(_ type: T.Type) -> Bool { true }
+        #expect(checkEntityProtocol(MacroUser.self))
+        #expect(checkEntityProtocol(MacroProfile.self))
+        #expect(checkEntityProtocol(MacroTask.self))
+        #expect(checkEntityProtocol(SyncKeyUser.self))
+        #expect(checkEntityProtocol(UserPosts.self))
     }
 
     @Test("@Embedded with all default values - missing fields use defaults")
@@ -996,8 +996,8 @@ struct MacroCompilationTests {
         #expect(config.debugMode == true)
     }
 
-    @Test("@Embedded type error throws instead of using default")
-    func testDefaultTypeErrorThrows() throws {
+    @Test("@Embedded type error uses default value with do-catch fallback")
+    func testDefaultTypeErrorFallsBackToDefault() throws {
         let json = """
         {
             "theme": 123,
@@ -1008,10 +1008,11 @@ struct MacroCompilationTests {
         let decoder = JSONDecoder()
         let data = json.data(using: .utf8)!
 
-        // Should throw because theme is wrong type (Int instead of String)
-        #expect(throws: DecodingError.self) {
-            _ = try decoder.decode(DefaultSettings.self, from: data)
-        }
+        // With do-catch pattern, type errors fall back to default values
+        let settings = try decoder.decode(DefaultSettings.self, from: data)
+        #expect(settings.theme == "light")  // Falls back to default
+        #expect(settings.fontSize == 14)    // Successfully decoded
+        #expect(settings.notifications == true)  // Default
     }
 
     // MARK: - Comprehensive Type Coverage Tests
