@@ -57,9 +57,3 @@ extension Embedded {
         self = try decoder.decode(Self.self, from: jsonData)
     }
 }
-
-// MARK: - Backwards Compatibility
-
-/// Backwards compatibility alias for @Default -> @Embedded migration
-@available(*, deprecated, renamed: "Embedded", message: "Use @Embedded instead of @Default")
-public typealias Default = Embedded
