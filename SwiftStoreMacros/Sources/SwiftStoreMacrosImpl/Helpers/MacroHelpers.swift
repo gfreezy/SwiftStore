@@ -268,11 +268,6 @@ enum MacroHelpers {
             return false
         }
 
-        // Skip UUIDV7 (special-cased as primitive for encoding)
-        if baseType == "UUIDV7" {
-            return false
-        }
-
         // Skip array types: [Element] or Array<Element>
         if baseType.hasPrefix("[") || baseType.hasPrefix("Array<") {
             return false
