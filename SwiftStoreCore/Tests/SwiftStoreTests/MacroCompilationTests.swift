@@ -875,7 +875,7 @@ struct MacroCompilationTests {
     @Test("@Embedded struct conforms to Embedded protocol")
     func testDefaultProtocolConformance() {
         // This compiles only if DefaultSettings conforms to Default
-        func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
+        func checkDefault<T: Embedded>(_ type: T.Type) -> Bool { true }
         #expect(checkDefault(DefaultSettings.self))
         #expect(checkDefault(DefaultUserPrefs.self))
         #expect(checkDefault(DefaultConfig.self))
