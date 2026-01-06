@@ -238,6 +238,17 @@ extension Float: SQLiteValueCodable {
     }
 }
 
+extension CGFloat: SQLiteValueCodable {
+    public static var sqliteType: SQLiteType { .real }
+    public func sqliteEncode() throws -> SQLiteValue { .real(Double(self)) }
+    public init(from sqliteValue: SQLiteValue) throws {
+        guard case .real(let v) = sqliteValue else {
+            throw SQLiteValueError.typeMismatch(expected: "real", actual: sqliteValue)
+        }
+        self = CGFloat(v)
+    }
+}
+
 extension Bool: SQLiteValueCodable {
     public static var sqliteType: SQLiteType { .integer }
     public func sqliteEncode() throws -> SQLiteValue { .integer(self ? 1 : 0) }
