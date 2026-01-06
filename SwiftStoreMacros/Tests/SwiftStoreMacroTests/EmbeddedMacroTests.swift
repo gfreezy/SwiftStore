@@ -16,16 +16,19 @@ final class EmbeddedMacroTests: XCTestCase {
             struct Settings: Codable {
                 var theme: String = "light"
                 var fontSize: Int = 14
+                let n: CGFloat
             }
             """,
             expandedSource: """
             struct Settings: Codable {
                 var theme: String = "light"
                 var fontSize: Int = 14
+                let n: CGFloat
 
                 private enum CodingKeys: String, CodingKey {
                     case theme
                     case fontSize
+                    case n
                 }
 
                 public init(from decoder: Decoder) throws {
@@ -42,18 +45,18 @@ final class EmbeddedMacroTests: XCTestCase {
                         os_log(.error, "Failed to decode 'fontSize': %{public}@", String(describing: error))
                         self.fontSize = 14
                     }
+                    self.n = try container.decode(CGFloat.self, forKey: .n)
                 }
 
                 public init(
                     theme: String = "light",
-                    fontSize: Int = 14
+                    fontSize: Int = 14,
+                    n: CGFloat
                 ) {
                     self.theme = theme
                     self.fontSize = fontSize
+                    self.n = n
                 }
-            }
-
-            extension Settings: Embedded {
             }
             """,
             macros: testMacros
