@@ -63,13 +63,13 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
         for prop in properties {
             assignments.append("self.\(prop.name) = \(prop.name)")
         }
-        let assignmentsStr = assignments.joined(separator: "\n        ")
+        let assignmentsStr = assignments.joined(separator: "\n    ")
 
         return """
-            public init(\(raw: paramsStr)) {
-                \(raw: assignmentsStr)
-            }
-            """
+        public init(\(raw: paramsStr)) {
+            \(raw: assignmentsStr)
+        }
+        """
     }
 
     // MARK: - ExtensionMacro
@@ -106,7 +106,7 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
         // Generate CodingKeys enum
         let codingKeysEntries = properties.map { prop in
             "case \(prop.name)"
-        }.joined(separator: "\n            ")
+        }.joined(separator: "\n    ")
 
         // Generate decoding statements
         var decodingStatements: [String] = []
@@ -134,22 +134,17 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
             }
         }
 
-        let decodingCode = decodingStatements.joined(separator: "\n        ")
+        let decodingCode = decodingStatements.joined(separator: "\n    ")
 
         return """
-            private enum CodingKeys: String, CodingKey {
-                \(raw: codingKeysEntries)
-            }
+        private enum CodingKeys: String, CodingKey {
+            \(raw: codingKeysEntries)
+        }
 
-            public init(from decoder: Decoder) throws {
-                let container = try decoder.container(keyedBy: CodingKeys.self)
-                \(raw: decodingCode)
-            }
-            """
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            \(raw: decodingCode)
+        }
+        """
     }
 }
-
-// MARK: - Backwards Compatibility
-
-/// Backwards compatibility alias
-public typealias DefaultMacro = EmbeddedMacro

@@ -1,17 +1,15 @@
-import Testing
+import XCTest
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 @testable import SwiftStoreMacrosImpl
 
-@Suite("Embedded Macro Tests")
-struct DefaultMacroTests {
+final class EmbeddedMacroTests: XCTestCase {
 
     // MARK: - Basic Struct Tests
 
-    @Test("@Embedded generates CodingKeys, init(from:), memberwise init, and marker")
-    func testBasicDefaultMacroExpansion() {
+    func testBasicEmbeddedMacroExpansion() {
         assertMacroExpansion(
             """
             @Embedded
@@ -40,11 +38,9 @@ struct DefaultMacroTests {
                     self.theme = theme
                     self.fontSize = fontSize
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension Settings: Default {
+            extension Settings: Embedded {
             }
             """,
             macros: testMacros
@@ -53,7 +49,7 @@ struct DefaultMacroTests {
 
     // MARK: - Required Field Tests
 
-    @Test("@Embedded with required field (no default value)")
+
     func testDefaultWithRequiredField() {
         assertMacroExpansion(
             """
@@ -83,11 +79,9 @@ struct DefaultMacroTests {
                     self.userId = userId
                     self.theme = theme
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension UserPrefs: Default {
+            extension UserPrefs: Embedded {
             }
             """,
             macros: testMacros
@@ -96,7 +90,7 @@ struct DefaultMacroTests {
 
     // MARK: - Optional Field Tests
 
-    @Test("@Embedded with optional field")
+
     func testDefaultWithOptionalField() {
         assertMacroExpansion(
             """
@@ -126,11 +120,9 @@ struct DefaultMacroTests {
                     self.name = name
                     self.description = description
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension Config: Default {
+            extension Config: Embedded {
             }
             """,
             macros: testMacros
@@ -139,7 +131,7 @@ struct DefaultMacroTests {
 
     // MARK: - All Primitive Types Tests
 
-    @Test("@Embedded with all integer types")
+
     func testDefaultWithIntegerTypes() {
         assertMacroExpansion(
             """
@@ -189,18 +181,16 @@ struct DefaultMacroTests {
                     self.int64Value = int64Value
                     self.uintValue = uintValue
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension IntegerTypes: Default {
+            extension IntegerTypes: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with floating point and boolean types")
+
     func testDefaultWithFloatAndBoolTypes() {
         assertMacroExpansion(
             """
@@ -240,18 +230,16 @@ struct DefaultMacroTests {
                     self.boolTrue = boolTrue
                     self.boolFalse = boolFalse
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension FloatBoolTypes: Default {
+            extension FloatBoolTypes: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with string empty and non-empty defaults")
+
     func testDefaultWithStringDefaults() {
         assertMacroExpansion(
             """
@@ -281,11 +269,9 @@ struct DefaultMacroTests {
                     self.emptyString = emptyString
                     self.nonEmptyString = nonEmptyString
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension StringTypes: Default {
+            extension StringTypes: Embedded {
             }
             """,
             macros: testMacros
@@ -294,7 +280,7 @@ struct DefaultMacroTests {
 
     // MARK: - Collection Types Tests
 
-    @Test("@Embedded with empty array default")
+
     func testDefaultWithEmptyArrayDefault() {
         assertMacroExpansion(
             """
@@ -324,18 +310,16 @@ struct DefaultMacroTests {
                     self.emptyArray = emptyArray
                     self.nonEmptyArray = nonEmptyArray
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension ArrayTypes: Default {
+            extension ArrayTypes: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with dictionary defaults")
+
     func testDefaultWithDictionaryDefaults() {
         assertMacroExpansion(
             """
@@ -365,11 +349,9 @@ struct DefaultMacroTests {
                     self.emptyDict = emptyDict
                     self.nonEmptyDict = nonEmptyDict
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension DictTypes: Default {
+            extension DictTypes: Embedded {
             }
             """,
             macros: testMacros
@@ -378,7 +360,7 @@ struct DefaultMacroTests {
 
     // MARK: - Nested Struct Tests
 
-    @Test("@Embedded with nested struct default")
+
     func testDefaultWithNestedStructDefault() {
         assertMacroExpansion(
             """
@@ -408,18 +390,16 @@ struct DefaultMacroTests {
                     self.name = name
                     self.nested = nested
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension Container: Default {
+            extension Container: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with optional nested struct")
+
     func testDefaultWithOptionalNestedStruct() {
         assertMacroExpansion(
             """
@@ -449,11 +429,9 @@ struct DefaultMacroTests {
                     self.name = name
                     self.nested = nested
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension ContainerOptional: Default {
+            extension ContainerOptional: Embedded {
             }
             """,
             macros: testMacros
@@ -462,7 +440,7 @@ struct DefaultMacroTests {
 
     // MARK: - Enum Tests
 
-    @Test("@Embedded on enum only generates marker")
+
     func testDefaultOnEnumGeneratesMarkerOnly() {
         assertMacroExpansion(
             """
@@ -478,18 +456,16 @@ struct DefaultMacroTests {
                 case active
                 case inactive
                 case pending
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension Status: Default {
+            extension Status: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded on Int enum")
+
     func testDefaultOnIntEnum() {
         assertMacroExpansion(
             """
@@ -505,11 +481,9 @@ struct DefaultMacroTests {
                 case low = 0
                 case medium = 1
                 case high = 2
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension Priority: Default {
+            extension Priority: Embedded {
             }
             """,
             macros: testMacros
@@ -518,7 +492,7 @@ struct DefaultMacroTests {
 
     // MARK: - Mixed Types Tests
 
-    @Test("@Embedded with mixed types (primitives, optionals, collections, defaults)")
+
     func testDefaultWithMixedTypes() {
         assertMacroExpansion(
             """
@@ -563,11 +537,9 @@ struct DefaultMacroTests {
                     self.array = array
                     self.dict = dict
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension MixedTypes: Default {
+            extension MixedTypes: Embedded {
             }
             """,
             macros: testMacros
@@ -576,7 +548,7 @@ struct DefaultMacroTests {
 
     // MARK: - All Optional Types Tests
 
-    @Test("@Embedded with all optional types")
+
     func testDefaultWithAllOptionalTypes() {
         assertMacroExpansion(
             """
@@ -621,11 +593,9 @@ struct DefaultMacroTests {
                     self.optArray = optArray
                     self.optDict = optDict
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension AllOptionals: Default {
+            extension AllOptionals: Embedded {
             }
             """,
             macros: testMacros
@@ -634,7 +604,7 @@ struct DefaultMacroTests {
 
     // MARK: - Complex Nested Tests
 
-    @Test("@Embedded with array of nested structs")
+
     func testDefaultWithArrayOfNestedStructs() {
         assertMacroExpansion(
             """
@@ -664,18 +634,16 @@ struct DefaultMacroTests {
                     self.items = items
                     self.optionalItems = optionalItems
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithNestedArray: Default {
+            extension WithNestedArray: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with enum default value")
+
     func testDefaultWithEnumDefaultValue() {
         assertMacroExpansion(
             """
@@ -705,11 +673,9 @@ struct DefaultMacroTests {
                     self.status = status
                     self.optionalStatus = optionalStatus
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithEnumDefault: Default {
+            extension WithEnumDefault: Embedded {
             }
             """,
             macros: testMacros
@@ -718,7 +684,7 @@ struct DefaultMacroTests {
 
     // MARK: - Array/Dict of Nested Types Tests
 
-    @Test("@Embedded with array of nested structs with empty default")
+
     func testDefaultWithArrayOfNestedStructsEmpty() {
         assertMacroExpansion(
             """
@@ -748,18 +714,16 @@ struct DefaultMacroTests {
                     self.addresses = addresses
                     self.items = items
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithNestedArrayEmpty: Default {
+            extension WithNestedArrayEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with array of nested structs with non-empty default")
+
     func testDefaultWithArrayOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
@@ -789,18 +753,16 @@ struct DefaultMacroTests {
                     self.addresses = addresses
                     self.scores = scores
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithNestedArrayNonEmpty: Default {
+            extension WithNestedArrayNonEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with dictionary of nested structs with empty default")
+
     func testDefaultWithDictOfNestedStructsEmpty() {
         assertMacroExpansion(
             """
@@ -830,18 +792,16 @@ struct DefaultMacroTests {
                     self.addressBook = addressBook
                     self.itemMap = itemMap
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithNestedDictEmpty: Default {
+            extension WithNestedDictEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with dictionary of nested structs with non-empty default")
+
     func testDefaultWithDictOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
@@ -871,18 +831,16 @@ struct DefaultMacroTests {
                     self.addressBook = addressBook
                     self.config = config
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithNestedDictNonEmpty: Default {
+            extension WithNestedDictNonEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with array of enum with empty default")
+
     func testDefaultWithArrayOfEnumEmpty() {
         assertMacroExpansion(
             """
@@ -912,18 +870,16 @@ struct DefaultMacroTests {
                     self.statuses = statuses
                     self.priorities = priorities
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithEnumArrayEmpty: Default {
+            extension WithEnumArrayEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with array of enum with non-empty default")
+
     func testDefaultWithArrayOfEnumNonEmpty() {
         assertMacroExpansion(
             """
@@ -953,18 +909,16 @@ struct DefaultMacroTests {
                     self.statuses = statuses
                     self.priorities = priorities
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithEnumArrayNonEmpty: Default {
+            extension WithEnumArrayNonEmpty: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with dict of enum values")
+
     func testDefaultWithDictOfEnumValues() {
         assertMacroExpansion(
             """
@@ -994,18 +948,16 @@ struct DefaultMacroTests {
                     self.statusMap = statusMap
                     self.priorityMap = priorityMap
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithEnumDict: Default {
+            extension WithEnumDict: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with optional array and dict of nested types")
+
     func testDefaultWithOptionalArrayAndDictOfNestedTypes() {
         assertMacroExpansion(
             """
@@ -1040,18 +992,16 @@ struct DefaultMacroTests {
                     self.itemMap = itemMap
                     self.statuses = statuses
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension WithOptionalCollections: Default {
+            extension WithOptionalCollections: Embedded {
             }
             """,
             macros: testMacros
         )
     }
 
-    @Test("@Embedded with Set types")
+
     func testDefaultWithSetTypes() {
         assertMacroExpansion(
             """
@@ -1081,11 +1031,9 @@ struct DefaultMacroTests {
                     self.emptySet = emptySet
                     self.nonEmptySet = nonEmptySet
                 }
-
-                @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
             }
 
-            extension SetTypes: Default {
+            extension SetTypes: Embedded {
             }
             """,
             macros: testMacros

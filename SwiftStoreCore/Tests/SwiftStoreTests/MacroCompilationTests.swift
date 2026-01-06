@@ -872,7 +872,7 @@ struct MacroCompilationTests {
 
     // MARK: - @Embedded Macro Tests
 
-    @Test("@Embedded struct conforms to Default protocol")
+    @Test("@Embedded struct conforms to Embedded protocol")
     func testDefaultProtocolConformance() {
         // This compiles only if DefaultSettings conforms to Default
         func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
@@ -881,7 +881,7 @@ struct MacroCompilationTests {
         #expect(checkDefault(DefaultConfig.self))
     }
 
-    @Test("@Entity struct conforms to Default protocol")
+    @Test("@Entity struct conforms to Embedded protocol")
     func testEntityDefaultProtocolConformance() {
         // This compiles only if Entity types conform to Default
         func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }

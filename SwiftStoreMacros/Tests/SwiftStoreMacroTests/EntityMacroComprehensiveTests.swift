@@ -1,0 +1,234 @@
+import XCTest
+import SwiftSyntax
+import SwiftSyntaxBuilder
+import SwiftSyntaxMacros
+import SwiftSyntaxMacrosTestSupport
+@testable import SwiftStoreMacrosImpl
+
+final class EntityMacroComprehensiveTests: XCTestCase {
+
+    /// Comprehensive test covering:
+    /// - Properties with default values (count, tags, metadata)
+    /// - Optional properties (score, profile)
+    /// - Required properties without default (name, settings)
+    /// - Embedded struct types (settings, profile, metadata)
+    /// - Built-in defaults (id, createdAt, updatedAt)
+    func testEntityWithAllPropertyTypes() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct TestEntity {
+                let id: UUIDV7 = UUIDV7()
+                var name: String
+                var count: Int = 0
+                var score: Double?
+                var tags: [String] = []
+                var settings: UserSettings
+                var profile: Profile?
+                var metadata: Metadata = Metadata()
+                let createdAt: Date = Date()
+                let updatedAt: Date = Date()
+            }
+            """,
+            expandedSource: """
+            struct TestEntity {
+                let id: UUIDV7 = UUIDV7()
+                var name: String
+                var count: Int = 0
+                var score: Double?
+                var tags: [String] = []
+                var settings: UserSettings
+                var profile: Profile?
+                var metadata: Metadata = Metadata()
+                let createdAt: Date = Date()
+                let updatedAt: Date = Date()
+
+                public static var tableName: String {
+                    "test_entity"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "count", type: .integer),
+                        ColumnDefinition(name: "score", type: .real, nullable: true),
+                        ColumnDefinition(name: "tags", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "profile", type: .text, nullable: true, isJSONEncoded: true),
+                        ColumnDefinition(name: "metadata", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                        result["name"] = try self.name.sqliteEncode()
+                        result["count"] = try self.count.sqliteEncode()
+                        result["score"] = try self.score.sqliteEncode()
+                        result["tags"] = try self.tags.sqliteEncode()
+                        result["settings"] = try self.settings.sqliteEncode()
+                        result["profile"] = try self.profile.sqliteEncode()
+                        result["metadata"] = try self.metadata.sqliteEncode()
+                        result["created_at"] = try self.createdAt.sqliteEncode()
+                        result["updated_at"] = try self.updatedAt.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    var _id: UUIDV7
+                        do {
+                            _id = try UUIDV7(from: statement.columnValue(Int32(0), type: .blob))
+                        } catch {
+                            _id = UUIDV7()
+                        }
+                        let _name = try String(from: statement.columnValue(Int32(1), type: .text))
+                        var _count: Int
+                        do {
+                            _count = try Int(from: statement.columnValue(Int32(2), type: .integer))
+                        } catch {
+                            _count = 0
+                        }
+                        let _score = try Optional<Double>(from: statement.columnValue(Int32(3), type: .real))
+                        var _tags: [String]
+                        do {
+                            _tags = try [String](from: statement.columnValue(Int32(4), type: .text))
+                        } catch {
+                            _tags = []
+                        }
+                        let _settings = try UserSettings(from: statement.columnValue(Int32(5), type: .text))
+                        let _profile = try Optional<Profile>(from: statement.columnValue(Int32(6), type: .text))
+                        var _metadata: Metadata
+                        do {
+                            _metadata = try Metadata(from: statement.columnValue(Int32(7), type: .text))
+                        } catch {
+                            _metadata = Metadata()
+                        }
+                        var _createdAt: Date
+                        do {
+                            _createdAt = try Date(from: statement.columnValue(Int32(8), type: .real))
+                        } catch {
+                            _createdAt = Date()
+                        }
+                        var _updatedAt: Date
+                        do {
+                            _updatedAt = try Date(from: statement.columnValue(Int32(9), type: .real))
+                        } catch {
+                            _updatedAt = Date()
+                        }
+                    return Self(id: _id, name: _name, count: _count, score: _score, tags: _tags, settings: _settings, profile: _profile, metadata: _metadata, createdAt: _createdAt, updatedAt: _updatedAt)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public init(
+                    id: UUIDV7 = UUIDV7(),
+                    name: String,
+                    count: Int = 0,
+                    score: Double?,
+                    tags: [String] = [],
+                    settings: UserSettings,
+                    profile: Profile?,
+                    metadata: Metadata = Metadata(),
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.count = count
+                    self.score = score
+                    self.tags = tags
+                    self.settings = settings
+                    self.profile = profile
+                    self.metadata = metadata
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case count
+                    case score
+                    case tags
+                    case settings
+                    case profile
+                    case metadata
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    do {
+                        self.id = try container.decode(UUIDV7.self, forKey: .id)
+                    } catch {
+                        self.id = UUIDV7()
+                    }
+                    self.name = try container.decode(String.self, forKey: .name)
+                    do {
+                        self.count = try container.decode(Int.self, forKey: .count)
+                    } catch {
+                        self.count = 0
+                    }
+                    self.score = try container.decodeIfPresent(Double.self, forKey: .score)
+                    do {
+                        self.tags = try container.decode([String].self, forKey: .tags)
+                    } catch {
+                        self.tags = []
+                    }
+                    self.settings = try Self._decodeNested(UserSettings.self, from: container, forKey: .settings)
+                    self.profile = try Self._decodeNestedIfPresent(Profile.self, from: container, forKey: .profile)
+                    do {
+                        self.metadata = try Self._decodeNested(Metadata.self, from: container, forKey: .metadata)
+                    } catch {
+                        self.metadata = Metadata()
+                    }
+                    do {
+                        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+                    } catch {
+                        self.createdAt = Date()
+                    }
+                    do {
+                        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    } catch {
+                        self.updatedAt = Date()
+                    }
+                }
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
+                    }
+            }
+
+            extension TestEntity: EntityProtocol {
+            }
+
+            extension TestEntity: SQLiteCodable {
+            }
+
+            extension TestEntity: Identifiable {
+            }
+
+            extension TestEntity: Sendable {
+            }
+
+            extension TestEntity: Embedded {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+}

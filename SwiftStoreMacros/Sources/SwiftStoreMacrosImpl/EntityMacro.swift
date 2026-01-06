@@ -75,7 +75,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             columnDefs.append(def)
         }
 
-        let columnsArray = columnDefs.joined(separator: ",\n            ")
+        let columnsArray = columnDefs.joined(separator: ",\n        ")
 
         let tableNameDecl: DeclSyntax = """
             public static var tableName: String { "\(raw: tableName)" }
@@ -110,7 +110,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Append virtual columns to the columns array if any
         var finalColumnsArray = columnsArray
         if !virtualColumnDefs.isEmpty {
-            finalColumnsArray += ",\n            " + virtualColumnDefs.joined(separator: ",\n            ")
+            finalColumnsArray += ",\n        " + virtualColumnDefs.joined(separator: ",\n        ")
         }
 
         let columnsDecl: DeclSyntax = """
@@ -128,10 +128,10 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             """
 
         // Generate init method with default values for id, createdAt, updatedAt
-        let initDecl = generateInitMethod(properties: properties, hasSyncKey: hasSyncKey)
+        let initDecl = generateInitMethod(properties: properties)
 
         // Generate custom Decodable init that handles missing keys with default values
-        let decodableInitDecl = generateDecodableInit(properties: properties, hasSyncKey: hasSyncKey)
+        let decodableInitDecl = generateDecodableInit(properties: properties)
 
         var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl]
 
@@ -166,14 +166,14 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         // Only add indexes property if there are any indexes
         if !indexDefStrings.isEmpty {
-            let indexesArray = indexDefStrings.joined(separator: ",\n            ")
+            let indexesArray = indexDefStrings.joined(separator: ",\n        ")
             let indexesDecl: DeclSyntax = """
-                public static var indexes: [IndexDefinition] {
-                    [
-                        \(raw: indexesArray)
-                    ]
-                }
-                """
+            public static var indexes: [IndexDefinition] {
+                [
+                    \(raw: indexesArray)
+                ]
+            }
+            """
             result.append(indexesDecl)
         }
 
@@ -185,11 +185,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
     /// Generate custom Decodable init(from decoder:) that handles missing keys with default values
     /// This enables backward compatibility when new fields are added to entities
-    private static func generateDecodableInit(properties: [PropertyInfo], hasSyncKey: Bool) -> DeclSyntax {
+    private static func generateDecodableInit(properties: [PropertyInfo]) -> DeclSyntax {
         // Generate CodingKeys enum
         let codingKeysEntries = properties.map { prop in
             "case \(prop.name)"
-        }.joined(separator: "\n            ")
+        }.joined(separator: "\n    ")
 
         // Check if we have any nested struct types that need Embedded validation
         let hasNestedTypes = properties.contains { MacroHelpers.isNestedStructType($0.type) }
@@ -202,17 +202,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             let baseType = prop.type.replacingOccurrences(of: "?", with: "")
             let isNestedType = MacroHelpers.isNestedStructType(prop.type)
 
-            // Determine the default value for this property
-            let defaultValue: String?
-            if let propDefault = prop.defaultValue {
-                defaultValue = propDefault
-            } else if propName == "id" && !hasSyncKey {
-                defaultValue = "UUIDV7()"
-            } else if propName == "createdAt" || propName == "updatedAt" {
-                defaultValue = "Date()"
-            } else {
-                defaultValue = nil
-            }
+            // Use property's own default value (validated to exist for id/createdAt/updatedAt)
+            let defaultValue = prop.defaultValue
 
             if prop.isOptional {
                 // Optional types: use decodeIfPresent, default to nil
@@ -223,19 +214,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                     decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
                 }
             } else if let defaultVal = defaultValue {
-                // Non-optional with default: use decodeIfPresent with fallback
-                // For empty array/set literals, we need explicit type annotation
-                let typedDefault: String
-                if defaultVal == "[]" || defaultVal == "Set()" {
-                    typedDefault = "\(baseType)()"
-                } else {
-                    typedDefault = defaultVal
-                }
+                // Non-optional with default: use do-catch to fallback on any error
                 if isNestedType {
-                    // Use helper function for nested types to enforce Embedded constraint
-                    decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName)) ?? \(typedDefault)")
+                    decodingStatements.append("do {\n        self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))\n    } catch {\n        self.\(propName) = \(defaultVal)\n    }")
                 } else {
-                    decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName)) ?? \(typedDefault)")
+                    decodingStatements.append("do {\n        self.\(propName) = try container.decode(\(baseType).self, forKey: .\(propName))\n    } catch {\n        self.\(propName) = \(defaultVal)\n    }")
                 }
             } else {
                 // Non-optional without default: required field
@@ -248,7 +231,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             }
         }
 
-        let decodingCode = decodingStatements.joined(separator: "\n        ")
+        let decodingCode = decodingStatements.joined(separator: "\n    ")
 
         // Generate helper functions for nested type decoding if needed
         let helperFunctions: String
@@ -273,395 +256,121 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         }
 
         return """
-            private enum CodingKeys: String, CodingKey {
-                \(raw: codingKeysEntries)
-            }
+        private enum CodingKeys: String, CodingKey {
+            \(raw: codingKeysEntries)
+        }
 
-            public init(from decoder: Decoder) throws {
-                let container = try decoder.container(keyedBy: CodingKeys.self)
-                \(raw: decodingCode)
-            }\(raw: helperFunctions)
-            """
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            \(raw: decodingCode)
+        }\(raw: helperFunctions)
+        """
     }
 
-    /// Generate init method with default values
-    /// Priority: 1. Property's own default value (from source)
-    ///           2. Built-in defaults for id (UUIDV7()), createdAt/updatedAt (Date())
-    private static func generateInitMethod(properties: [PropertyInfo], hasSyncKey: Bool) -> DeclSyntax {
+    /// Generate init method with default values from property declarations
+    private static func generateInitMethod(properties: [PropertyInfo]) -> DeclSyntax {
         var params: [String] = []
 
         for prop in properties {
             let paramName = prop.name
             let paramType = prop.type
 
-            // Determine if this parameter should have a default value
-            // Priority: property's own default > built-in defaults
-            let defaultValue: String?
-            if let propDefault = prop.defaultValue {
-                // Use the property's own default value from source
-                defaultValue = propDefault
-            } else if paramName == "id" && !hasSyncKey {
-                // id has default value UUIDV7() for non-sync-key entities
-                defaultValue = "UUIDV7()"
-            } else if paramName == "createdAt" || paramName == "updatedAt" {
-                // createdAt and updatedAt have default value Date()
-                defaultValue = "Date()"
-            } else {
-                defaultValue = nil
-            }
-
-            if let defaultVal = defaultValue {
+            // Use property's own default value (validated to exist for id/createdAt/updatedAt)
+            if let defaultVal = prop.defaultValue {
                 params.append("\(paramName): \(paramType) = \(defaultVal)")
             } else {
                 params.append("\(paramName): \(paramType)")
             }
         }
 
-        let paramsStr = params.joined(separator: ",\n        ")
+        let paramsStr = params.joined(separator: ",\n    ")
 
         // Generate assignments
         var assignments: [String] = []
         for prop in properties {
             assignments.append("self.\(prop.name) = \(prop.name)")
         }
-        let assignmentsStr = assignments.joined(separator: "\n        ")
+        let assignmentsStr = assignments.joined(separator: "\n    ")
 
         return """
-            public init(
-                \(raw: paramsStr)
-            ) {
-                \(raw: assignmentsStr)
-            }
-            """
+        public init(
+            \(raw: paramsStr)
+        ) {
+            \(raw: assignmentsStr)
+        }
+        """
     }
 
     /// Generate the sqliteEncode() method
+    /// Uses SQLiteValueEncodable.sqliteEncode() for all types
     private static func generateSqliteEncode(properties: [PropertyInfo]) throws -> DeclSyntax {
         var encodings: [String] = []
 
         for prop in properties {
             let columnName = prop.columnName
-            let encoding = generateEncodeExpression(for: prop)
-            encodings.append("result[\"\(columnName)\"] = \(encoding)")
+            // All types (including Optional) conform to SQLiteValueEncodable
+            // Optional's sqliteEncode() returns .null for nil values
+            encodings.append("result[\"\(columnName)\"] = try self.\(prop.name).sqliteEncode()")
         }
 
         let encodingCode = encodings.joined(separator: "\n        ")
 
         return """
-            public func sqliteEncode() throws -> [String: SQLiteValue] {
-                var result: [String: SQLiteValue] = [:]
-                \(raw: encodingCode)
-                return result
-            }
-            """
-    }
-
-    /// Generate encode expression for a property
-    private static func generateEncodeExpression(for prop: PropertyInfo) -> String {
-        let propName = prop.name
-        let baseType = prop.type.replacingOccurrences(of: "?", with: "")
-
-        // Check if encoding needs try (JSON encoded types - all non-primitive types except UUIDV7)
-        let needsTry = !prop.isPrimitive && baseType != "UUIDV7"
-
-        if prop.isOptional {
-            // For optional types, the outer closure needs try if inner code throws
-            let outerTry = needsTry ? "try " : ""
-            // Inner return also needs try if it's a throwing expression
-            let innerTry = needsTry ? "try " : ""
-            return """
-                \(outerTry){
-                        if let value = self.\(propName) {
-                            return \(innerTry)\(encodeValue(name: "value", type: baseType))
-                        } else {
-                            return .null
-                        }
-                    }()
-                """
-        } else {
-            if needsTry {
-                return "try \(encodeValue(name: "self.\(propName)", type: baseType))"
-            }
-            return encodeValue(name: "self.\(propName)", type: baseType)
+        public func sqliteEncode() throws -> [String: SQLiteValue] {
+            var result: [String: SQLiteValue] = [:]
+            \(raw: encodingCode)
+            return result
         }
-    }
-
-    /// Generate the value encoding expression for a given type
-    private static func encodeValue(name: String, type: String) -> String {
-        switch type {
-        case "String":
-            return ".text(\(name))"
-        case "Int":
-            return ".integer(Int64(\(name)))"
-        case "Int64":
-            return ".integer(\(name))"
-        case "Int32":
-            return ".integer(Int64(\(name)))"
-        case "Int16":
-            return ".integer(Int64(\(name)))"
-        case "Int8":
-            return ".integer(Int64(\(name)))"
-        case "UInt":
-            return ".integer(Int64(\(name)))"
-        case "UInt64":
-            return ".integer(Int64(\(name)))"
-        case "UInt32":
-            return ".integer(Int64(\(name)))"
-        case "UInt16":
-            return ".integer(Int64(\(name)))"
-        case "UInt8":
-            return ".integer(Int64(\(name)))"
-        case "Bool":
-            return ".integer(\(name) ? 1 : 0)"
-        case "Double":
-            return ".real(\(name))"
-        case "Float":
-            return ".real(Double(\(name)))"
-        case "Date":
-            return ".real(\(name).timeIntervalSince1970)"
-        case "UUID":
-            return ".text(\(name).uuidString)"
-        case "URL":
-            return ".text(\(name).absoluteString)"
-        case "UUIDV7":
-            return ".blob(\(name).data)"
-        case "Data":
-            return ".blob(\(name))"
-        default:
-            // Nested Codable type - encode as JSON
-            return """
-                {
-                        let jsonData = try JSONEncoder().encode(\(name))
-                        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-                            throw StoreError.encodingFailed("Failed to encode \\(\(name)) to JSON")
-                        }
-                        return .text(jsonString)
-                    }()
-                """
-        }
+        """
     }
 
     /// Generate the sqliteDecode(from:) method
+    /// Uses SQLiteValueDecodable.init(from:) for all types
+    /// For properties with default values, uses do-catch to fallback to default on error
     private static func generateSqliteDecode(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws -> DeclSyntax {
         var decodings: [String] = []
         var constructorArgs: [String] = []
 
         for (index, prop) in properties.enumerated() {
             let varName = "_\(prop.name)"
-            let decoding = generateDecodeExpression(for: prop, index: index, hasSyncKey: hasSyncKey)
-            decodings.append("let \(varName) = \(decoding)")
+            let decoding = generateDecodeExpression(for: prop, varName: varName, index: index)
+            decodings.append(decoding)
             constructorArgs.append("\(prop.name): \(varName)")
         }
 
         let decodingCode = decodings.joined(separator: "\n        ")
-        let constructorCode = constructorArgs.joined(separator: ",\n            ")
+        let constructorCode = constructorArgs.joined(separator: ", ")
 
         return """
             public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                 \(raw: decodingCode)
-                return Self(
-                    \(raw: constructorCode)
-                )
+                return Self(\(raw: constructorCode))
             }
             """
     }
 
     /// Generate decode expression for a property
-    /// Uses default values when decoding fails or value is NULL
-    private static func generateDecodeExpression(for prop: PropertyInfo, index: Int, hasSyncKey: Bool) -> String {
+    /// Uses SQLiteValueDecodable.init(from:) with do-catch for default values
+    private static func generateDecodeExpression(for prop: PropertyInfo, varName: String, index: Int) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
-
-        // Check if this is a nested Codable type (non-primitive, not UUIDV7)
-        let isNestedCodable = !prop.isPrimitive && baseType != "UUIDV7"
-
-        // Determine the effective default value (explicit or built-in)
-        let effectiveDefault: String?
-        if let propDefault = prop.defaultValue {
-            // Use explicit default value
-            if propDefault == "[]" || propDefault == "Set()" {
-                effectiveDefault = "\(baseType)()"
-            } else {
-                effectiveDefault = propDefault
-            }
-        } else if prop.name == "id" && !hasSyncKey {
-            effectiveDefault = "UUIDV7()"
-        } else if prop.name == "createdAt" || prop.name == "updatedAt" {
-            effectiveDefault = "Date()"
-        } else {
-            effectiveDefault = nil
-        }
+        let sqliteType = prop.sqliteType  // "text", "integer", "real", "blob"
 
         if prop.isOptional {
-            // For optional nested Codable types
-            if isNestedCodable {
-                return """
-                    try {
-                            if statement.isNull(Int32(\(index))) {
-                                return Optional<\(baseType)>.none
-                            }
-                            guard let jsonString = statement.columnString(Int32(\(index))),
-                                  let jsonData = jsonString.data(using: .utf8) else {
-                                throw StoreError.decodingFailed("Failed to decode \(baseType) from column \(index)")
-                            }
-                            return try JSONDecoder().decode(\(baseType).self, from: jsonData)
-                        }()
-                    """
-            }
-            // For optional primitive types
+            // For optional types, use Optional<T>(from:) which handles .null -> nil
+            return "let \(varName) = try Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+        } else if let defaultVal = prop.defaultValue {
+            // For non-optional with default value: use var + do-catch block
             return """
-                {
-                        if statement.isNull(Int32(\(index))) {
-                            return Optional<\(baseType)>.none
-                        }
-                        return \(decodeValue(type: baseType, index: index, defaultValue: nil))
-                    }()
-                """
-        } else if let defaultVal = effectiveDefault {
-            // For non-optional nested Codable types with default value
-            // Any error should fall back to default, not throw
-            if isNestedCodable {
-                return """
-                    {
-                            if statement.isNull(Int32(\(index))) {
-                                return \(defaultVal)
-                            }
-                            guard let jsonString = statement.columnString(Int32(\(index))),
-                                  let jsonData = jsonString.data(using: .utf8) else {
-                                return \(defaultVal)
-                            }
-                            do {
-                                return try JSONDecoder().decode(\(baseType).self, from: jsonData)
-                            } catch {
-                                return \(defaultVal)
-                            }
-                        }()
-                    """
-            }
-            // For non-optional primitive types with default value
-            // Use guard pattern for types with failable initializers
-            switch baseType {
-            case "UUIDV7":
-                return """
-                    {
-                            if statement.isNull(Int32(\(index))) {
-                                return \(defaultVal)
-                            }
-                            guard let data = statement.columnData(Int32(\(index))),
-                                  let value = UUIDV7(data: data) else {
-                                return \(defaultVal)
-                            }
-                            return value
-                        }()
-                    """
-            case "UUID":
-                return """
-                    {
-                            if statement.isNull(Int32(\(index))) {
-                                return \(defaultVal)
-                            }
-                            guard let uuidString = statement.columnString(Int32(\(index))),
-                                  let value = UUID(uuidString: uuidString) else {
-                                return \(defaultVal)
-                            }
-                            return value
-                        }()
-                    """
-            case "URL":
-                return """
-                    {
-                            if statement.isNull(Int32(\(index))) {
-                                return \(defaultVal)
-                            }
-                            guard let urlString = statement.columnString(Int32(\(index))),
-                                  let value = URL(string: urlString) else {
-                                return \(defaultVal)
-                            }
-                            return value
-                        }()
-                    """
-            default:
-                return """
-                    {
-                            if statement.isNull(Int32(\(index))) {
-                                return \(defaultVal)
-                            }
-                            return \(decodeValue(type: baseType, index: index, defaultValue: defaultVal))
-                        }()
-                    """
-            }
-        } else {
-            // For non-optional types without default value
-            if isNestedCodable {
-                return "try \(decodeValue(type: baseType, index: index, defaultValue: nil))"
-            }
-            return decodeValue(type: baseType, index: index, defaultValue: nil)
+var \(varName): \(baseType)
+        do {
+            \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))
+        } catch {
+            \(varName) = \(defaultVal)
         }
-    }
-
-    /// Generate the value decoding expression for a given type
-    /// - Parameters:
-    ///   - type: The Swift type name
-    ///   - index: The column index
-    ///   - defaultValue: Optional default value to use as fallback when decoding fails
-    private static func decodeValue(type: String, index: Int, defaultValue: String?) -> String {
-        // For types that need a fallback, use the default value if provided
-        let stringFallback = defaultValue ?? "\"\""
-        let dataFallback = defaultValue ?? "Data()"
-        let uuidv4Fallback = defaultValue ?? "UUIDV7()"
-        let uuidFallback = defaultValue ?? "UUID()"
-        let urlFallback = defaultValue ?? "URL(string: \"about:blank\")!"
-
-        switch type {
-        case "String":
-            return "statement.columnString(Int32(\(index))) ?? \(stringFallback)"
-        case "Int":
-            return "Int(statement.columnInt64(Int32(\(index))))"
-        case "Int64":
-            return "statement.columnInt64(Int32(\(index)))"
-        case "Int32":
-            return "Int32(statement.columnInt64(Int32(\(index))))"
-        case "Int16":
-            return "Int16(statement.columnInt64(Int32(\(index))))"
-        case "Int8":
-            return "Int8(statement.columnInt64(Int32(\(index))))"
-        case "UInt":
-            return "UInt(statement.columnInt64(Int32(\(index))))"
-        case "UInt64":
-            return "UInt64(statement.columnInt64(Int32(\(index))))"
-        case "UInt32":
-            return "UInt32(statement.columnInt64(Int32(\(index))))"
-        case "UInt16":
-            return "UInt16(statement.columnInt64(Int32(\(index))))"
-        case "UInt8":
-            return "UInt8(statement.columnInt64(Int32(\(index))))"
-        case "Bool":
-            return "statement.columnInt64(Int32(\(index))) != 0"
-        case "Double":
-            return "statement.columnDouble(Int32(\(index)))"
-        case "Float":
-            return "Float(statement.columnDouble(Int32(\(index))))"
-        case "Date":
-            return "Date(timeIntervalSince1970: statement.columnDouble(Int32(\(index))))"
-        case "UUID":
-            return "UUID(uuidString: statement.columnString(Int32(\(index))) ?? \"\") ?? \(uuidFallback)"
-        case "URL":
-            return "URL(string: statement.columnString(Int32(\(index))) ?? \"\") ?? \(urlFallback)"
-        case "UUIDV7":
-            return "UUIDV7(data: statement.columnData(Int32(\(index))) ?? Data()) ?? \(uuidv4Fallback)"
-        case "Data":
-            return "statement.columnData(Int32(\(index))) ?? \(dataFallback)"
-        default:
-            // Nested Codable type - decode from JSON
-            // If there's a default value and column is NULL, we already handle it in generateDecodeExpression
-            return """
-                {
-                        guard let jsonString = statement.columnString(Int32(\(index))),
-                              let jsonData = jsonString.data(using: .utf8) else {
-                            throw StoreError.decodingFailed("Failed to decode \(type) from column \(index)")
-                        }
-                        return try JSONDecoder().decode(\(type).self, from: jsonData)
-                    }()
-                """
+"""
+        } else {
+            // For non-optional without default value: just try decode
+            return "let \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
         }
     }
 
@@ -767,7 +476,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         }
     }
 
-    /// Validate that required fields exist with correct types
+    /// Validate that required fields exist with correct types and default values
     /// - hasSyncKey: If true, #SyncKey is used and id field is NOT allowed
     ///               If false, id field is required and #SyncKey is not allowed
     private static func validateRequiredFields(properties: [PropertyInfo], structName: String, hasSyncKey: Bool) throws {
@@ -804,6 +513,15 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                     fieldName: "id"
                 )
             }
+
+            // id field must have a default value
+            if idProp.defaultValue == nil {
+                throw MacroError.missingDefaultValue(
+                    structName: structName,
+                    fieldName: "id",
+                    expectedDefault: "UUIDV7()"
+                )
+            }
         }
 
         // Check for createdAt: Date (always required)
@@ -832,6 +550,15 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             )
         }
 
+        // createdAt must have a default value
+        if createdAtProp.defaultValue == nil {
+            throw MacroError.missingDefaultValue(
+                structName: structName,
+                fieldName: "createdAt",
+                expectedDefault: "Date()"
+            )
+        }
+
         // Check for updatedAt: Date (always required)
         guard let updatedAtProp = properties.first(where: { $0.name == "updatedAt" }) else {
             throw MacroError.missingRequiredField(
@@ -857,6 +584,15 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 fieldName: "updatedAt"
             )
         }
+
+        // updatedAt must have a default value
+        if updatedAtProp.defaultValue == nil {
+            throw MacroError.missingDefaultValue(
+                structName: structName,
+                fieldName: "updatedAt",
+                expectedDefault: "Date()"
+            )
+        }
     }
 }
 
@@ -870,6 +606,7 @@ public enum MacroError: Error, CustomStringConvertible {
     case invalidKeyPath(keyPath: String)
     case syncKeyAndIdMutuallyExclusive(structName: String)
     case missingTypeAnnotation(structName: String, fieldName: String)
+    case missingDefaultValue(structName: String, fieldName: String, expectedDefault: String)
 
     public var description: String {
         switch self {
@@ -889,6 +626,8 @@ public enum MacroError: Error, CustomStringConvertible {
             return "@Entity '\(structName)': #SyncKey and 'id' field are mutually exclusive. Use either #SyncKey or 'id: UUIDV7', not both."
         case .missingTypeAnnotation(let structName, let fieldName):
             return "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
+        case .missingDefaultValue(let structName, let fieldName, let expectedDefault):
+            return "@Entity requires '\(structName).\(fieldName)' to have a default value. Use 'var \(fieldName): ... = \(expectedDefault)'"
         }
     }
 }
