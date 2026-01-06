@@ -155,101 +155,38 @@ public struct Row: Sendable {
 
     /// Access column by KeyPath, returns non-optional typed value
     /// Crashes if column is missing or value cannot be extracted
-    public subscript<T, V: SQLiteExtractable>(keyPath: KeyPath<T, V>) -> V {
+    public subscript<T, V: SQLiteValueDecodable>(keyPath: KeyPath<T, V>) -> V {
         let column = columnName(for: keyPath)
-        guard let value = data[column], let extracted = V.extract(from: value) else {
-            fatalError("Column '\(column)' not found or cannot be extracted as \(V.self)")
+        guard let value = data[column] else {
+            fatalError("Column '\(column)' not found")
         }
-        return extracted
+        do {
+            return try V(from: value)
+        } catch {
+            fatalError("Column '\(column)' cannot be extracted as \(V.self): \(error)")
+        }
     }
 
     /// Access optional column by KeyPath, returns optional typed value
-    public subscript<T, V: SQLiteExtractable>(keyPath: KeyPath<T, V?>) -> V? {
+    public subscript<T, V: SQLiteValueDecodable>(keyPath: KeyPath<T, V?>) -> V? {
         let column = columnName(for: keyPath)
         guard let value = data[column] else { return nil }
         if case .null = value { return nil }
-        return V.extract(from: value)
+        return try? V(from: value)
     }
 
     /// Access column by KeyPath, returns optional typed value
-    public func get<T, V: SQLiteExtractable>(_ keyPath: KeyPath<T, V>) -> V? {
+    public func get<T, V: SQLiteValueDecodable>(_ keyPath: KeyPath<T, V>) -> V? {
         let column = columnName(for: keyPath)
         guard let value = data[column] else { return nil }
-        return V.extract(from: value)
+        return try? V(from: value)
     }
 
     /// Access optional column by KeyPath, returns optional typed value
-    public func get<T, V: SQLiteExtractable>(_ keyPath: KeyPath<T, V?>) -> V? {
+    public func get<T, V: SQLiteValueDecodable>(_ keyPath: KeyPath<T, V?>) -> V? {
         let column = columnName(for: keyPath)
         guard let value = data[column] else { return nil }
-        return V.extract(from: value)
+        return try? V(from: value)
     }
 }
 
-/// Protocol for types that can be extracted from SQLiteValue
-public protocol SQLiteExtractable {
-    static func extract(from value: SQLiteValue) -> Self?
-}
-
-extension String: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> String? {
-        if case .text(let v) = value { return v }
-        return nil
-    }
-}
-
-extension Int: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Int? {
-        if case .integer(let v) = value { return Int(v) }
-        return nil
-    }
-}
-
-extension Int64: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Int64? {
-        if case .integer(let v) = value { return v }
-        return nil
-    }
-}
-
-extension Double: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Double? {
-        if case .real(let v) = value { return v }
-        return nil
-    }
-}
-
-extension Bool: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Bool? {
-        if case .integer(let v) = value { return v != 0 }
-        return nil
-    }
-}
-
-extension Date: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Date? {
-        if case .real(let v) = value { return Date(timeIntervalSince1970: v) }
-        return nil
-    }
-}
-
-extension Data: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> Data? {
-        if case .blob(let v) = value { return v }
-        return nil
-    }
-}
-
-extension UUIDV7: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> UUIDV7? {
-        if case .blob(let v) = value { return UUIDV7(data: v) }
-        return nil
-    }
-}
-
-extension UUID: SQLiteExtractable {
-    public static func extract(from value: SQLiteValue) -> UUID? {
-        if case .text(let v) = value { return UUID(uuidString: v) }
-        return nil
-    }
-}

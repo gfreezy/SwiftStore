@@ -5,16 +5,16 @@ import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 @testable import SwiftStoreMacrosImpl
 
-@Suite("Default Macro Tests")
+@Suite("Embedded Macro Tests")
 struct DefaultMacroTests {
 
     // MARK: - Basic Struct Tests
 
-    @Test("@Default generates CodingKeys, init(from:), memberwise init, and marker")
+    @Test("@Embedded generates CodingKeys, init(from:), memberwise init, and marker")
     func testBasicDefaultMacroExpansion() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct Settings: Codable {
                 var theme: String = "light"
                 var fontSize: Int = 14
@@ -53,11 +53,11 @@ struct DefaultMacroTests {
 
     // MARK: - Required Field Tests
 
-    @Test("@Default with required field (no default value)")
+    @Test("@Embedded with required field (no default value)")
     func testDefaultWithRequiredField() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct UserPrefs: Codable {
                 var userId: String
                 var theme: String = "light"
@@ -96,11 +96,11 @@ struct DefaultMacroTests {
 
     // MARK: - Optional Field Tests
 
-    @Test("@Default with optional field")
+    @Test("@Embedded with optional field")
     func testDefaultWithOptionalField() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct Config: Codable {
                 var name: String = "default"
                 var description: String?
@@ -139,11 +139,11 @@ struct DefaultMacroTests {
 
     // MARK: - All Primitive Types Tests
 
-    @Test("@Default with all integer types")
+    @Test("@Embedded with all integer types")
     func testDefaultWithIntegerTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct IntegerTypes: Codable {
                 var intValue: Int = 0
                 var int8Value: Int8 = 8
@@ -200,11 +200,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with floating point and boolean types")
+    @Test("@Embedded with floating point and boolean types")
     func testDefaultWithFloatAndBoolTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct FloatBoolTypes: Codable {
                 var doubleValue: Double = 3.14
                 var floatValue: Float = 2.5
@@ -251,11 +251,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with string empty and non-empty defaults")
+    @Test("@Embedded with string empty and non-empty defaults")
     func testDefaultWithStringDefaults() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct StringTypes: Codable {
                 var emptyString: String = ""
                 var nonEmptyString: String = "hello"
@@ -294,11 +294,11 @@ struct DefaultMacroTests {
 
     // MARK: - Collection Types Tests
 
-    @Test("@Default with empty array default")
+    @Test("@Embedded with empty array default")
     func testDefaultWithEmptyArrayDefault() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct ArrayTypes: Codable {
                 var emptyArray: [String] = []
                 var nonEmptyArray: [Int] = [1, 2, 3]
@@ -335,11 +335,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with dictionary defaults")
+    @Test("@Embedded with dictionary defaults")
     func testDefaultWithDictionaryDefaults() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct DictTypes: Codable {
                 var emptyDict: [String: Int] = [:]
                 var nonEmptyDict: [String: String] = ["key": "value"]
@@ -378,11 +378,11 @@ struct DefaultMacroTests {
 
     // MARK: - Nested Struct Tests
 
-    @Test("@Default with nested struct default")
+    @Test("@Embedded with nested struct default")
     func testDefaultWithNestedStructDefault() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct Container: Codable {
                 var name: String = ""
                 var nested: NestedType = NestedType()
@@ -419,11 +419,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with optional nested struct")
+    @Test("@Embedded with optional nested struct")
     func testDefaultWithOptionalNestedStruct() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct ContainerOptional: Codable {
                 var name: String = ""
                 var nested: NestedType?
@@ -462,11 +462,11 @@ struct DefaultMacroTests {
 
     // MARK: - Enum Tests
 
-    @Test("@Default on enum only generates marker")
+    @Test("@Embedded on enum only generates marker")
     func testDefaultOnEnumGeneratesMarkerOnly() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             enum Status: String, Codable {
                 case active
                 case inactive
@@ -489,11 +489,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default on Int enum")
+    @Test("@Embedded on Int enum")
     func testDefaultOnIntEnum() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             enum Priority: Int, Codable {
                 case low = 0
                 case medium = 1
@@ -518,11 +518,11 @@ struct DefaultMacroTests {
 
     // MARK: - Mixed Types Tests
 
-    @Test("@Default with mixed types (primitives, optionals, collections, defaults)")
+    @Test("@Embedded with mixed types (primitives, optionals, collections, defaults)")
     func testDefaultWithMixedTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct MixedTypes: Codable {
                 var required: String
                 var withDefault: String = "default"
@@ -576,11 +576,11 @@ struct DefaultMacroTests {
 
     // MARK: - All Optional Types Tests
 
-    @Test("@Default with all optional types")
+    @Test("@Embedded with all optional types")
     func testDefaultWithAllOptionalTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct AllOptionals: Codable {
                 var optString: String?
                 var optInt: Int?
@@ -634,11 +634,11 @@ struct DefaultMacroTests {
 
     // MARK: - Complex Nested Tests
 
-    @Test("@Default with array of nested structs")
+    @Test("@Embedded with array of nested structs")
     func testDefaultWithArrayOfNestedStructs() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithNestedArray: Codable {
                 var items: [NestedItem] = []
                 var optionalItems: [NestedItem]?
@@ -675,11 +675,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with enum default value")
+    @Test("@Embedded with enum default value")
     func testDefaultWithEnumDefaultValue() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithEnumDefault: Codable {
                 var status: Status = .active
                 var optionalStatus: Status?
@@ -718,11 +718,11 @@ struct DefaultMacroTests {
 
     // MARK: - Array/Dict of Nested Types Tests
 
-    @Test("@Default with array of nested structs with empty default")
+    @Test("@Embedded with array of nested structs with empty default")
     func testDefaultWithArrayOfNestedStructsEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithNestedArrayEmpty: Codable {
                 var addresses: [Address] = []
                 var items: [Item] = []
@@ -759,11 +759,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with array of nested structs with non-empty default")
+    @Test("@Embedded with array of nested structs with non-empty default")
     func testDefaultWithArrayOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithNestedArrayNonEmpty: Codable {
                 var addresses: [Address] = [Address()]
                 var scores: [Score] = [Score(value: 0), Score(value: 100)]
@@ -800,11 +800,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with dictionary of nested structs with empty default")
+    @Test("@Embedded with dictionary of nested structs with empty default")
     func testDefaultWithDictOfNestedStructsEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithNestedDictEmpty: Codable {
                 var addressBook: [String: Address] = [:]
                 var itemMap: [String: Item] = [:]
@@ -841,11 +841,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with dictionary of nested structs with non-empty default")
+    @Test("@Embedded with dictionary of nested structs with non-empty default")
     func testDefaultWithDictOfNestedStructsNonEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithNestedDictNonEmpty: Codable {
                 var addressBook: [String: Address] = ["home": Address()]
                 var config: [String: Setting] = ["default": Setting(value: 0)]
@@ -882,11 +882,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with array of enum with empty default")
+    @Test("@Embedded with array of enum with empty default")
     func testDefaultWithArrayOfEnumEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithEnumArrayEmpty: Codable {
                 var statuses: [Status] = []
                 var priorities: [Priority] = []
@@ -923,11 +923,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with array of enum with non-empty default")
+    @Test("@Embedded with array of enum with non-empty default")
     func testDefaultWithArrayOfEnumNonEmpty() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithEnumArrayNonEmpty: Codable {
                 var statuses: [Status] = [.active, .pending]
                 var priorities: [Priority] = [.high, .low]
@@ -964,11 +964,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with dict of enum values")
+    @Test("@Embedded with dict of enum values")
     func testDefaultWithDictOfEnumValues() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithEnumDict: Codable {
                 var statusMap: [String: Status] = [:]
                 var priorityMap: [String: Priority] = ["default": .medium]
@@ -1005,11 +1005,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with optional array and dict of nested types")
+    @Test("@Embedded with optional array and dict of nested types")
     func testDefaultWithOptionalArrayAndDictOfNestedTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct WithOptionalCollections: Codable {
                 var addresses: [Address]?
                 var itemMap: [String: Item]?
@@ -1051,11 +1051,11 @@ struct DefaultMacroTests {
         )
     }
 
-    @Test("@Default with Set types")
+    @Test("@Embedded with Set types")
     func testDefaultWithSetTypes() {
         assertMacroExpansion(
             """
-            @Default
+            @Embedded
             struct SetTypes: Codable {
                 var emptySet: Set<String> = Set()
                 var nonEmptySet: Set<Int> = [1, 2, 3]

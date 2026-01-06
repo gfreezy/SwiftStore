@@ -49,52 +49,6 @@ public prefix func ! <T>(predicate: Predicate<T>) -> Predicate<T> {
     predicate.not
 }
 
-// MARK: - KeyPath based predicates
-
-/// Protocol for comparable values in predicates
-public protocol SQLiteComparable: Sendable {
-    var sqliteValue: SQLiteValue { get }
-}
-
-extension String: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .text(self) }
-}
-
-extension Int: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
-}
-
-extension Int64: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .integer(self) }
-}
-
-extension Double: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .real(self) }
-}
-
-extension Bool: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .integer(self ? 1 : 0) }
-}
-
-extension UUID: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .text(self.uuidString) }
-}
-
-
-extension Date: SQLiteComparable {
-    public var sqliteValue: SQLiteValue { .real(self.timeIntervalSince1970) }
-}
-
-extension Optional: SQLiteComparable where Wrapped: SQLiteComparable {
-    public var sqliteValue: SQLiteValue {
-        switch self {
-        case .some(let value):
-            return value.sqliteValue
-        case .none:
-            return .null
-        }
-    }
-}
 
 /// Helper to convert KeyPath to column name
 public func columnName<T, V>(for keyPath: KeyPath<T, V>) -> String {

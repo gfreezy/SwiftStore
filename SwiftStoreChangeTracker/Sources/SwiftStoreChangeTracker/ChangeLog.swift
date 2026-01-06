@@ -2,7 +2,7 @@ import Foundation
 import SwiftStoreCore
 
 /// Change operation type
-@Default
+@Embedded
 public enum ChangeOperation: String, Codable, Sendable {
     case insert
     case update

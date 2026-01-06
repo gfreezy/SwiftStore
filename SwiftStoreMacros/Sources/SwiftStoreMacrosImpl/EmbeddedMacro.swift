@@ -2,9 +2,13 @@ import SwiftSyntax
 import SwiftSyntaxMacros
 import SwiftSyntaxBuilder
 
-/// Default macro that generates fault-tolerant Decodable conformance
-/// and Default protocol conformance for Codable structs
-public struct DefaultMacro: MemberMacro, ExtensionMacro {
+/// Embedded macro that generates:
+/// - Fault-tolerant Decodable conformance
+/// - Embedded protocol conformance
+/// - SQLiteValueCodable conformance (via Embedded protocol)
+///
+/// Use this for types that will be embedded in @Entity structs as JSON.
+public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
 
     // MARK: - MemberMacro
 
@@ -14,11 +18,6 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        // Generate the marker property (required for Default protocol)
-        let markerDecl: DeclSyntax = """
-            @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
-            """
-
         // For structs, generate full Decodable implementation
         if let structDecl = declaration.as(StructDeclSyntax.self) {
             let properties = structDecl.extractProperties()
@@ -29,15 +28,15 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
             // Generate memberwise init with default values
             let memberwiseInitDecl = generateMemberwiseInit(properties: properties)
 
-            return [decodableInitDecl, memberwiseInitDecl, markerDecl]
+            return [decodableInitDecl, memberwiseInitDecl]
         }
 
-        // For enums, only need the marker
+        // For enums, no additional members needed
         if declaration.is(EnumDeclSyntax.self) {
-            return [markerDecl]
+            return []
         }
 
-        throw MacroError.message("@Default can only be applied to structs or enums")
+        throw MacroError.message("@Embedded can only be applied to structs or enums")
     }
 
     /// Generate memberwise init method with default values
@@ -89,11 +88,11 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
 
         var extensions: [ExtensionDeclSyntax] = []
 
-        // Default protocol conformance
-        let defaultProtocol: DeclSyntax = """
-            extension \(type.trimmed): Default {}
+        // Embedded protocol conformance (includes SQLiteValueCodable via protocol extension)
+        let embeddedProtocol: DeclSyntax = """
+            extension \(type.trimmed): Embedded {}
             """
-        if let ext = defaultProtocol.as(ExtensionDeclSyntax.self) {
+        if let ext = embeddedProtocol.as(ExtensionDeclSyntax.self) {
             extensions.append(ext)
         }
 
@@ -149,3 +148,8 @@ public struct DefaultMacro: MemberMacro, ExtensionMacro {
             """
     }
 }
+
+// MARK: - Backwards Compatibility
+
+/// Backwards compatibility alias
+public typealias DefaultMacro = EmbeddedMacro

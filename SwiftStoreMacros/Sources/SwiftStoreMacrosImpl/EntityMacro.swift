@@ -133,12 +133,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // Generate custom Decodable init that handles missing keys with default values
         let decodableInitDecl = generateDecodableInit(properties: properties, hasSyncKey: hasSyncKey)
 
-        // Generate Default protocol marker (prevents manual conformance)
-        let defaultMarkerDecl: DeclSyntax = """
-            @inlinable public static var _defaultMacroMarker: _DefaultMacroMarker { _makeDefaultMacroMarker() }
-            """
-
-        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl, defaultMarkerDecl]
+        var result: [DeclSyntax] = [tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl, decodableInitDecl]
 
         // Generate id computed property for #SyncKey entities (for Identifiable conformance)
         if let syncKeyInfo = syncKeyInfo {
@@ -182,8 +177,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             result.append(indexesDecl)
         }
 
-        // Note: Nested types (non-primitive Codable types) should conform to Default protocol
-        // for proper fault-tolerant decoding. Add @Default to your nested structs.
+        // Note: Nested types (non-primitive Codable types) should conform to Embedded protocol
+        // for proper fault-tolerant decoding. Add @Embedded to your nested structs.
 
         return result
     }
@@ -196,7 +191,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             "case \(prop.name)"
         }.joined(separator: "\n            ")
 
-        // Check if we have any nested struct types that need Default validation
+        // Check if we have any nested struct types that need Embedded validation
         let hasNestedTypes = properties.contains { MacroHelpers.isNestedStructType($0.type) }
 
         // Generate decoding statements
@@ -222,7 +217,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             if prop.isOptional {
                 // Optional types: use decodeIfPresent, default to nil
                 if isNestedType {
-                    // Use helper function for nested types to enforce Default constraint
+                    // Use helper function for nested types to enforce Embedded constraint
                     decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName))")
                 } else {
                     decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName))")
@@ -237,7 +232,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                     typedDefault = defaultVal
                 }
                 if isNestedType {
-                    // Use helper function for nested types to enforce Default constraint
+                    // Use helper function for nested types to enforce Embedded constraint
                     decodingStatements.append("self.\(propName) = try Self._decodeNestedIfPresent(\(baseType).self, from: container, forKey: .\(propName)) ?? \(typedDefault)")
                 } else {
                     decodingStatements.append("self.\(propName) = try container.decodeIfPresent(\(baseType).self, forKey: .\(propName)) ?? \(typedDefault)")
@@ -245,7 +240,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             } else {
                 // Non-optional without default: required field
                 if isNestedType {
-                    // Use helper function for nested types to enforce Default constraint
+                    // Use helper function for nested types to enforce Embedded constraint
                     decodingStatements.append("self.\(propName) = try Self._decodeNested(\(baseType).self, from: container, forKey: .\(propName))")
                 } else {
                     decodingStatements.append("self.\(propName) = try container.decode(\(prop.type).self, forKey: .\(propName))")
@@ -261,15 +256,15 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             helperFunctions = """
 
 
-                /// Helper to decode nested types with Default constraint (compile-time validation)
+                /// Helper to decode nested types with Embedded constraint (compile-time validation)
                 @inline(__always)
-                private static func _decodeNested<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
                     try container.decode(T.self, forKey: key)
                 }
 
-                /// Helper to decode optional nested types with Default constraint (compile-time validation)
+                /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
                 @inline(__always)
-                private static func _decodeNestedIfPresent<T: Default & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                     try container.decodeIfPresent(T.self, forKey: key)
                 }
             """
@@ -717,11 +712,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             extensions.append(ext)
         }
 
-        // Default protocol conformance (marker protocol for fault-tolerant decoding)
-        let defaultProtocol: DeclSyntax = """
-            extension \(type.trimmed): Default {}
+        // Embedded protocol conformance (marker protocol for embedded types)
+        let embeddedProtocol: DeclSyntax = """
+            extension \(type.trimmed): Embedded {}
             """
-        if let ext = defaultProtocol.as(ExtensionDeclSyntax.self) {
+        if let ext = embeddedProtocol.as(ExtensionDeclSyntax.self) {
             extensions.append(ext)
         }
 

@@ -9,8 +9,8 @@
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
 /// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date()
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(_defaultMacroMarker), named(id), named(SyncKeyID))
-@attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Sendable, Default)
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(id), named(SyncKeyID))
+@attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Sendable, Embedded)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
@@ -60,26 +60,35 @@ public macro Index<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., unique: 
 @freestanding(declaration)
 public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "SyncKeyMacro")
 
-// MARK: - Default Macro
+// MARK: - Embedded Macro
 
-/// Default macro that generates fault-tolerant Decodable conformance for Codable structs.
+/// Embedded macro for types that can be embedded in @Entity structs as JSON.
 ///
 /// This macro generates:
 /// - `CodingKeys` enum
-/// - `init(from decoder: Decoder)` that uses default values for missing fields
+/// - `init(from decoder: Decoder)` that uses default values for missing fields (fault-tolerant)
+/// - `Embedded` protocol conformance (includes SQLiteValueCodable)
 ///
-/// Fields with default values will use `decodeIfPresent` with fallback to the default.
-/// Fields without default values will use `decode` and throw if missing.
+/// Types marked with @Embedded are stored as JSON TEXT in SQLite.
+/// They automatically get encode/decode methods for SQLite storage.
 ///
 /// Usage:
 /// ```swift
-/// @Default
-/// struct UserSettings: Codable {
-///     var theme: String = "light"   // Uses "light" if missing
-///     var fontSize: Int = 14        // Uses 14 if missing
-///     var userId: String            // Required, throws if missing
+/// @Embedded
+/// struct Address: Codable {
+///     var street: String = ""
+///     var city: String = ""
+///     var zipCode: String = ""
+/// }
+///
+/// @Entity
+/// struct User {
+///     var id: UUIDV7
+///     var address: Address  // Stored as JSON TEXT
+///     var createdAt: Date
+///     var updatedAt: Date
 /// }
 /// ```
-@attached(member, names: named(CodingKeys), named(init), named(_defaultMacroMarker))
-@attached(extension, conformances: Default)
-public macro Default() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")
+@attached(member, names: named(CodingKeys), named(init))
+@attached(extension, conformances: Embedded)
+public macro Embedded() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EmbeddedMacro")

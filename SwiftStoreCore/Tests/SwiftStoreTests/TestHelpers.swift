@@ -62,7 +62,7 @@ func createTestConnectionAndMigrate() throws -> SQLiteConnection {
 
 // MARK: - Test Helper Types
 
-@Default
+@Embedded
 struct Address: Codable, Sendable {
     var street: String = ""
     var city: String = ""

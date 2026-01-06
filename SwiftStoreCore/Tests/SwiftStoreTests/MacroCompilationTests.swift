@@ -17,8 +17,8 @@ struct MacroUser {
     let updatedAt: Date
 }
 
-/// Entity with nested Codable type (must use @Default for compile-time validation)
-@Default
+/// Entity with nested Codable type (must use @Embedded for compile-time validation)
+@Embedded
 struct UserSettings: Codable, Sendable {
     var theme: String = "light"
     var notifications: Bool = true
@@ -36,7 +36,7 @@ struct MacroProfile {
 }
 
 /// Enum for testing Codable enum storage (stored as JSON)
-@Default
+@Embedded
 enum TaskStatus: String, Codable, Sendable {
     case pending
     case inProgress = "in_progress"
@@ -53,7 +53,7 @@ struct MacroTask {
 }
 
 /// Integer enum for testing Codable enum storage
-@Default
+@Embedded
 enum Priority: Int, Codable, Sendable {
     case low = 0
     case medium = 1
@@ -118,10 +118,10 @@ struct UserPosts {
     let updatedAt: Date
 }
 
-// MARK: - @Default Test Structs
+// MARK: - @Embedded Test Structs
 
 /// Simple Codable struct with all default values
-@Default
+@Embedded
 struct DefaultSettings: Codable {
     var theme: String = "light"
     var fontSize: Int = 14
@@ -129,7 +129,7 @@ struct DefaultSettings: Codable {
 }
 
 /// Codable struct with mixed required and default fields
-@Default
+@Embedded
 struct DefaultUserPrefs: Codable {
     var userId: String           // Required field (no default)
     var theme: String = "light"  // Has default
@@ -137,7 +137,7 @@ struct DefaultUserPrefs: Codable {
 }
 
 /// Codable struct with optional fields
-@Default
+@Embedded
 struct DefaultConfig: Codable {
     var apiUrl: String = "https://api.example.com"
     var timeout: Int = 30
@@ -145,7 +145,7 @@ struct DefaultConfig: Codable {
 }
 
 /// Comprehensive test struct covering all common types with defaults
-@Default
+@Embedded
 struct AllTypesWithDefaults: Codable {
     // String types
     var stringEmpty: String = ""
@@ -180,7 +180,7 @@ struct AllTypesWithDefaults: Codable {
 }
 
 /// Test struct with optional types (nil defaults)
-@Default
+@Embedded
 struct AllOptionalTypes: Codable {
     var optString: String?
     var optInt: Int?
@@ -191,7 +191,7 @@ struct AllOptionalTypes: Codable {
 }
 
 /// Test struct with mixed optional and non-optional
-@Default
+@Embedded
 struct MixedOptionalTypes: Codable {
     var required: String                    // Required, throws if missing
     var withDefault: String = "default"    // Has default
@@ -200,30 +200,30 @@ struct MixedOptionalTypes: Codable {
 }
 
 /// Nested struct for testing
-@Default
+@Embedded
 struct NestedAddress: Codable, Equatable {
     var street: String = ""
     var city: String = ""
     var zip: String = ""
 }
 
-/// Enum with @Default for nested usage
-@Default
+/// Enum with @Embedded for nested usage
+@Embedded
 enum Status: String, Codable {
     case active
     case inactive
     case pending
 }
 
-/// Test struct with nested @Default type
-@Default
+/// Test struct with nested @Embedded type
+@Embedded
 struct PersonWithAddress: Codable {
     var name: String = ""
     var address: NestedAddress = NestedAddress()
 }
 
 /// Comprehensive struct with nested types, collections, and enums
-@Default
+@Embedded
 struct ComplexNestedTypes: Codable {
     // Nested struct
     var address: NestedAddress = NestedAddress()
@@ -870,9 +870,9 @@ struct MacroCompilationTests {
         #expect(post.tags == [])  // Missing, use default
     }
 
-    // MARK: - @Default Macro Tests
+    // MARK: - @Embedded Macro Tests
 
-    @Test("@Default struct conforms to Default protocol")
+    @Test("@Embedded struct conforms to Default protocol")
     func testDefaultProtocolConformance() {
         // This compiles only if DefaultSettings conforms to Default
         func checkDefault<T: Default>(_ type: T.Type) -> Bool { true }
@@ -892,7 +892,7 @@ struct MacroCompilationTests {
         #expect(checkDefault(UserPosts.self))
     }
 
-    @Test("@Default with all default values - missing fields use defaults")
+    @Test("@Embedded with all default values - missing fields use defaults")
     func testDefaultAllDefaultValues() throws {
         let json = """
         {}
@@ -908,7 +908,7 @@ struct MacroCompilationTests {
         #expect(settings.notifications == true)
     }
 
-    @Test("@Default with all default values - partial fields override defaults")
+    @Test("@Embedded with all default values - partial fields override defaults")
     func testDefaultPartialFields() throws {
         let json = """
         {
@@ -927,7 +927,7 @@ struct MacroCompilationTests {
         #expect(settings.notifications == true)  // Default used
     }
 
-    @Test("@Default with required field - throws when missing")
+    @Test("@Embedded with required field - throws when missing")
     func testDefaultRequiredFieldThrows() throws {
         let json = """
         {
@@ -944,7 +944,7 @@ struct MacroCompilationTests {
         }
     }
 
-    @Test("@Default with required field - succeeds when present")
+    @Test("@Embedded with required field - succeeds when present")
     func testDefaultRequiredFieldPresent() throws {
         let json = """
         {
@@ -962,7 +962,7 @@ struct MacroCompilationTests {
         #expect(prefs.language == "en")  // Default
     }
 
-    @Test("@Default with optional fields - nil when missing")
+    @Test("@Embedded with optional fields - nil when missing")
     func testDefaultOptionalFields() throws {
         let json = """
         {}
@@ -978,7 +978,7 @@ struct MacroCompilationTests {
         #expect(config.debugMode == nil)
     }
 
-    @Test("@Default with optional fields - present when specified")
+    @Test("@Embedded with optional fields - present when specified")
     func testDefaultOptionalFieldsPresent() throws {
         let json = """
         {
@@ -996,7 +996,7 @@ struct MacroCompilationTests {
         #expect(config.debugMode == true)
     }
 
-    @Test("@Default type error throws instead of using default")
+    @Test("@Embedded type error throws instead of using default")
     func testDefaultTypeErrorThrows() throws {
         let json = """
         {
@@ -1300,7 +1300,7 @@ struct MacroCompilationTests {
         #expect(obj.optionalMetadata == ["opt": "data"])
     }
 
-    @Test("Enum with @Default - memberwise init works")
+    @Test("Enum with @Embedded - memberwise init works")
     func testEnumMemberwiseInit() {
         // Verify enum can be created and used
         let status = Status.active
