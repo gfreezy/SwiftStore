@@ -137,7 +137,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         // Generate init method and Decodable init using shared implementation from EmbeddedMacro
         let initDecl = EmbeddedMacro.generateMemberwiseInit(properties: properties)
-        let decodableInitDecl = EmbeddedMacro.generateDecodableInit(properties: properties)
+        let decodableInitDecl = EmbeddedMacro.generateDecodableInit(properties: properties, typeName: structName)
 
         var result: [DeclSyntax] = [
             tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl,
@@ -227,7 +227,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         for (index, prop) in properties.enumerated() {
             let varName = "_\(prop.name)"
-            let decoding = generateDecodeExpression(for: prop, varName: varName, index: index)
+            let decoding = generateDecodeExpression(for: prop, varName: varName, index: index, typeName: structName)
             decodings.append(decoding)
             constructorArgs.append("\(prop.name): \(varName)")
         }
@@ -246,30 +246,37 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
     /// Generate decode expression for a property
     /// Uses SQLiteValueDecodable.init(from:) with do-catch for default values
     private static func generateDecodeExpression(
-        for prop: PropertyInfo, varName: String, index: Int
+        for prop: PropertyInfo, varName: String, index: Int, typeName: String
     ) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
         let sqliteType = prop.sqliteType  // "text", "integer", "real", "blob"
+        let decodeExpr =
+            "\(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+        let decodeOptionalExpr =
+            "Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
 
         if let defaultVal = prop.defaultValue {
-            // For non-optional with default value: use var + do-catch block
-            return """
-                var \(varName): \(baseType)
-                do {
-                    \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))
-                } catch {
-                    os_log(.error, "Failed to decode '\(prop.name)': %{public}@", String(describing: error))
-                    \(varName) = \(defaultVal)
-                }
-                """
+            var tryExpr: String
+            var declExpr: String
+            if prop.isOptional {
+                declExpr = "var \(varName): Optional<\(baseType)>"
+                tryExpr = "\(varName) = try \(decodeOptionalExpr)"
+            } else {
+                declExpr = "var \(varName): \(baseType)"
+                tryExpr = "\(varName) = try \(decodeExpr)"
+            }
+            
+            let catchExpr = "\(varName) = \(defaultVal)"
+            let doCatch = MacroHelpers.doCatchBlock(
+                try: tryExpr, catch: catchExpr, logFieldName: prop.name, logTypeName: typeName)
+            return "\(declExpr)\n\(doCatch)"
         } else if prop.isOptional {
             // For optional types, use Optional<T>(from:) which handles .null -> nil
             return
-                "let \(varName) = try Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+                "let \(varName) = try \(decodeOptionalExpr)"
         } else {
             // For non-optional without default value: just try decode
-            return
-                "let \(varName) = try \(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+            return "let \(varName) = try \(decodeExpr)"
         }
     }
 

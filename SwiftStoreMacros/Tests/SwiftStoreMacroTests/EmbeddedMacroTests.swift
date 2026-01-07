@@ -38,13 +38,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.theme = try container.decode(String.self, forKey: .theme)
                         } catch {
-                            os_log(.error, "Failed to decode 'theme': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'Settings.theme': %{public}@", String(describing: error))
                             self.theme = "light"
                         }
                         do {
                             self.fontSize = try container.decode(Int.self, forKey: .fontSize)
                         } catch {
-                            os_log(.error, "Failed to decode 'fontSize': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'Settings.fontSize': %{public}@", String(describing: error))
                             self.fontSize = 14
                         }
                         self.n = try container.decode(CGFloat.self, forKey: .n)
@@ -95,7 +95,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.theme = try container.decode(String.self, forKey: .theme)
                         } catch {
-                            os_log(.error, "Failed to decode 'theme': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'UserPrefs.theme': %{public}@", String(describing: error))
                             self.theme = "light"
                         }
                     }
@@ -142,7 +142,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.name = try container.decode(String.self, forKey: .name)
                         } catch {
-                            os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'Config.name': %{public}@", String(describing: error))
                             self.name = "default"
                         }
                         self.description = try container.decodeIfPresent(String.self, forKey: .description)
@@ -190,13 +190,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.emptyArray = try container.decode([String].self, forKey: .emptyArray)
                         } catch {
-                            os_log(.error, "Failed to decode 'emptyArray': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'ArrayTypes.emptyArray': %{public}@", String(describing: error))
                             self.emptyArray = []
                         }
                         do {
                             self.nonEmptyArray = try container.decode([Int].self, forKey: .nonEmptyArray)
                         } catch {
-                            os_log(.error, "Failed to decode 'nonEmptyArray': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'ArrayTypes.nonEmptyArray': %{public}@", String(describing: error))
                             self.nonEmptyArray = [1, 2, 3]
                         }
                     }
@@ -241,13 +241,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.emptyDict = try container.decode([String: Int].self, forKey: .emptyDict)
                         } catch {
-                            os_log(.error, "Failed to decode 'emptyDict': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'DictTypes.emptyDict': %{public}@", String(describing: error))
                             self.emptyDict = [:]
                         }
                         do {
                             self.nonEmptyDict = try container.decode([String: String].self, forKey: .nonEmptyDict)
                         } catch {
-                            os_log(.error, "Failed to decode 'nonEmptyDict': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'DictTypes.nonEmptyDict': %{public}@", String(describing: error))
                             self.nonEmptyDict = ["key": "value"]
                         }
                     }
@@ -294,13 +294,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.name = try container.decode(String.self, forKey: .name)
                         } catch {
-                            os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'Container.name': %{public}@", String(describing: error))
                             self.name = ""
                         }
                         do {
                             self.nested = try Self._decodeNested(NestedType.self, from: container, forKey: .nested)
                         } catch {
-                            os_log(.error, "Failed to decode 'nested': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'Container.nested': %{public}@", String(describing: error))
                             self.nested = NestedType()
                         }
                     }
@@ -358,7 +358,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.name = try container.decode(String.self, forKey: .name)
                         } catch {
-                            os_log(.error, "Failed to decode 'name': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'ContainerOptional.name': %{public}@", String(describing: error))
                             self.name = ""
                         }
                         self.nested = try Self._decodeNestedIfPresent(NestedType.self, from: container, forKey: .nested)
@@ -445,7 +445,7 @@ final class EmbeddedMacroTests: XCTestCase {
 
     // MARK: - Mixed Types Tests
 
-    func testDefaultWithMixedTypes() {
+        func testDefaultWithMixedTypes() {
         assertMacroExpansion(
             """
             @Embedded
@@ -476,19 +476,19 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.withDefault = try container.decode(String.self, forKey: .withDefault)
                         } catch {
-                            os_log(.error, "Failed to decode 'withDefault': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'MixedTypes.withDefault': %{public}@", String(describing: error))
                             self.withDefault = "default"
                         }
                         do {
-                            self.optional = try container.decode(String.self, forKey: .optional)
+                            self.optional = try container.decodeIfPresent(String.self, forKey: .optional)
                         } catch {
-                            os_log(.error, "Failed to decode 'optional': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'MixedTypes.optional': %{public}@", String(describing: error))
                             self.optional = "hello"
                         }
                         do {
                             self.array = try container.decode([Int].self, forKey: .array)
                         } catch {
-                            os_log(.error, "Failed to decode 'array': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'MixedTypes.array': %{public}@", String(describing: error))
                             self.array = []
                         }
                     }
@@ -588,7 +588,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.status = try Self._decodeNested(Status.self, from: container, forKey: .status)
                         } catch {
-                            os_log(.error, "Failed to decode 'status': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithEnumDefault.status': %{public}@", String(describing: error))
                             self.status = .active
                         }
                         self.optionalStatus = try Self._decodeNestedIfPresent(Status.self, from: container, forKey: .optionalStatus)
@@ -646,7 +646,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.addresses = try container.decode([Address].self, forKey: .addresses)
                         } catch {
-                            os_log(.error, "Failed to decode 'addresses': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithNestedArrayEmpty.addresses': %{public}@", String(describing: error))
                             self.addresses = []
                         }
                     }
@@ -686,7 +686,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.addresses = try container.decode([Address].self, forKey: .addresses)
                         } catch {
-                            os_log(.error, "Failed to decode 'addresses': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithNestedArrayNonEmpty.addresses': %{public}@", String(describing: error))
                             self.addresses = [Address()]
                         }
                     }
@@ -728,7 +728,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
                         } catch {
-                            os_log(.error, "Failed to decode 'addressBook': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithNestedDictEmpty.addressBook': %{public}@", String(describing: error))
                             self.addressBook = [:]
                         }
                     }
@@ -768,7 +768,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
                         } catch {
-                            os_log(.error, "Failed to decode 'addressBook': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithNestedDictNonEmpty.addressBook': %{public}@", String(describing: error))
                             self.addressBook = ["home": Address()]
                         }
                     }
@@ -810,7 +810,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.statuses = try container.decode([Status].self, forKey: .statuses)
                         } catch {
-                            os_log(.error, "Failed to decode 'statuses': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithEnumArrayEmpty.statuses': %{public}@", String(describing: error))
                             self.statuses = []
                         }
                     }
@@ -850,7 +850,7 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.statuses = try container.decode([Status].self, forKey: .statuses)
                         } catch {
-                            os_log(.error, "Failed to decode 'statuses': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithEnumArrayNonEmpty.statuses': %{public}@", String(describing: error))
                             self.statuses = [.active, .pending]
                         }
                     }
@@ -895,13 +895,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.statusMap = try container.decode([String: Status].self, forKey: .statusMap)
                         } catch {
-                            os_log(.error, "Failed to decode 'statusMap': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithEnumDict.statusMap': %{public}@", String(describing: error))
                             self.statusMap = [:]
                         }
                         do {
                             self.priorityMap = try container.decode([String: Priority].self, forKey: .priorityMap)
                         } catch {
-                            os_log(.error, "Failed to decode 'priorityMap': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'WithEnumDict.priorityMap': %{public}@", String(describing: error))
                             self.priorityMap = ["default": .medium]
                         }
                     }
@@ -991,13 +991,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.intValue = try container.decode(Int.self, forKey: .intValue)
                         } catch {
-                            os_log(.error, "Failed to decode 'intValue': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'IntegerTypes.intValue': %{public}@", String(describing: error))
                             self.intValue = 0
                         }
                         do {
                             self.int64Value = try container.decode(Int64.self, forKey: .int64Value)
                         } catch {
-                            os_log(.error, "Failed to decode 'int64Value': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'IntegerTypes.int64Value': %{public}@", String(describing: error))
                             self.int64Value = 64
                         }
                     }
@@ -1044,13 +1044,13 @@ final class EmbeddedMacroTests: XCTestCase {
                         do {
                             self.doubleValue = try container.decode(Double.self, forKey: .doubleValue)
                         } catch {
-                            os_log(.error, "Failed to decode 'doubleValue': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'FloatBoolTypes.doubleValue': %{public}@", String(describing: error))
                             self.doubleValue = 3.14
                         }
                         do {
                             self.boolTrue = try container.decode(Bool.self, forKey: .boolTrue)
                         } catch {
-                            os_log(.error, "Failed to decode 'boolTrue': %{public}@", String(describing: error))
+                            os_log(.error, "SwiftStore: Failed to decode 'FloatBoolTypes.boolTrue': %{public}@", String(describing: error))
                             self.boolTrue = true
                         }
                     }

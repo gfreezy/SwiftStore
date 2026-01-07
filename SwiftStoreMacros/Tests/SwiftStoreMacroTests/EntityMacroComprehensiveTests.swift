@@ -21,7 +21,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 let id: UUIDV7
                 var name: String
                 var count: Int = 0
-                var score: Double?
+                var score: Double? = 2.0
                 var tags: [String] = []
                 var settings: UserSettings
                 var profile: Profile?
@@ -35,7 +35,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 let id: UUIDV7
                 var name: String
                 var count: Int = 0
-                var score: Double?
+                var score: Double? = 2.0
                 var tags: [String] = []
                 var settings: UserSettings
                 var profile: Profile?
@@ -82,7 +82,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _id = try UUIDV7(from: statement.columnValue(Int32(0), type: .blob))
                     } catch {
-                        os_log(.error, "Failed to decode 'id': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.id': %{public}@", String(describing: error))
                         _id = UUIDV7()
                     }
                     let _name = try String(from: statement.columnValue(Int32(1), type: .text))
@@ -90,15 +90,21 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _count = try Int(from: statement.columnValue(Int32(2), type: .integer))
                     } catch {
-                        os_log(.error, "Failed to decode 'count': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.count': %{public}@", String(describing: error))
                         _count = 0
                     }
-                    let _score = try Optional<Double>(from: statement.columnValue(Int32(3), type: .real))
+                    var _score: Optional<Double>
+                    do {
+                        _score = try Optional<Double>(from: statement.columnValue(Int32(3), type: .real))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.score': %{public}@", String(describing: error))
+                        _score = 2.0
+                    }
                     var _tags: [String]
                     do {
                         _tags = try [String](from: statement.columnValue(Int32(4), type: .text))
                     } catch {
-                        os_log(.error, "Failed to decode 'tags': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.tags': %{public}@", String(describing: error))
                         _tags = []
                     }
                     let _settings = try UserSettings(from: statement.columnValue(Int32(5), type: .text))
@@ -107,21 +113,21 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _metadata = try Metadata(from: statement.columnValue(Int32(7), type: .text))
                     } catch {
-                        os_log(.error, "Failed to decode 'metadata': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.metadata': %{public}@", String(describing: error))
                         _metadata = Metadata()
                     }
                     var _createdAt: Date
                     do {
                         _createdAt = try Date(from: statement.columnValue(Int32(8), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.createdAt': %{public}@", String(describing: error))
                         _createdAt = Date()
                     }
                     var _updatedAt: Date
                     do {
                         _updatedAt = try Date(from: statement.columnValue(Int32(9), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.updatedAt': %{public}@", String(describing: error))
                         _updatedAt = Date()
                     }
                     return Self(id: _id, name: _name, count: _count, score: _score, tags: _tags, settings: _settings, profile: _profile, metadata: _metadata, createdAt: _createdAt, updatedAt: _updatedAt)
@@ -135,7 +141,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     id: UUIDV7 = UUIDV7(),
                     name: String,
                     count: Int = 0,
-                    score: Double?,
+                    score: Double? = 2.0,
                     tags: [String] = [],
                     settings: UserSettings,
                     profile: Profile?,
@@ -173,21 +179,26 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         self.id = try container.decode(UUIDV7.self, forKey: .id)
                     } catch {
-                        os_log(.error, "Failed to decode 'id': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.id': %{public}@", String(describing: error))
                         self.id = UUIDV7()
                     }
                     self.name = try container.decode(String.self, forKey: .name)
                     do {
                         self.count = try container.decode(Int.self, forKey: .count)
                     } catch {
-                        os_log(.error, "Failed to decode 'count': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.count': %{public}@", String(describing: error))
                         self.count = 0
                     }
-                    self.score = try container.decodeIfPresent(Double.self, forKey: .score)
+                    do {
+                        self.score = try container.decodeIfPresent(Double.self, forKey: .score)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.score': %{public}@", String(describing: error))
+                        self.score = 2.0
+                    }
                     do {
                         self.tags = try container.decode([String].self, forKey: .tags)
                     } catch {
-                        os_log(.error, "Failed to decode 'tags': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.tags': %{public}@", String(describing: error))
                         self.tags = []
                     }
                     self.settings = try Self._decodeNested(UserSettings.self, from: container, forKey: .settings)
@@ -195,19 +206,19 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         self.metadata = try Self._decodeNested(Metadata.self, from: container, forKey: .metadata)
                     } catch {
-                        os_log(.error, "Failed to decode 'metadata': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.metadata': %{public}@", String(describing: error))
                         self.metadata = Metadata()
                     }
                     do {
                         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.createdAt': %{public}@", String(describing: error))
                         self.createdAt = Date()
                     }
                     do {
                         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'TestEntity.updatedAt': %{public}@", String(describing: error))
                         self.updatedAt = Date()
                     }
                 }
@@ -293,14 +304,14 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _createdAt = try Date(from: statement.columnValue(Int32(2), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Customer.createdAt': %{public}@", String(describing: error))
                         _createdAt = Date()
                     }
                     var _updatedAt: Date
                     do {
                         _updatedAt = try Date(from: statement.columnValue(Int32(3), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Customer.updatedAt': %{public}@", String(describing: error))
                         _updatedAt = Date()
                     }
                     return Self(email: _email, name: _name, createdAt: _createdAt, updatedAt: _updatedAt)
@@ -336,13 +347,13 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Customer.createdAt': %{public}@", String(describing: error))
                         self.createdAt = Date()
                     }
                     do {
                         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Customer.updatedAt': %{public}@", String(describing: error))
                         self.updatedAt = Date()
                     }
                 }
@@ -427,7 +438,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _id = try UUIDV7(from: statement.columnValue(Int32(0), type: .blob))
                     } catch {
-                        os_log(.error, "Failed to decode 'id': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.id': %{public}@", String(describing: error))
                         _id = UUIDV7()
                     }
                     let _sku = try String(from: statement.columnValue(Int32(1), type: .text))
@@ -436,14 +447,14 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         _createdAt = try Date(from: statement.columnValue(Int32(3), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.createdAt': %{public}@", String(describing: error))
                         _createdAt = Date()
                     }
                     var _updatedAt: Date
                     do {
                         _updatedAt = try Date(from: statement.columnValue(Int32(4), type: .real))
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.updatedAt': %{public}@", String(describing: error))
                         _updatedAt = Date()
                     }
                     return Self(id: _id, sku: _sku, name: _name, createdAt: _createdAt, updatedAt: _updatedAt)
@@ -480,7 +491,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         self.id = try container.decode(UUIDV7.self, forKey: .id)
                     } catch {
-                        os_log(.error, "Failed to decode 'id': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.id': %{public}@", String(describing: error))
                         self.id = UUIDV7()
                     }
                     self.sku = try container.decode(String.self, forKey: .sku)
@@ -488,13 +499,13 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     do {
                         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'createdAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.createdAt': %{public}@", String(describing: error))
                         self.createdAt = Date()
                     }
                     do {
                         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
                     } catch {
-                        os_log(.error, "Failed to decode 'updatedAt': %{public}@", String(describing: error))
+                        os_log(.error, "SwiftStore: Failed to decode 'Product.updatedAt': %{public}@", String(describing: error))
                         self.updatedAt = Date()
                     }
                 }

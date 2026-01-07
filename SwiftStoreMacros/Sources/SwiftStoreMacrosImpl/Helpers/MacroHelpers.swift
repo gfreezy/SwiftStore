@@ -12,7 +12,8 @@ enum MacroHelpers {
     /// - Returns: Indented text
     static func indent(_ text: String, by spaces: Int) -> String {
         let indentation = String(repeating: " ", count: spaces)
-        return text
+        return
+            text
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.isEmpty ? String($0) : indentation + $0 }
             .joined(separator: "\n")
@@ -24,12 +25,15 @@ enum MacroHelpers {
     ///   - separator: Separator between lines (default: "\n")
     ///   - indent: Number of spaces to indent each line (default: 0)
     /// - Returns: Joined and indented string
-    static func joinLines(_ lines: [String], separator: String = "\n", indent spaces: Int = 0) -> String {
+    static func joinLines(_ lines: [String], separator: String = "\n", indent spaces: Int = 0)
+        -> String
+    {
         if spaces == 0 {
             return lines.joined(separator: separator)
         }
         // Handle multiline strings within each element
-        return lines
+        return
+            lines
             .map { element in
                 indent(element, by: spaces)
             }
@@ -59,7 +63,9 @@ enum MacroHelpers {
     ///   - footer: Block footer (e.g., "}", "} catch {")
     ///   - contentIndent: Indentation for content inside the block
     /// - Returns: Formatted block string
-    static func wrapBlock(header: String, content: String, footer: String, contentIndent: Int = 4) -> String {
+    static func wrapBlock(header: String, content: String, footer: String, contentIndent: Int = 4)
+        -> String
+    {
         let indentedContent = indent(content, by: contentIndent)
         return "\(header)\n\(indentedContent)\n\(footer)"
     }
@@ -74,16 +80,19 @@ enum MacroHelpers {
     static func doCatchBlock(
         try tryContent: String,
         catch catchContent: String,
-        logField: String? = nil,
+        logFieldName: String,
+        logTypeName: String,
         indent: Int = 4
     ) -> String {
         let tryIndent = indentString(indent)
         let catchIndent = indentString(indent)
 
         var catchLines: [String] = []
-        if let fieldName = logField {
-            catchLines.append("os_log(.error, \"Failed to decode '\(fieldName)': %{public}@\", String(describing: error))")
-        }
+
+        catchLines.append(
+            "os_log(.error, \"SwiftStore: Failed to decode '\(logTypeName).\(logFieldName)': %{public}@\", String(describing: error))"
+        )
+
         catchLines.append(catchContent)
 
         let catchCode = catchLines.map { "\(catchIndent)\($0)" }.joined(separator: "\n")
@@ -103,7 +112,9 @@ enum MacroHelpers {
     ///   - indent: Indentation for each parameter
     ///   - singleLine: If true and params fit, keep on single line
     /// - Returns: Formatted parameters string
-    static func formatParams(_ params: [String], indent spaces: Int = 4, singleLine: Bool = false) -> String {
+    static func formatParams(_ params: [String], indent spaces: Int = 4, singleLine: Bool = false)
+        -> String
+    {
         if singleLine && params.joined(separator: ", ").count < 80 {
             return params.joined(separator: ", ")
         }
@@ -163,9 +174,13 @@ enum MacroHelpers {
 
     /// Get pluralized form (simple rules)
     static func pluralize(_ input: String) -> String {
-        if input.hasSuffix("y") && !input.hasSuffix("ay") && !input.hasSuffix("ey") && !input.hasSuffix("oy") && !input.hasSuffix("uy") {
+        if input.hasSuffix("y") && !input.hasSuffix("ay") && !input.hasSuffix("ey")
+            && !input.hasSuffix("oy") && !input.hasSuffix("uy")
+        {
             return String(input.dropLast()) + "ies"
-        } else if input.hasSuffix("s") || input.hasSuffix("x") || input.hasSuffix("ch") || input.hasSuffix("sh") {
+        } else if input.hasSuffix("s") || input.hasSuffix("x") || input.hasSuffix("ch")
+            || input.hasSuffix("sh")
+        {
             return input + "es"
         } else {
             return input + "s"
@@ -233,7 +248,8 @@ enum MacroHelpers {
             return "text"
         case "UUIDV7", "Data":
             return "blob"
-        case "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64", "Bool":
+        case "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32",
+            "UInt64", "Bool":
             return "integer"
         case "Double", "Float", "Date":
             return "real"
@@ -251,10 +267,12 @@ enum MacroHelpers {
     /// Check if type is a primitive SQLite type
     static func isPrimitive(_ typeString: String) -> Bool {
         let baseType = typeString.replacingOccurrences(of: "?", with: "")
-        let primitives = ["String", "Int", "Int8", "Int16", "Int32", "Int64",
-                         "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
-                         "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV7", "URL",
-                         "CGFloat"]
+        let primitives = [
+            "String", "Int", "Int8", "Int16", "Int32", "Int64",
+            "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+            "Double", "Float", "Bool", "Date", "Data", "UUID", "UUIDV7", "URL",
+            "CGFloat",
+        ]
         return primitives.contains(baseType)
     }
 
@@ -338,7 +356,8 @@ extension StructDeclSyntax {
                     }
 
                     if let identifier = binding.pattern.as(IdentifierPatternSyntax.self),
-                       let typeAnnotation = binding.typeAnnotation {
+                        let typeAnnotation = binding.typeAnnotation
+                    {
                         let name = identifier.identifier.text
                         // Use trimmedDescription to remove trivia (comments, whitespace)
                         let type = typeAnnotation.type.trimmedDescription
@@ -353,13 +372,14 @@ extension StructDeclSyntax {
                             defaultValue = nil
                         }
 
-                        properties.append(PropertyInfo(
-                            name: name,
-                            type: type,
-                            isOptional: isOptional,
-                            isLet: isLet,
-                            defaultValue: defaultValue
-                        ))
+                        properties.append(
+                            PropertyInfo(
+                                name: name,
+                                type: type,
+                                isOptional: isOptional,
+                                isLet: isLet,
+                                defaultValue: defaultValue
+                            ))
                     }
                 }
             }
