@@ -102,26 +102,25 @@ The following example demonstrates all core features of SwiftStore:
 ### 1. Define Models
 
 ```swift
-import SwiftStoreCore
-import SwiftStoreConnectionQueue
+import SwiftStore
 
-// MARK: - Nested Codable Types (with @Default fault-tolerant decoding)
+// MARK: - Nested Codable Types (with @Embedded fault-tolerant decoding)
 
-@Default
+@Embedded
 struct Address: Codable, Sendable {
     var street: String = ""
     var city: String = ""
     var zipCode: String = ""
 }
 
-@Default
+@Embedded
 struct Profile: Codable, Sendable {
     var bio: String = ""
     var avatarUrl: String?
     var settings: UserSettings = UserSettings()
 }
 
-@Default
+@Embedded
 struct UserSettings: Codable, Sendable {
     var theme: String = "light"
     var fontSize: Int = 14
@@ -428,10 +427,10 @@ if await syncManager.hasSyncEnabled {
 }
 ```
 
-### 7. @Default Fault-tolerant Decoding
+### 7. @Embedded Fault-tolerant Decoding
 
 ```swift
-// @Default macro makes decoding more robust, missing fields use default values
+// @Embedded macro makes decoding more robust, missing fields use default values
 let json = """
 {
     "street": "456 Oak Ave"
@@ -456,6 +455,57 @@ print(profile.bio)                      // "Hello"
 print(profile.settings.theme)           // "light" (nested default)
 print(profile.settings.notifications)   // true (nested default)
 ```
+
+### 8. Decoding Behavior by Type
+
+SwiftStore provides fault-tolerant decoding with different behaviors based on type and default value presence.
+
+#### @Embedded / @Entity JSON Decoding (Codable)
+
+| Type | With Default | Without Default |
+|------|-------------|-----------------|
+| `T?` (Optional) | do-catch → fallback to default | `decodeIfPresent` → `nil` if missing, throws if fails |
+| `T` (Non-optional) | do-catch → fallback to default | `decode` → throws if missing/invalid |
+| `NestedType` (Embedded struct) | Same as above + compile-time `Embedded` check | Same as above + compile-time `Embedded` check |
+
+```swift
+@Embedded
+struct Settings: Codable {
+    var theme: String = "light"     // With default: fallback to "light" on any error
+    var fontSize: Int?              // Optional without default: nil if missing
+    var locale: String              // Non-optional without default: throws if missing
+    var advanced: AdvancedSettings = AdvancedSettings()  // Nested with default
+}
+```
+
+#### @Entity SQLite Decoding (sqliteDecode)
+
+| Type | With Default | Without Default |
+|------|-------------|-----------------|
+| `T?` (Optional) | do-catch → fallback to default | `Optional<T>(from:)` → `nil` for NULL, throws if decode fails |
+| `T` (Non-optional) | do-catch → fallback to default | `T(from:)` → throws if decode fails |
+| `NestedType` (JSON in TEXT) | Stored as JSON TEXT, same rules apply | Same as non-optional |
+
+```swift
+@Entity
+struct User {
+    let id: UUIDV7                          // Required, auto-generated default
+    var name: String = "Anonymous"          // With default: fallback on error
+    var email: String                       // Required: throws if decode fails
+    var age: Int?                           // Optional: nil for NULL column, throws if decode fails
+    var score: Int? = 0                     // Optional with default: fallback to 0
+    var settings: Settings = Settings()    // Nested JSON with default
+    let createdAt: Date                     // Required, auto-generated default
+    let updatedAt: Date                     // Required, auto-generated default
+}
+```
+
+#### Behavior Summary
+
+1. **With default value**: Uses do-catch, any decoding error falls back to default (logged via `os_log`)
+2. **Optional without default**: Returns `nil` for missing/null values, throws if decode fails
+3. **Non-optional without default**: Throws error if value is missing or invalid
+4. **Nested types**: Must conform to `Embedded` protocol (compile-time validation)
 
 ## Architecture
 
@@ -490,7 +540,7 @@ SwiftStoreConnectionQueue
 | Package | Description |
 |---------|-------------|
 | [SwiftStoreProtocols](./SwiftStoreProtocols/) | Protocol definitions - EntityProtocol, SQLiteCodable, etc. |
-| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity, #Index, #SyncKey, @Default |
+| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity, #Index, #SyncKey, @Embedded |
 | [SwiftStoreCore](./SwiftStoreCore/) | Core functionality - SQLite connection, query builder, migration |
 | [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
