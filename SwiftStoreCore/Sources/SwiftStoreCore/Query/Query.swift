@@ -8,7 +8,6 @@ public struct Query<T: EntityProtocol> {
     private var limitValue: Int?
     private var offsetValue: Int?
     private var isDistinct: Bool = false
-    private var selectedColumns: [String]?
 
     // MARK: - Filtering
     public init(_ type: T.Type) {
@@ -33,22 +32,6 @@ public struct Query<T: EntityProtocol> {
     public func distinct() -> Query<T> {
         var query = self
         query.isDistinct = true
-        return query
-    }
-
-    // MARK: - Column Selection
-
-    /// Select specific columns (for partial fetches)
-    public func select(_ columns: String...) -> Query<T> {
-        var query = self
-        query.selectedColumns = columns
-        return query
-    }
-
-    /// Select columns using KeyPaths
-    public func select<V>(_ keyPaths: KeyPath<T, V>...) -> Query<T> {
-        var query = self
-        query.selectedColumns = keyPaths.map { columnName(for: $0) }
         return query
     }
 
@@ -97,47 +80,42 @@ public struct Query<T: EntityProtocol> {
 
     // MARK: - SQL Building
 
-    /// Build the SQL query
-    func buildSQL() -> (sql: String, values: [SQLiteValue]) {
-        let selectClause: String
-        if let columns = selectedColumns {
-            selectClause = columns.joined(separator: ", ")
-        } else {
-            // Use explicit column names from entity definition to ensure correct ordering
-            // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
-            let entityColumns = T.columns.filter { $0.generatedAs == nil }.map { $0.name }
-            selectClause = entityColumns.joined(separator: ", ")
-        }
-
+    /// Build SQL for specific columns (internal use for type-safe select)
+    func buildSQL(columns: [String]) -> (sql: String, values: [SQLiteValue]) {
+        let selectClause = columns.joined(separator: ", ")
         let distinctClause = isDistinct ? "DISTINCT " : ""
         var sql = "SELECT \(distinctClause)\(selectClause) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
 
-        // WHERE clause
         if !predicates.isEmpty {
             let whereClause = predicates.map { $0.sql }.joined(separator: " AND ")
             sql += " WHERE \(whereClause)"
             values = predicates.flatMap { $0.values }
         }
 
-        // ORDER BY clause
         if !orderBys.isEmpty {
             let orderClause = orderBys.map { "\($0.column) \($0.ascending ? "ASC" : "DESC")" }
                 .joined(separator: ", ")
             sql += " ORDER BY \(orderClause)"
         }
 
-        // LIMIT clause
         if let limit = limitValue {
             sql += " LIMIT \(limit)"
         }
 
-        // OFFSET clause
         if let offset = offsetValue {
             sql += " OFFSET \(offset)"
         }
 
         return (sql, values)
+    }
+
+    /// Build the SQL query
+    func buildSQL() -> (sql: String, values: [SQLiteValue]) {
+        // Use explicit column names from entity definition to ensure correct ordering
+        // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
+        let entityColumns = T.columns.filter { $0.generatedAs == nil }.map { $0.name }
+        return buildSQL(columns: entityColumns)
     }
 
     // MARK: - Execution
@@ -192,7 +170,7 @@ public struct Query<T: EntityProtocol> {
     // MARK: - Aggregate Functions
 
     /// Get the minimum value of a column
-    public func min<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, _ connection: SQLiteConnection) throws -> V? {
+    public func min<V: SQLiteComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V>) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -207,7 +185,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the minimum value of an optional column
-    public func min<V: SQLiteComparable>(_ keyPath: KeyPath<T, V?>, _ connection: SQLiteConnection) throws -> V? {
+    public func min<V: SQLiteComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V?>) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -252,7 +230,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the sum of a column (Int)
-    public func sum(_ keyPath: KeyPath<T, Int>, _ connection: SQLiteConnection) throws -> Int {
+    public func sum(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Int>) throws -> Int {
         let column = columnName(for: keyPath)
         var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -267,7 +245,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the sum of an optional Int column
-    public func sum(_ keyPath: KeyPath<T, Int?>, _ connection: SQLiteConnection) throws -> Int {
+    public func sum(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Int?>) throws -> Int {
         let column = columnName(for: keyPath)
         var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -282,7 +260,8 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the sum of a column (Double)
-    public func sum(_ keyPath: KeyPath<T, Double>, _ connection: SQLiteConnection) throws -> Double {
+    public func sum(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Double>) throws -> Double
+    {
         let column = columnName(for: keyPath)
         var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -297,7 +276,8 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the sum of an optional Double column
-    public func sum(_ keyPath: KeyPath<T, Double?>, _ connection: SQLiteConnection) throws -> Double {
+    public func sum(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Double?>) throws -> Double
+    {
         let column = columnName(for: keyPath)
         var sql = "SELECT SUM(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -312,7 +292,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the average value of a column (Int -> Double)
-    public func avg(_ keyPath: KeyPath<T, Int>, _ connection: SQLiteConnection) throws -> Double? {
+    public func avg(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Int>) throws -> Double? {
         let column = columnName(for: keyPath)
         var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -327,7 +307,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the average value of an optional Int column
-    public func avg(_ keyPath: KeyPath<T, Int?>, _ connection: SQLiteConnection) throws -> Double? {
+    public func avg(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Int?>) throws -> Double? {
         let column = columnName(for: keyPath)
         var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -342,7 +322,8 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the average value of a column (Double)
-    public func avg(_ keyPath: KeyPath<T, Double>, _ connection: SQLiteConnection) throws -> Double? {
+    public func avg(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Double>) throws -> Double?
+    {
         let column = columnName(for: keyPath)
         var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -357,7 +338,9 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the average value of an optional Double column
-    public func avg(_ keyPath: KeyPath<T, Double?>, _ connection: SQLiteConnection) throws -> Double? {
+    public func avg(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, Double?>) throws
+        -> Double?
+    {
         let column = columnName(for: keyPath)
         var sql = "SELECT AVG(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -487,64 +470,71 @@ public func <- <T, V: SQLiteComparable>(keyPath: KeyPath<T, V?>, value: V?) -> C
 
 // MARK: - Column assignment operators for closure syntax
 
-public extension Column where V: SQLiteComparable {
+extension Column where V: SQLiteComparable {
     /// Set column to value: `$0.name.set("Alice")`
-    func set(_ value: V) -> ColumnAssignment<T> {
+    public func set(_ value: V) -> ColumnAssignment<T> {
         ColumnAssignment(column: name, value: value.sqliteValue)
     }
 
     /// Set column using raw SQL expression: `$0.score.setRaw("score + bonus * 2")`
-    func setRaw(_ sql: String) -> ColumnAssignment<T> {
+    public func setRaw(_ sql: String) -> ColumnAssignment<T> {
         ColumnAssignment(column: name, sql: "\(name) = \(sql)", value: .null, hasValue: false)
     }
 
     /// Set column using raw SQL with parameter: `$0.score.setRaw("score + ?", value: 100)`
-    func setRaw(_ sql: String, value: V) -> ColumnAssignment<T> {
-        ColumnAssignment(column: name, sql: "\(name) = \(sql)", value: value.sqliteValue, hasValue: true)
+    public func setRaw(_ sql: String, value: V) -> ColumnAssignment<T> {
+        ColumnAssignment(
+            column: name, sql: "\(name) = \(sql)", value: value.sqliteValue, hasValue: true)
     }
 }
 
 /// Increment operator: `$0.score += 100`
 public func += <T>(column: Column<T, Int>, value: Int) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
 }
 
 public func += <T>(column: Column<T, Int?>, value: Int) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
 }
 
 /// Decrement operator: `$0.score -= 50`
 public func -= <T>(column: Column<T, Int>, value: Int) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
 }
 
 public func -= <T>(column: Column<T, Int?>, value: Int) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
 }
 
 public func += <T>(column: Column<T, Double>, value: Double) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) + ?", value: value.sqliteValue)
 }
 
 public func -= <T>(column: Column<T, Double>, value: Double) -> ColumnAssignment<T> {
-    ColumnAssignment(column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
+    ColumnAssignment(
+        column: column.name, sql: "\(column.name) = \(column.name) - ?", value: value.sqliteValue)
 }
 
 // MARK: - Convenience Extensions
 
-public extension Query {
+extension Query {
     /// Filter where column equals value (convenience for simple equality)
-    func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, equals value: V) -> Query<T> {
+    public func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, equals value: V) -> Query<T> {
         filter(keyPath == value)
     }
 
     /// Filter where column is in array
-    func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, in values: [V]) -> Query<T> {
+    public func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, in values: [V]) -> Query<T> {
         filter(keyPath ~= values)
     }
 
     /// Filter where column is between two values
-    func filter<V: SQLiteComparable & Comparable>(
+    public func filter<V: SQLiteComparable & Comparable>(
         _ keyPath: KeyPath<T, V>,
         between lower: V,
         and upper: V
@@ -555,14 +545,323 @@ public extension Query {
 
 // MARK: - Identifiable Entity Extensions
 
-public extension Query where T: Identifiable, T.ID == UUIDV7 {
+extension Query where T: Identifiable, T.ID == UUIDV7 {
     /// Filter by primary key (only available for entities with id field)
-    func filter(id: UUIDV7) -> Query<T> {
+    public func filter(id: UUIDV7) -> Query<T> {
         filter(\T.id == id)
     }
 
     /// Filter by multiple primary keys (only available for entities with id field)
-    func filter(ids: [UUIDV7]) -> Query<T> {
+    public func filter(ids: [UUIDV7]) -> Query<T> {
         filter(\T.id ~= ids)
+    }
+}
+
+// MARK: - Type-Safe Select Methods
+
+extension Query {
+    /// Select single column - returns array of values
+    public func select<V: SQLiteValueDecodable>(
+        _ connection: SQLiteConnection,
+        _ kp: KeyPath<T, V>
+    ) throws -> [V] {
+        let c = columnName(for: kp)
+        let (sql, values) = buildSQL(columns: [c])
+        let rows: [Row] = try connection.query(sql, values: values)
+        return rows.map { row in
+            row[kp]
+        }
+    }
+
+    /// Select 2 columns - returns array of tuples
+    public func select<V1: SQLiteValueDecodable, V2: SQLiteValueDecodable>(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+    ) throws -> [(V1, V2)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let (sql, values) = buildSQL(columns: [c1, c2])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2]
+            )
+        }
+    }
+
+    /// Select 3 columns - returns array of tuples
+    public func select<V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable>(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+    ) throws -> [(V1, V2, V3)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3]
+            )
+        }
+    }
+
+    /// Select 4 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+    ) throws -> [(V1, V2, V3, V4)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4]
+            )
+        }
+    }
+
+    /// Select 5 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+    ) throws -> [(V1, V2, V3, V4, V5)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5]
+            )
+        }
+    }
+
+    /// Select 6 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable, V6: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+        _ kp6: KeyPath<T, V6>,
+    ) throws -> [(V1, V2, V3, V4, V5, V6)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let c6 = columnName(for: kp6)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5, c6])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5],
+                row[kp6]
+            )
+        }
+    }
+
+    /// Select 7 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable, V6: SQLiteValueDecodable, V7: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+        _ kp6: KeyPath<T, V6>,
+        _ kp7: KeyPath<T, V7>,
+    ) throws -> [(V1, V2, V3, V4, V5, V6, V7)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let c6 = columnName(for: kp6)
+        let c7 = columnName(for: kp7)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5, c6, c7])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5],
+                row[kp6],
+                row[kp7]
+            )
+        }
+    }
+
+    /// Select 8 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable, V6: SQLiteValueDecodable, V7: SQLiteValueDecodable, V8: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+        _ kp6: KeyPath<T, V6>,
+        _ kp7: KeyPath<T, V7>,
+        _ kp8: KeyPath<T, V8>,
+    ) throws -> [(V1, V2, V3, V4, V5, V6, V7, V8)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let c6 = columnName(for: kp6)
+        let c7 = columnName(for: kp7)
+        let c8 = columnName(for: kp8)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5, c6, c7, c8])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5],
+                row[kp6],
+                row[kp7],
+                row[kp8]
+            )
+        }
+    }
+
+    /// Select 9 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable, V6: SQLiteValueDecodable, V7: SQLiteValueDecodable, V8: SQLiteValueDecodable,
+        V9: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+        _ kp6: KeyPath<T, V6>,
+        _ kp7: KeyPath<T, V7>,
+        _ kp8: KeyPath<T, V8>,
+        _ kp9: KeyPath<T, V9>,
+    ) throws -> [(V1, V2, V3, V4, V5, V6, V7, V8, V9)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let c6 = columnName(for: kp6)
+        let c7 = columnName(for: kp7)
+        let c8 = columnName(for: kp8)
+        let c9 = columnName(for: kp9)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5, c6, c7, c8, c9])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5],
+                row[kp6],
+                row[kp7],
+                row[kp8],
+                row[kp9]
+            )
+        }
+    }
+
+    /// Select 10 columns - returns array of tuples
+    public func select<
+        V1: SQLiteValueDecodable, V2: SQLiteValueDecodable, V3: SQLiteValueDecodable, V4: SQLiteValueDecodable,
+        V5: SQLiteValueDecodable, V6: SQLiteValueDecodable, V7: SQLiteValueDecodable, V8: SQLiteValueDecodable,
+        V9: SQLiteValueDecodable, V10: SQLiteValueDecodable
+    >(
+        _ connection: SQLiteConnection,
+        _ kp1: KeyPath<T, V1>,
+        _ kp2: KeyPath<T, V2>,
+        _ kp3: KeyPath<T, V3>,
+        _ kp4: KeyPath<T, V4>,
+        _ kp5: KeyPath<T, V5>,
+        _ kp6: KeyPath<T, V6>,
+        _ kp7: KeyPath<T, V7>,
+        _ kp8: KeyPath<T, V8>,
+        _ kp9: KeyPath<T, V9>,
+        _ kp10: KeyPath<T, V10>,
+    ) throws -> [(V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)] {
+        let c1 = columnName(for: kp1)
+        let c2 = columnName(for: kp2)
+        let c3 = columnName(for: kp3)
+        let c4 = columnName(for: kp4)
+        let c5 = columnName(for: kp5)
+        let c6 = columnName(for: kp6)
+        let c7 = columnName(for: kp7)
+        let c8 = columnName(for: kp8)
+        let c9 = columnName(for: kp9)
+        let c10 = columnName(for: kp10)
+        let (sql, values) = buildSQL(columns: [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10])
+        let rows = try connection.query(sql, values: values)
+        return rows.map { row in
+            (
+                row[kp1],
+                row[kp2],
+                row[kp3],
+                row[kp4],
+                row[kp5],
+                row[kp6],
+                row[kp7],
+                row[kp8],
+                row[kp9],
+                row[kp10]
+            )
+        }
     }
 }

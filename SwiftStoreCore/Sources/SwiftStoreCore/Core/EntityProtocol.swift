@@ -137,15 +137,6 @@ public extension EntityProtocol {
     static func filter(_ buildPredicate: (Columns<Self>) -> Predicate<Self>) -> Query<Self> {
         Query(Self.self).filter(buildPredicate)
     }
-
-    /// Select specific columns
-    static func select(_ columns: String...) -> Query<Self> {
-        var query = Query(Self.self)
-        for column in columns {
-            query = query.select(column)
-        }
-        return query
-    }
 }
 
 // MARK: - Identifiable Entity Extensions

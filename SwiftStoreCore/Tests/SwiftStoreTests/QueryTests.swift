@@ -642,7 +642,6 @@ struct QueryBuilderTests {
         // Distinct should work with select
         let query = Query(TestUser.self)
             .distinct()
-            .select("age")
 
         let (sql, _) = query.buildSQL()
         #expect(sql.contains("DISTINCT"))
