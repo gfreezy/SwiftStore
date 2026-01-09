@@ -13,10 +13,7 @@ public struct SQLiteDecoder: Sendable {
     /// Decode a statement row to an entity
     /// Entity must conform to SQLiteDecodable (use @Entity macro)
     public func decode<E: EntityProtocol>(_ type: E.Type, from statement: SQLiteStatementImpl) throws -> E {
-        guard let decodableType = type as? any SQLiteDecodable.Type else {
-            throw StoreError.decodingFailed("\(type) must conform to SQLiteDecodable. Use @Entity macro.")
-        }
-        return try decodableType.sqliteDecode(from: statement) as! E
+        return try type.sqliteDecode(from: statement)
     }
 
     /// Decode an entity from JSON string

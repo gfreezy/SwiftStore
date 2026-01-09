@@ -14,34 +14,12 @@ public struct SQLiteEncoder: Sendable {
     /// Uses optimized macro-generated implementation if available, otherwise falls back to reflection
     public func encode<E: EntityProtocol>(_ entity: E) throws -> [String: SQLiteValue] {
         // Use optimized path if entity conforms to SQLiteEncodable
-        if let encodable = entity as? any SQLiteEncodable {
-            return try encodable.sqliteEncode()
-        }
-
-        // Fallback to reflection-based encoding
-        return try encodeFallback(entity)
-    }
-
-    /// Fallback encoding using JSONSerialization (slower, but works for non-macro entities)
-    private func encodeFallback<E: EntityProtocol>(_ entity: E) throws -> [String: SQLiteValue] {
-        let data = try jsonEncoder.encode(entity)
-        guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw StoreError.encodingFailed("Failed to serialize entity to dictionary")
-        }
-
-        var result: [String: SQLiteValue] = [:]
-
-        for (key, value) in dict {
-            let columnName = key.camelCaseToSnakeCase()
-            result[columnName] = try encodeValue(value, forKey: key, in: E.columns)
-        }
-
-        return result
+        return try entity.sqliteEncode()
     }
 
     private func encodeValue(_ value: Any, forKey key: String, in columns: [ColumnDefinition]) throws -> SQLiteValue {
         // Handle nested Codable types (store as JSON)
-        if let dict = value as? [String: Any] {
+        if let dict = value as? [AnyHashable: Any] {
             let jsonData = try JSONSerialization.data(withJSONObject: dict)
             guard let jsonString = String(data: jsonData, encoding: .utf8) else {
                 throw StoreError.encodingFailed("Failed to encode nested object to JSON string")

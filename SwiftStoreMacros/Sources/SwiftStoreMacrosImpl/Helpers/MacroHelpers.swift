@@ -276,8 +276,8 @@ enum MacroHelpers {
         return primitives.contains(baseType)
     }
 
-    /// Check if type is a nested struct that needs Default validation
-    /// Returns false for arrays, dictionaries, and other generic types
+    /// Check if type is a nested struct that needs Embedded constraint validation
+    /// Returns false for primitives and collections with primitive elements
     static func isNestedStructType(_ typeString: String) -> Bool {
         let baseType = typeString.replacingOccurrences(of: "?", with: "")
 
@@ -286,23 +286,19 @@ enum MacroHelpers {
             return false
         }
 
-        // Skip array types: [Element] or Array<Element>
-        if baseType.hasPrefix("[") || baseType.hasPrefix("Array<") {
-            return false
+        // Check if it's a collection type
+        if let collectionKind = CollectionKind.parse(from: baseType) {
+            // If the element/value type is primitive, it's not a nested struct type
+            // For dictionaries, check the value type
+            switch collectionKind {
+            case .array(let elementType), .set(let elementType):
+                return !isPrimitive(elementType)
+            case .dictionary(_, let valueType):
+                return !isPrimitive(valueType)
+            }
         }
 
-        // Skip dictionary types: [Key: Value] or Dictionary<Key, Value>
-        if baseType.contains(":") || baseType.hasPrefix("Dictionary<") {
-            return false
-        }
-
-        // Skip Set types: Set<Element>
-        if baseType.hasPrefix("Set<") {
-            return false
-        }
-
-        // This is a custom type (likely a struct or enum)
-        // We'll require Default for these
+        // Not primitive and not a collection with primitive elements -> nested struct type
         return true
     }
 
@@ -318,6 +314,92 @@ enum MacroHelpers {
     }
 }
 
+/// Collection type kind
+enum CollectionKind: Equatable {
+    case array(elementType: String)
+    case set(elementType: String)
+    case dictionary(keyType: String, valueType: String)
+
+    /// Parse collection kind from type string
+    /// - Parameter typeString: The type string (e.g., "[String]", "Set<Int>", "[String: Int]")
+    /// - Returns: CollectionKind if the type is a collection, nil otherwise
+    static func parse(from typeString: String) -> CollectionKind? {
+        // Remove optional wrapper first
+        var baseType = typeString
+        if baseType.hasSuffix("?") {
+            baseType = String(baseType.dropLast())
+        } else if baseType.hasPrefix("Optional<") && baseType.hasSuffix(">") {
+            baseType = String(baseType.dropFirst(9).dropLast())
+        }
+
+        // Check for Array syntax: [ElementType] or Array<ElementType>
+        if baseType.hasPrefix("[") && baseType.hasSuffix("]") && !baseType.contains(":") {
+            let elementType = String(baseType.dropFirst().dropLast())
+            return .array(elementType: elementType.trimmingCharacters(in: .whitespaces))
+        }
+
+        if baseType.hasPrefix("Array<") && baseType.hasSuffix(">") {
+            let elementType = String(baseType.dropFirst(6).dropLast())
+            return .array(elementType: elementType.trimmingCharacters(in: .whitespaces))
+        }
+
+        // Check for Set syntax: Set<ElementType>
+        if baseType.hasPrefix("Set<") && baseType.hasSuffix(">") {
+            let elementType = String(baseType.dropFirst(4).dropLast())
+            return .set(elementType: elementType.trimmingCharacters(in: .whitespaces))
+        }
+
+        // Check for Dictionary syntax: [KeyType: ValueType] or Dictionary<KeyType, ValueType>
+        if baseType.hasPrefix("[") && baseType.hasSuffix("]") && baseType.contains(":") {
+            let inner = String(baseType.dropFirst().dropLast())
+            if let colonIndex = inner.firstIndex(of: ":") {
+                let keyType = String(inner[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                let valueType = String(inner[inner.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                return .dictionary(keyType: keyType, valueType: valueType)
+            }
+        }
+
+        if baseType.hasPrefix("Dictionary<") && baseType.hasSuffix(">") {
+            let inner = String(baseType.dropFirst(11).dropLast())
+            if let commaIndex = inner.firstIndex(of: ",") {
+                let keyType = String(inner[..<commaIndex]).trimmingCharacters(in: .whitespaces)
+                let valueType = String(inner[inner.index(after: commaIndex)...]).trimmingCharacters(in: .whitespaces)
+                return .dictionary(keyType: keyType, valueType: valueType)
+            }
+        }
+
+        return nil
+    }
+
+    /// The element type for Array and Set, or the value type for Dictionary
+    var elementType: String {
+        switch self {
+        case .array(let elementType), .set(let elementType):
+            return elementType
+        case .dictionary(_, let valueType):
+            return valueType
+        }
+    }
+
+    /// Whether this is an array
+    var isArray: Bool {
+        if case .array = self { return true }
+        return false
+    }
+
+    /// Whether this is a set
+    var isSet: Bool {
+        if case .set = self { return true }
+        return false
+    }
+
+    /// Whether this is a dictionary
+    var isDictionary: Bool {
+        if case .dictionary = self { return true }
+        return false
+    }
+}
+
 /// Property information extracted from struct
 struct PropertyInfo {
     let name: String
@@ -326,6 +408,8 @@ struct PropertyInfo {
     let isLet: Bool
     /// The default value expression as source code string (e.g., "\"\"", "0", "[]")
     var defaultValue: String?
+    /// Collection type information if this is an Array, Set, or Dictionary
+    let collectionKind: CollectionKind?
 
     var columnName: String {
         MacroHelpers.camelToSnakeCase(name)
@@ -337,6 +421,26 @@ struct PropertyInfo {
 
     var isPrimitive: Bool {
         MacroHelpers.isPrimitive(type)
+    }
+
+    /// Whether this property is a collection type (Array, Set, or Dictionary)
+    var isCollection: Bool {
+        collectionKind != nil
+    }
+
+    /// Whether this property is an Array
+    var isArray: Bool {
+        collectionKind?.isArray ?? false
+    }
+
+    /// Whether this property is a Set
+    var isSet: Bool {
+        collectionKind?.isSet ?? false
+    }
+
+    /// Whether this property is a Dictionary
+    var isDictionary: Bool {
+        collectionKind?.isDictionary ?? false
     }
 }
 
@@ -372,13 +476,17 @@ extension StructDeclSyntax {
                             defaultValue = nil
                         }
 
+                        // Parse collection kind
+                        let collectionKind = CollectionKind.parse(from: type)
+
                         properties.append(
                             PropertyInfo(
                                 name: name,
                                 type: type,
                                 isOptional: isOptional,
                                 isLet: isLet,
-                                defaultValue: defaultValue
+                                defaultValue: defaultValue,
+                                collectionKind: collectionKind
                             ))
                     }
                 }

@@ -444,9 +444,36 @@ extension Array: SQLiteValueDecodable where Element: Decodable {
     }
 }
 
+// MARK: - Set Extension (stored as JSON)
+
+extension Set: SQLiteValueEncodable where Element: Encodable {
+    public static var sqliteType: SQLiteType { .text }
+    public func sqliteEncode() throws -> SQLiteValue {
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(self)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw SQLiteValueError.encodingFailed("Failed to encode array to JSON string")
+        }
+        return .text(json)
+    }
+}
+
+extension Set: SQLiteValueDecodable where Element: Decodable {
+    public init(from sqliteValue: SQLiteValue) throws {
+        guard case .text(let json) = sqliteValue else {
+            throw SQLiteValueError.typeMismatch(expected: "text (JSON)", actual: sqliteValue)
+        }
+        guard let data = json.data(using: .utf8) else {
+            throw SQLiteValueError.decodingFailed("Invalid JSON string")
+        }
+        let decoder = JSONDecoder()
+        self = try decoder.decode(Set<Element>.self, from: data)
+    }
+}
+
 // MARK: - Dictionary Extension (stored as JSON)
 
-extension Dictionary: SQLiteValueEncodable where Key == String, Value: Encodable {
+extension Dictionary: SQLiteValueEncodable where Key: Encodable, Value: Encodable {
     public static var sqliteType: SQLiteType { .text }
     public func sqliteEncode() throws -> SQLiteValue {
         let encoder = JSONEncoder()
@@ -458,7 +485,7 @@ extension Dictionary: SQLiteValueEncodable where Key == String, Value: Encodable
     }
 }
 
-extension Dictionary: SQLiteValueDecodable where Key == String, Value: Decodable {
+extension Dictionary: SQLiteValueDecodable where Key: Decodable, Value: Decodable {
     public init(from sqliteValue: SQLiteValue) throws {
         guard case .text(let json) = sqliteValue else {
             throw SQLiteValueError.typeMismatch(expected: "text (JSON)", actual: sqliteValue)

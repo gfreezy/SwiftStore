@@ -27,6 +27,18 @@ import Foundation
 /// ```
 public protocol Embedded: Codable, Sendable, SQLiteValueCodable {}
 
+extension Array: Embedded where Element: Embedded {
+}
+
+extension Dictionary: Embedded where Key: Codable, Value: Embedded {
+}
+
+extension Set: Embedded where Element: Embedded {
+}
+
+extension Optional: Embedded where Wrapped: Embedded {
+}
+
 // MARK: - Default SQLiteValueCodable Implementation for Embedded Types
 
 extension Embedded {

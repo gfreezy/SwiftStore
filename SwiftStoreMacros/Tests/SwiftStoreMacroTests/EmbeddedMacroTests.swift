@@ -716,11 +716,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.addresses = try container.decode([Address].self, forKey: .addresses)
+                            self.addresses = try Self._decodeNested([Address].self, from: container, forKey: .addresses)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithNestedArrayEmpty.addresses': %{public}@", String(describing: error))
                             self.addresses = []
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -762,11 +775,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.addresses = try container.decode([Address].self, forKey: .addresses)
+                            self.addresses = try Self._decodeNested([Address].self, from: container, forKey: .addresses)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithNestedArrayNonEmpty.addresses': %{public}@", String(describing: error))
                             self.addresses = [Address()]
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -810,11 +836,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
+                            self.addressBook = try Self._decodeNested([String: Address].self, from: container, forKey: .addressBook)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithNestedDictEmpty.addressBook': %{public}@", String(describing: error))
                             self.addressBook = [:]
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -856,11 +895,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.addressBook = try container.decode([String: Address].self, forKey: .addressBook)
+                            self.addressBook = try Self._decodeNested([String: Address].self, from: container, forKey: .addressBook)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithNestedDictNonEmpty.addressBook': %{public}@", String(describing: error))
                             self.addressBook = ["home": Address()]
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -904,11 +956,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.statuses = try container.decode([Status].self, forKey: .statuses)
+                            self.statuses = try Self._decodeNested([Status].self, from: container, forKey: .statuses)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithEnumArrayEmpty.statuses': %{public}@", String(describing: error))
                             self.statuses = []
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -950,11 +1015,24 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.statuses = try container.decode([Status].self, forKey: .statuses)
+                            self.statuses = try Self._decodeNested([Status].self, from: container, forKey: .statuses)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithEnumArrayNonEmpty.statuses': %{public}@", String(describing: error))
                             self.statuses = [.active, .pending]
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -1001,17 +1079,30 @@ final class EmbeddedMacroTests: XCTestCase {
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
                         do {
-                            self.statusMap = try container.decode([String: Status].self, forKey: .statusMap)
+                            self.statusMap = try Self._decodeNested([String: Status].self, from: container, forKey: .statusMap)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithEnumDict.statusMap': %{public}@", String(describing: error))
                             self.statusMap = [:]
                         }
                         do {
-                            self.priorityMap = try container.decode([String: Priority].self, forKey: .priorityMap)
+                            self.priorityMap = try Self._decodeNested([String: Priority].self, from: container, forKey: .priorityMap)
                         } catch {
                             os_log(.error, "SwiftStore: Failed to decode 'WithEnumDict.priorityMap': %{public}@", String(describing: error))
                             self.priorityMap = ["default": .medium]
                         }
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
@@ -1059,8 +1150,21 @@ final class EmbeddedMacroTests: XCTestCase {
 
                     public init(from decoder: Decoder) throws {
                         let container = try decoder.container(keyedBy: CodingKeys.self)
-                        self.addresses = try container.decodeIfPresent([Address].self, forKey: .addresses)
-                        self.itemMap = try container.decodeIfPresent([String: Item].self, forKey: .itemMap)
+                        self.addresses = try Self._decodeNestedIfPresent([Address].self, from: container, forKey: .addresses)
+                        self.itemMap = try Self._decodeNestedIfPresent([String: Item].self, from: container, forKey: .itemMap)
+                    }
+
+
+                    /// Helper to decode nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
+                        try container.decode(T.self, forKey: key)
+                    }
+
+                    /// Helper to decode optional nested types with Embedded constraint (compile-time validation)
+                    @inline(__always)
+                    private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
+                        try container.decodeIfPresent(T.self, forKey: key)
                     }
 
                     public init(
