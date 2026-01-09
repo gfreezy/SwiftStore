@@ -295,19 +295,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         var extensions: [ExtensionDeclSyntax] = []
 
-        // EntityProtocol conformance
+        // EntityProtocol conformance (includes SQLiteCodable via protocol inheritance)
         let entityProtocol: DeclSyntax = """
             extension \(type.trimmed): EntityProtocol {}
             """
         if let ext = entityProtocol.as(ExtensionDeclSyntax.self) {
-            extensions.append(ext)
-        }
-
-        // SQLiteCodable conformance (for optimized encode/decode)
-        let sqliteCodable: DeclSyntax = """
-            extension \(type.trimmed): SQLiteCodable {}
-            """
-        if let ext = sqliteCodable.as(ExtensionDeclSyntax.self) {
             extensions.append(ext)
         }
 
@@ -324,6 +316,22 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             extension \(type.trimmed): Sendable {}
             """
         if let ext = sendable.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
+
+        // Equatable conformance (auto-synthesized by compiler)
+        let equatable: DeclSyntax = """
+            extension \(type.trimmed): Equatable {}
+            """
+        if let ext = equatable.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
+
+        // Hashable conformance (auto-synthesized by compiler)
+        let hashable: DeclSyntax = """
+            extension \(type.trimmed): Hashable {}
+            """
+        if let ext = hashable.as(ExtensionDeclSyntax.self) {
             extensions.append(ext)
         }
 

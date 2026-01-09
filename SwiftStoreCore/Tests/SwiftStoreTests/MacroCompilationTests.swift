@@ -201,7 +201,7 @@ struct MixedOptionalTypes: Codable {
 
 /// Nested struct for testing
 @Embedded
-struct NestedAddress: Codable, Equatable {
+struct NestedAddress: Codable {
     var street: String = ""
     var city: String = ""
     var zip: String = ""

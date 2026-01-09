@@ -11,7 +11,7 @@
 /// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date()
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
 @attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(id), named(SyncKeyID))
-@attached(extension, conformances: EntityProtocol, SQLiteCodable, Identifiable, Sendable)
+@attached(extension, conformances: EntityProtocol, Identifiable, Sendable, Equatable, Hashable)
 public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
@@ -91,5 +91,5 @@ public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #ext
 /// }
 /// ```
 @attached(member, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
-@attached(extension, conformances: Embedded)
+@attached(extension, conformances: Embedded, Equatable, Hashable)
 public macro Embedded() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EmbeddedMacro")

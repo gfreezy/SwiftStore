@@ -63,6 +63,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 
                 extension Settings: Embedded {
                 }
+
+                extension Settings: Equatable {
+                }
+
+                extension Settings: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -111,6 +117,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension UserPrefs: Embedded {
                 }
+
+                extension UserPrefs: Equatable {
+                }
+
+                extension UserPrefs: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -158,6 +170,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension Config: Embedded {
+                }
+
+                extension Config: Equatable {
+                }
+
+                extension Config: Hashable {
                 }
                 """,
             macros: testMacros
@@ -212,6 +230,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension ArrayTypes: Embedded {
                 }
+
+                extension ArrayTypes: Equatable {
+                }
+
+                extension ArrayTypes: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -262,6 +286,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension DictTypes: Embedded {
+                }
+
+                extension DictTypes: Equatable {
+                }
+
+                extension DictTypes: Hashable {
                 }
                 """,
             macros: testMacros
@@ -329,6 +359,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension Container: Embedded {
                 }
+
+                extension Container: Equatable {
+                }
+
+                extension Container: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -388,6 +424,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension ContainerOptional: Embedded {
                 }
+
+                extension ContainerOptional: Equatable {
+                }
+
+                extension ContainerOptional: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -414,6 +456,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension Status: Embedded {
                 }
+
+                extension Status: Equatable {
+                }
+
+                extension Status: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -437,6 +485,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension Priority: Embedded {
+                }
+
+                extension Priority: Equatable {
+                }
+
+                extension Priority: Hashable {
                 }
                 """,
             macros: testMacros
@@ -508,6 +562,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension MixedTypes: Embedded {
                 }
+
+                extension MixedTypes: Equatable {
+                }
+
+                extension MixedTypes: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -556,6 +616,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension AllOptionals: Embedded {
+                }
+
+                extension AllOptionals: Equatable {
+                }
+
+                extension AllOptionals: Hashable {
                 }
                 """,
             macros: testMacros
@@ -618,6 +684,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension WithEnumDefault: Embedded {
                 }
+
+                extension WithEnumDefault: Equatable {
+                }
+
+                extension WithEnumDefault: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -660,6 +732,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension WithNestedArrayEmpty: Embedded {
                 }
+
+                extension WithNestedArrayEmpty: Equatable {
+                }
+
+                extension WithNestedArrayEmpty: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -699,6 +777,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension WithNestedArrayNonEmpty: Embedded {
+                }
+
+                extension WithNestedArrayNonEmpty: Equatable {
+                }
+
+                extension WithNestedArrayNonEmpty: Hashable {
                 }
                 """,
             macros: testMacros
@@ -742,6 +826,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension WithNestedDictEmpty: Embedded {
                 }
+
+                extension WithNestedDictEmpty: Equatable {
+                }
+
+                extension WithNestedDictEmpty: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -781,6 +871,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension WithNestedDictNonEmpty: Embedded {
+                }
+
+                extension WithNestedDictNonEmpty: Equatable {
+                }
+
+                extension WithNestedDictNonEmpty: Hashable {
                 }
                 """,
             macros: testMacros
@@ -824,6 +920,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension WithEnumArrayEmpty: Embedded {
                 }
+
+                extension WithEnumArrayEmpty: Equatable {
+                }
+
+                extension WithEnumArrayEmpty: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -863,6 +965,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension WithEnumArrayNonEmpty: Embedded {
+                }
+
+                extension WithEnumArrayNonEmpty: Equatable {
+                }
+
+                extension WithEnumArrayNonEmpty: Hashable {
                 }
                 """,
             macros: testMacros
@@ -917,6 +1025,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension WithEnumDict: Embedded {
                 }
+
+                extension WithEnumDict: Equatable {
+                }
+
+                extension WithEnumDict: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -959,6 +1073,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension WithOptionalCollections: Embedded {
+                }
+
+                extension WithOptionalCollections: Equatable {
+                }
+
+                extension WithOptionalCollections: Hashable {
                 }
                 """,
             macros: testMacros
@@ -1013,6 +1133,12 @@ final class EmbeddedMacroTests: XCTestCase {
 
                 extension IntegerTypes: Embedded {
                 }
+
+                extension IntegerTypes: Equatable {
+                }
+
+                extension IntegerTypes: Hashable {
+                }
                 """,
             macros: testMacros
         )
@@ -1065,6 +1191,12 @@ final class EmbeddedMacroTests: XCTestCase {
                 }
 
                 extension FloatBoolTypes: Embedded {
+                }
+
+                extension FloatBoolTypes: Equatable {
+                }
+
+                extension FloatBoolTypes: Hashable {
                 }
                 """,
             macros: testMacros

@@ -65,6 +65,22 @@ public struct EmbeddedMacro: MemberMacro, ExtensionMacro {
             extensions.append(ext)
         }
 
+        // Equatable conformance (auto-synthesized by compiler)
+        let equatableProtocol: DeclSyntax = """
+            extension \(type.trimmed): Equatable {}
+            """
+        if let ext = equatableProtocol.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
+
+        // Hashable conformance (auto-synthesized by compiler)
+        let hashableProtocol: DeclSyntax = """
+            extension \(type.trimmed): Hashable {}
+            """
+        if let ext = hashableProtocol.as(ExtensionDeclSyntax.self) {
+            extensions.append(ext)
+        }
+
         return extensions
     }
 

@@ -240,13 +240,16 @@ final class EntityMacroComprehensiveTests: XCTestCase {
             extension TestEntity: EntityProtocol {
             }
 
-            extension TestEntity: SQLiteCodable {
-            }
-
             extension TestEntity: Identifiable {
             }
 
             extension TestEntity: Sendable {
+            }
+
+            extension TestEntity: Equatable {
+            }
+
+            extension TestEntity: Hashable {
             }
             """,
             macros: testMacros
@@ -372,13 +375,16 @@ final class EntityMacroComprehensiveTests: XCTestCase {
             extension Customer: EntityProtocol {
             }
 
-            extension Customer: SQLiteCodable {
-            }
-
             extension Customer: Identifiable {
             }
 
             extension Customer: Sendable {
+            }
+
+            extension Customer: Equatable {
+            }
+
+            extension Customer: Hashable {
             }
             """,
             macros: testMacros
@@ -520,13 +526,16 @@ final class EntityMacroComprehensiveTests: XCTestCase {
             extension Product: EntityProtocol {
             }
 
-            extension Product: SQLiteCodable {
-            }
-
             extension Product: Identifiable {
             }
 
             extension Product: Sendable {
+            }
+
+            extension Product: Equatable {
+            }
+
+            extension Product: Hashable {
             }
             """,
             macros: testMacros

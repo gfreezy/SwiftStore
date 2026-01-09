@@ -23,7 +23,7 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 /// - `updatedAt: Date` - Update timestamp (auto-filled on insert/update)
 ///
 /// Note: Entities using @Entity macro will automatically get optimized SQLiteCodable implementations.
-public protocol EntityProtocol: Codable, Sendable {
+public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
     var createdAt: Date { get }
     var updatedAt: Date { get }
 
@@ -36,6 +36,4 @@ public protocol EntityProtocol: Codable, Sendable {
 /// Default implementations
 public extension EntityProtocol {
     static var indexes: [IndexDefinition] { [] }
-    /// Default sync key columns (uses id for entities without #SyncKey)
-    static var syncKeyColumns: [String] { ["id"] }
 }
