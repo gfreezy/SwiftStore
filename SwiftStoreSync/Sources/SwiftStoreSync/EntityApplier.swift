@@ -2,15 +2,8 @@ import Foundation
 import SwiftStoreCore
 import SwiftStoreChangeTracker
 
-/// Protocol for entities that can be synced
-/// Entities conforming to this protocol can automatically generate their EntityApplier
-public protocol SyncableEntity: EntityProtocol, SQLiteCodable, Decodable {
-    /// Create an applier for this entity type
-    static func makeApplier() -> any EntityApplier
-}
-
-/// Default implementation uses DefaultEntityApplier
-public extension SyncableEntity {
+/// Extension to add makeApplier() to all EntityProtocol types
+public extension EntityProtocol {
     static func makeApplier() -> any EntityApplier {
         DefaultEntityApplier<Self>()
     }
@@ -186,10 +179,10 @@ public final class EntityApplierRegistry: Sendable {
     /// Number of registered appliers
     public var count: Int { appliers.count }
 
-    /// Create a registry from syncable entity types
+    /// Create a registry from entity types
     /// Automatically generates DefaultEntityApplier for each type
-    public convenience init(syncableEntities: [any SyncableEntity.Type]) {
-        let appliers = syncableEntities.map { $0.makeApplier() }
+    public convenience init(entityTypes: [any EntityProtocol.Type]) {
+        let appliers = entityTypes.map { $0.makeApplier() }
         self.init(appliers)
     }
 

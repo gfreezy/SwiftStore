@@ -11,7 +11,7 @@ public struct SyncState: Codable, Sendable {
     /// Last synced local clock value
     public var lastLocalClock: Int64
 
-    public init(lastServerClock: Int64 = 0, lastLocalClock: Int64 = 0) {
+    public init(lastServerClock: Int64, lastLocalClock: Int64) {
         self.lastServerClock = lastServerClock
         self.lastLocalClock = lastLocalClock
     }
@@ -69,8 +69,6 @@ public struct SyncConfig: Sendable {
     // MARK: - Sync Config
     /// Remote sync transport
     public let transport: any SyncTransport
-    /// Syncable entity types (used to auto-generate appliers)
-    public let syncableEntities: [any SyncableEntity.Type]
     /// Sync configuration (batch size, etc.)
     public let syncConfiguration: SyncConfiguration
     /// Initial sync state
@@ -81,17 +79,28 @@ public struct SyncConfig: Sendable {
     /// Maximum acceptable time offset in milliseconds for NTP verification (nil to disable)
     public let ntpToleranceMs: Int64?
 
+    /// Initialize sync manager configuration
+    /// - Parameters:
+    ///   - changeLogDbPath: Path to the change log database file for storing local change records
+    ///   - deviceId: Unique device identifier to distinguish change sources from different devices
+    ///   - registeredEntities: List of entity types to be synchronized
+    ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
+    ///   - transport: Sync transport layer responsible for communicating with the remote server
+    ///   - initialState: Initial sync state containing the last synced server and local clock values. Must be persisted to storage and restored on app restart
+    ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
+    ///   - pendingDeletesTable: Table name for pending delete records, defaults to "__swiftstore_pending_deletes"
+    ///   - syncConfiguration: Sync configuration including batch size settings
+    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds, nil to disable NTP verification
     public init(
         changeLogDbPath: String,
         deviceId: UUIDV7,
-        pendingDeletesTable: String = "__swiftstore_pending_deletes",
         registeredEntities: [any EntityProtocol.Type],
-        tickClock: @escaping @Sendable () -> Int64,
         transport: any SyncTransport,
-        syncableEntities: [any SyncableEntity.Type],
+        initialState: SyncState,
+        schemaVersion: Int,
+        tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+        pendingDeletesTable: String = "__swiftstore_pending_deletes",
         syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        initialState: SyncState = SyncState(),
-        schemaVersion: Int = 1,
         ntpToleranceMs: Int64? = 5000
     ) {
         self.changeLogDbPath = changeLogDbPath
@@ -100,7 +109,6 @@ public struct SyncConfig: Sendable {
         self.registeredEntities = registeredEntities
         self.tickClock = tickClock
         self.transport = transport
-        self.syncableEntities = syncableEntities
         self.syncConfiguration = syncConfiguration
         self.initialState = initialState
         self.schemaVersion = schemaVersion
@@ -149,8 +157,8 @@ public final class SyncManager {
             schemaVersion: config.schemaVersion
         )
 
-        // Create EntityApplierRegistry from syncable entities
-        self.applierRegistry = EntityApplierRegistry(syncableEntities: config.syncableEntities)
+        // Create EntityApplierRegistry from entity types
+        self.applierRegistry = EntityApplierRegistry(entityTypes: config.registeredEntities)
 
         // Create ChangeTrackerReader
         self.changeLogReader = try ChangeTrackerReader(
