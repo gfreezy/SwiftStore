@@ -1382,4 +1382,79 @@ struct MigrationValidationTests {
         let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
         #expect(alterStatements.count == 2)  // createdAt and updatedAt
     }
+
+    @Test("Validation throws error for column type mismatch")
+    func testValidationThrowsForTypeMismatch() throws {
+        let store = try createTestStore()
+
+        // Create table with wrong type for 'name' (INTEGER instead of TEXT)
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name INTEGER NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should throw ColumnTypeMismatchError because name is INTEGER but entity expects TEXT
+        #expect(throws: ColumnTypeMismatchError.self) {
+            _ = try migrator.plan(for: [TestTag.self])
+        }
+    }
+
+    @Test("Type mismatch error contains correct column info")
+    func testTypeMismatchErrorContainsColumnInfo() throws {
+        let store = try createTestStore()
+
+        // Create table with wrong types
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name INTEGER NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        do {
+            _ = try migrator.plan(for: [TestTag.self])
+            Issue.record("Expected ColumnTypeMismatchError to be thrown")
+        } catch let error as ColumnTypeMismatchError {
+            #expect(error.mismatches.count == 1)
+            #expect(error.mismatches[0].tableName == "test_tag")
+            #expect(error.mismatches[0].columnName == "name")
+            #expect(error.mismatches[0].databaseType.uppercased() == "INTEGER")
+            #expect(error.mismatches[0].entityType.uppercased() == "TEXT")
+            #expect(error.description.contains("test_tag.name"))
+        }
+    }
+
+    @Test("Validation passes when column types match")
+    func testValidationPassesWhenTypesMatch() throws {
+        let store = try createTestStore()
+
+        // Create table with correct types
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should pass - no type mismatches
+        let plan = try migrator.plan(for: [TestTag.self])
+
+        // No changes needed (table is up to date)
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.isEmpty)
+    }
 }

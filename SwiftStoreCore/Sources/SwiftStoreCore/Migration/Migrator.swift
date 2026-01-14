@@ -1,14 +1,26 @@
 import Foundation
 
-// MARK: - Migration Validation Error
+// MARK: - Migration Validation Errors
 
-/// Error thrown when migration validation fails
+/// Error thrown when new non-nullable columns don't have default values
 public struct MigrationValidationError: Error, CustomStringConvertible {
     public let columnsWithoutDefault: [(tableName: String, columnName: String)]
 
     public var description: String {
         let details = columnsWithoutDefault.map { "\($0.tableName).\($0.columnName)" }.joined(separator: ", ")
         return "Migration validation failed: New non-nullable columns must have a default value: \(details)"
+    }
+}
+
+/// Error thrown when column types don't match between database and entity
+public struct ColumnTypeMismatchError: Error, CustomStringConvertible {
+    public let mismatches: [(tableName: String, columnName: String, databaseType: String, entityType: String)]
+
+    public var description: String {
+        let details = mismatches.map {
+            "\($0.tableName).\($0.columnName): database has '\($0.databaseType)', entity expects '\($0.entityType)'"
+        }.joined(separator: "; ")
+        return "Migration validation failed: Column type mismatch: \(details)"
     }
 }
 
@@ -115,20 +127,35 @@ public final class Migrator {
 
     // MARK: - Private
 
-    /// Validate that all new non-nullable columns have default values
+    /// Validate schema compatibility
     private func validate(_ diff: DatabaseDiff) throws {
         var columnsWithoutDefault: [(tableName: String, columnName: String)] = []
+        var typeMismatches: [(tableName: String, columnName: String, databaseType: String, entityType: String)] = []
 
         for tableDiff in diff.tableDiffs {
-            // Skip validation for new tables (all columns are new, no existing rows)
-            guard !tableDiff.needsCreate else { continue }
+            // Check for type mismatches (applies to existing tables only)
+            if !tableDiff.needsCreate {
+                for mismatch in tableDiff.columnsWithTypeMismatch {
+                    typeMismatches.append((
+                        tableName: tableDiff.tableName,
+                        columnName: mismatch.name,
+                        databaseType: mismatch.currentType,
+                        entityType: mismatch.targetType
+                    ))
+                }
 
-            for column in tableDiff.columnsToAdd {
-                // Non-nullable columns without default value are invalid
-                if !column.isNullable && column.defaultValue == nil {
-                    columnsWithoutDefault.append((tableDiff.tableName, column.name))
+                // Check for missing default values on new columns
+                for column in tableDiff.columnsToAdd {
+                    if !column.isNullable && column.defaultValue == nil {
+                        columnsWithoutDefault.append((tableDiff.tableName, column.name))
+                    }
                 }
             }
+        }
+
+        // Type mismatch is a more serious error, check it first
+        if !typeMismatches.isEmpty {
+            throw ColumnTypeMismatchError(mismatches: typeMismatches)
         }
 
         if !columnsWithoutDefault.isEmpty {

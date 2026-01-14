@@ -29,6 +29,28 @@ struct SchemaDiff: Sendable {
         }
     }
 
+    /// Columns with type mismatch between current and target schema
+    var columnsWithTypeMismatch: [(name: String, currentType: String, targetType: String)] {
+        guard let current = current else { return [] }
+
+        var mismatches: [(name: String, currentType: String, targetType: String)] = []
+
+        for targetColumn in target.columns where !targetColumn.isGenerated {
+            if let currentColumn = current.columns.first(where: { $0.name == targetColumn.name }) {
+                // Compare types (case-insensitive)
+                if currentColumn.type.uppercased() != targetColumn.type.uppercased() {
+                    mismatches.append((
+                        name: targetColumn.name,
+                        currentType: currentColumn.type,
+                        targetType: targetColumn.type
+                    ))
+                }
+            }
+        }
+
+        return mismatches
+    }
+
     var indexesToAdd: [IndexSchema] {
         guard let current = current else { return target.indexes }
         return target.indexes.filter { !current.indexNames.contains($0.name) }

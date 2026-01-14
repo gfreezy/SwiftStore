@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 import SwiftStoreCore
 
 /// Handles SQLite update hooks and writes changes directly to a separate changelog database
@@ -109,7 +110,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
                 clockValue: clockValue
             )
         } catch {
-            print("SwiftStore: Failed to record change: \(error)")
+            os_log(.error, "SwiftStore: Failed to record change: %{public}@", String(describing: error))
         }
     }
 
@@ -208,7 +209,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
                 clockValue: clockValue
             )
         } catch {
-            print("SwiftStore: Failed to handle pending delete: \(error)")
+            os_log(.error, "SwiftStore: Failed to handle pending delete: %{public}@", String(describing: error))
         }
     }
 

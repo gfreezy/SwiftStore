@@ -1,6 +1,7 @@
 import Foundation
 import SwiftStoreCore
 import SwiftStoreSync
+import os.log
 
 // Re-export commonly used types from SwiftStoreSync
 public typealias SyncState = SwiftStoreSync.SyncState
@@ -66,7 +67,9 @@ public struct SyncOptions: Sendable {
     /// - Parameters:
     ///   - entities: Entity types to sync
     ///   - dbPath: Main database path (used to generate changelog path if not specified)
-    func toSyncManagerConfig(entities: [any EntityProtocol.Type], dbPath: String) -> SwiftStoreSync.SyncConfig {
+    func toSyncManagerConfig(entities: [any EntityProtocol.Type], dbPath: String)
+        -> SwiftStoreSync.SyncConfig
+    {
         let resolvedChangeLogPath = changeLogDbPath ?? Self.defaultChangeLogPath(from: dbPath)
         return SwiftStoreSync.SyncConfig(
             changeLogDbPath: resolvedChangeLogPath,
@@ -99,7 +102,8 @@ public struct SyncOptions: Sendable {
         let name = filename.deletingPathExtension
 
         let changeLogFilename = ext.isEmpty ? "\(name)_changelog" : "\(name)_changelog.\(ext)"
-        return directory.isEmpty ? changeLogFilename : (directory as NSString).appendingPathComponent(changeLogFilename)
+        return directory.isEmpty
+            ? changeLogFilename : (directory as NSString).appendingPathComponent(changeLogFilename)
     }
 }
 
@@ -179,10 +183,11 @@ public final class ConnectionManager: Sendable {
             var readOptions = options
             readOptions.walMode = true
             let conn = try SQLiteConnection(path: path, options: readOptions)
-            readerEntries.append(ReaderEntry(
-                actor: ConnectionActor(connection: conn),
-                isInUse: Mutex<Bool>(false)
-            ))
+            readerEntries.append(
+                ReaderEntry(
+                    actor: ConnectionActor(connection: conn),
+                    isInUse: Mutex<Bool>(false)
+                ))
         }
         self.readers = readerEntries
     }
@@ -191,13 +196,27 @@ public final class ConnectionManager: Sendable {
         if setupTask.value() == nil {
             let task = Task {
                 try await self.write { connection in
-                    let migrator = Migrator(connection: connection, trackDeletes: syncEnabled, createUpdateTrigger: syncEnabled)
+                    let migrator = Migrator(
+                        connection: connection, trackDeletes: syncEnabled,
+                        createUpdateTrigger: syncEnabled)
                     let plan: MigrationPlan = try migrator.plan(for: self.entities)
                     if !dryRun {
-                        try migrator.apply(plan)
+                        do {
+                            try migrator.apply(plan)
+                        } catch {
+                            os_log(
+                                .error, "SwiftStore Migration Error: %{public}@",
+                                String(describing: error))
+                            #if DEBUG
+                                fatalError("SwiftStore Migration Error: \(error)")
+                            #else
+                                throw error
+                            #endif
+
+                        }
                     }
-                    print("Migration Plan:")
-                    print(plan)
+                    os_log(
+                        .info, "SwiftStore Migration Plan:\n%{public}@", String(describing: plan))
                 }
             }
             setupTask.setValue(task)
@@ -209,7 +228,9 @@ public final class ConnectionManager: Sendable {
 
     /// Execute a block with the write connection.
     /// Only one write operation can happen at a time.
-    public func write<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true) async throws -> T {
+    public func write<T: Sendable>(
+        _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
+    ) async throws -> T {
         try await writer.run { conn in
             if transaction {
                 try conn.transaction {
@@ -224,7 +245,9 @@ public final class ConnectionManager: Sendable {
     /// Execute a block with one of the read connections.
     /// Multiple read operations can happen concurrently.
     /// Uses a pool pattern to find an available reader.
-    public func read<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T) async throws -> T {
+    public func read<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T) async throws
+        -> T
+    {
         // Try to find a reader that is not in use
         for reader in readers {
             let found = reader.isInUse.withLock { isInUse in
@@ -314,7 +337,8 @@ public actor WritableConnectionActor {
 
     func sync() async throws -> SyncResult {
         guard let manager = syncManager else {
-            throw SyncError.notConfigured("SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
+            throw SyncError.notConfigured(
+                "SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
         }
         guard !isSyncing else {
             throw SyncError.syncAlreadyInProgress("Sync is already in progress.")

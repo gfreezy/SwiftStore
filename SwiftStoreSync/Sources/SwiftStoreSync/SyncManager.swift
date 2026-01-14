@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 import SwiftStoreCore
 import SwiftStoreChangeTracker
 
@@ -272,7 +273,7 @@ public final class SyncManager {
             do {
                 try changeTracker.start()
             } catch {
-                print("SwiftStoreSync: Failed to restart change tracking: \(error)")
+                os_log(.error, "SwiftStoreSync: Failed to restart change tracking: %{public}@", String(describing: error))
             }
         }
 
@@ -281,7 +282,7 @@ public final class SyncManager {
                 try applierRegistry.apply(change: change, to: connection)
                 applied += 1
             } catch {
-                print("SwiftStoreSync: Failed to apply change \(change.id): \(error)")
+                os_log(.error, "SwiftStoreSync: Failed to apply change %{public}@: %{public}@", String(describing: change.id), String(describing: error))
                 conflicts += 1
             }
         }
