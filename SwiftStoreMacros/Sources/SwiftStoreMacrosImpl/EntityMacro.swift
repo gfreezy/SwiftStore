@@ -57,10 +57,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 isPrimaryKey = prop.name == "id"
             }
             let colType = prop.sqliteType
-            let isJSON = !prop.isPrimitive && prop.type != "UUIDV7"
-            // Add default value for Date columns (createdAt/updatedAt)
-            let isTimestamp =
-                prop.type == "Date" && (prop.name == "createdAt" || prop.name == "updatedAt")
+            let isJSON = !prop.isPrimitive
 
             var def = "ColumnDefinition(name: \"\(prop.columnName)\", type: .\(colType)"
             if nullable {
@@ -69,11 +66,12 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             if isPrimaryKey {
                 def += ", primaryKey: true"
             }
+            // Generate SQL DEFAULT from Swift default value (must be before isJSONEncoded)
+            if let sqlDefault = convertToSQLDefault(prop: prop) {
+                def += ", defaultValue: \"\(sqlDefault)\""
+            }
             if isJSON {
                 def += ", isJSONEncoded: true"
-            }
-            if isTimestamp {
-                def += ", defaultValue: \"(strftime('%s', 'now'))\""
             }
             def += ")"
             columnDefs.append(def)
@@ -495,6 +493,92 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             properties[updatedAtIndex].defaultValue = "Date()"
         }
     }
+}
+
+// MARK: - Swift to SQL Default Value Conversion
+
+/// Convert Swift default value to SQL DEFAULT clause value
+/// Returns nil if no SQL default should be generated (e.g., for primary keys)
+private func convertToSQLDefault(prop: PropertyInfo) -> String? {
+    // Skip primary key fields (id, UUIDV7)
+    if prop.name == "id" {
+        return nil
+    }
+
+    // Get base type (remove Optional wrapper if present)
+    let baseType = prop.type.replacingOccurrences(of: "?", with: "")
+
+    // Skip UUIDV7 fields
+    if baseType == "UUIDV7" {
+        return nil
+    }
+
+    guard let swiftDefault = prop.defaultValue else {
+        return nil
+    }
+
+    // For optional types, skip if default is nil
+    if prop.isOptional && swiftDefault == "nil" {
+        return nil
+    }
+
+    // Handle Date type - use SQL function for current timestamp
+    if baseType == "Date" {
+        return "(strftime('%s', 'now'))"
+    }
+
+    // Handle Bool type
+    if baseType == "Bool" {
+        if swiftDefault == "true" {
+            return "1"
+        } else if swiftDefault == "false" {
+            return "0"
+        }
+    }
+
+    // Handle numeric types (Int, Double, Float, etc.)
+    if prop.sqliteType == "integer" || prop.sqliteType == "real" {
+        // Check if it's a valid number literal
+        let trimmed = swiftDefault.trimmingCharacters(in: .whitespaces)
+        if let _ = Double(trimmed) {
+            return trimmed
+        }
+        // Default to 0 for numeric types with non-literal defaults
+        return prop.sqliteType == "integer" ? "0" : "0.0"
+    }
+
+    // Handle String type
+    if baseType == "String" {
+        // Swift string literal: "value" or ""
+        let trimmed = swiftDefault.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"") {
+            // Extract content and convert to SQL string literal
+            let content = String(trimmed.dropFirst().dropLast())
+            // Escape single quotes for SQL
+            let escaped = content.replacingOccurrences(of: "'", with: "''")
+            return "'\(escaped)'"
+        }
+        // Default to empty string
+        return "''"
+    }
+
+    // Handle JSON-encoded types (nested structs, arrays, dictionaries)
+    if !prop.isPrimitive {
+        let trimmed = swiftDefault.trimmingCharacters(in: .whitespaces)
+        // Empty array literal
+        if trimmed == "[]" {
+            return "'[]'"
+        }
+        // Empty dictionary literal
+        if trimmed == "[:]" {
+            return "'{}'"
+        }
+        // Struct initializer (e.g., "MyStruct()" or "MyStruct(field: value)")
+        // Default to empty JSON object
+        return "'{}'"
+    }
+
+    return nil
 }
 
 /// Macro errors with detailed messages

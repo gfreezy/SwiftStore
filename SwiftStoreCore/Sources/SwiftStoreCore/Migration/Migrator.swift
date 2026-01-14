@@ -1,5 +1,17 @@
 import Foundation
 
+// MARK: - Migration Validation Error
+
+/// Error thrown when migration validation fails
+public struct MigrationValidationError: Error, CustomStringConvertible {
+    public let columnsWithoutDefault: [(tableName: String, columnName: String)]
+
+    public var description: String {
+        let details = columnsWithoutDefault.map { "\($0.tableName).\($0.columnName)" }.joined(separator: ", ")
+        return "Migration validation failed: New non-nullable columns must have a default value: \(details)"
+    }
+}
+
 /// Migration plan containing SQL statements to be executed
 public struct MigrationPlan: Sendable, CustomStringConvertible {
     public let statements: [String]
@@ -82,8 +94,10 @@ public final class Migrator {
     // MARK: - Public API
 
     /// Generate migration plan for entity types
+    /// - Throws: `MigrationValidationError` if new non-nullable columns don't have default values
     public func plan(for types: [any EntityProtocol.Type]) throws -> MigrationPlan {
         let diff = try computeDiff(for: types)
+        try validate(diff)
         return sqlGenerator.generatePlan(from: diff)
     }
 
@@ -100,6 +114,27 @@ public final class Migrator {
     }
 
     // MARK: - Private
+
+    /// Validate that all new non-nullable columns have default values
+    private func validate(_ diff: DatabaseDiff) throws {
+        var columnsWithoutDefault: [(tableName: String, columnName: String)] = []
+
+        for tableDiff in diff.tableDiffs {
+            // Skip validation for new tables (all columns are new, no existing rows)
+            guard !tableDiff.needsCreate else { continue }
+
+            for column in tableDiff.columnsToAdd {
+                // Non-nullable columns without default value are invalid
+                if !column.isNullable && column.defaultValue == nil {
+                    columnsWithoutDefault.append((tableDiff.tableName, column.name))
+                }
+            }
+        }
+
+        if !columnsWithoutDefault.isEmpty {
+            throw MigrationValidationError(columnsWithoutDefault: columnsWithoutDefault)
+        }
+    }
 
     private func computeDiff(for types: [any EntityProtocol.Type]) throws -> DatabaseDiff {
         // Build all target schemas

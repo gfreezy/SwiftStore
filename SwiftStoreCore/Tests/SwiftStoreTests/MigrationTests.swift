@@ -31,10 +31,10 @@ struct MigrationDryRunTests {
         let expectedCreateSQL = normalizeSQL("""
             CREATE TABLE test_user (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
-                address TEXT NOT NULL,
+                address TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -91,7 +91,7 @@ struct MigrationDryRunTests {
         let expectedAlters = [
             normalizeSQL("ALTER TABLE test_user ADD COLUMN email TEXT NOT NULL DEFAULT ''"),
             normalizeSQL("ALTER TABLE test_user ADD COLUMN age INTEGER"),
-            normalizeSQL("ALTER TABLE test_user ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+            normalizeSQL("ALTER TABLE test_user ADD COLUMN address TEXT NOT NULL DEFAULT '{}'")
         ]
 
         for expected in expectedAlters {
@@ -119,7 +119,7 @@ struct MigrationDryRunTests {
         let expectedSQL = normalizeSQL("""
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -151,10 +151,10 @@ struct MigrationDryRunTests {
         let expectedUserSQL = normalizeSQL("""
             CREATE TABLE test_user (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
-                address TEXT NOT NULL,
+                address TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -164,7 +164,7 @@ struct MigrationDryRunTests {
         let expectedTagSQL = normalizeSQL("""
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -189,7 +189,7 @@ struct MigrationDryRunTests {
         let expectedSQL = normalizeSQL("""
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -406,7 +406,7 @@ struct MigratorPlanSQLTests {
         let expectedSQL = normalizeSQL("""
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -427,10 +427,10 @@ struct MigratorPlanSQLTests {
         let expectedSQL = normalizeSQL("""
             CREATE TABLE test_user (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
-                address TEXT NOT NULL,
+                address TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -668,7 +668,7 @@ struct MigratorPlanSQLTests {
         let expectedAlters = [
             normalizeSQL("ALTER TABLE test_user ADD COLUMN email TEXT NOT NULL DEFAULT ''"),
             normalizeSQL("ALTER TABLE test_user ADD COLUMN age INTEGER"),
-            normalizeSQL("ALTER TABLE test_user ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+            normalizeSQL("ALTER TABLE test_user ADD COLUMN address TEXT NOT NULL DEFAULT '{}'")
         ]
 
         for expected in expectedAlters {
@@ -728,10 +728,10 @@ struct MigratorPlanSQLTests {
         let expectedUserSQL = normalizeSQL("""
             CREATE TABLE test_user (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
-                address TEXT NOT NULL,
+                address TEXT NOT NULL DEFAULT '{}',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -741,7 +741,7 @@ struct MigratorPlanSQLTests {
         let expectedTagSQL = normalizeSQL("""
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
                 created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
             )
@@ -1026,12 +1026,12 @@ struct EntityAddFieldMigrationTests {
         try store.migrate(entities: [MigrationUserV2.self])
 
         // Read existing record
-        // Note: Migrated rows get SQL defaults (0 for INTEGER), not entity defaults
+        // Note: Migrated rows get SQL defaults from entity default values
         var user = try store.connection.get(MigrationUserV2.self, id: id)!
         #expect(user.name == "David")
         #expect(user.bio == "")  // SQL default for TEXT
         #expect(user.score == 0)  // SQL default for INTEGER
-        #expect(user.isActive == false)  // SQL default 0 = false (not entity default true)
+        #expect(user.isActive == true)  // SQL default 1 = true (from entity default)
 
         // Update with new fields
         user.bio = "Software Engineer"
@@ -1106,14 +1106,14 @@ struct EntityAddFieldMigrationTests {
         // Apply migration
         try migrator.apply(plan)
 
-        // Verify data (migrated rows get SQL defaults, not entity defaults)
+        // Verify data (migrated rows get SQL defaults from entity default values)
         let user = try store.connection.get(MigrationUserV3.self, id: id)!
         #expect(user.name == "Frank")
         #expect(user.bio == "")  // SQL default for TEXT
         #expect(user.score == 0)  // SQL default for INTEGER
-        #expect(user.isActive == false)  // SQL default 0 = false
+        #expect(user.isActive == true)  // SQL default 1 = true (from entity default)
         #expect(user.age == nil)  // Optional field defaults to nil
-        #expect(user.settings.theme == "light")  // Decoded from SQL default '' = empty JSON, uses Default
+        #expect(user.settings.theme == "light")  // Decoded from SQL default '{}' = empty JSON, uses @Embedded default
     }
 
     @Test("Migration is idempotent - running twice has no effect")
@@ -1186,5 +1186,200 @@ struct EntityAddFieldMigrationTests {
         // Should have no CREATE TABLE statements
         let createStatements = plan.statements.filter { $0.uppercased().contains("CREATE TABLE") }
         #expect(createStatements.isEmpty)
+    }
+}
+
+// MARK: - Migration Validation Tests
+
+/// Entity without default values for non-nullable fields (for testing validation)
+@Entity(tableName: "validation_test")
+struct ValidationTestEntityNoDefault {
+    var id: UUIDV7 = UUIDV7()
+    var name: String
+    var requiredField: String  // No SQL default value - will fail validation
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
+/// Entity with optional field (no default required)
+@Entity(tableName: "validation_test")
+struct ValidationTestEntityOptional {
+    var id: UUIDV7 = UUIDV7()
+    var name: String
+    var optionalField: String?
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
+@Suite("Migration Validation Tests")
+struct MigrationValidationTests {
+
+    @Test("Validation throws error for new non-nullable column without default")
+    func testValidationThrowsForNonNullableWithoutDefault() throws {
+        let store = try createTestStore()
+
+        // Create initial table without requiredField
+        try store.connection.execute("""
+            CREATE TABLE validation_test (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should throw MigrationValidationError because requiredField has no SQL DEFAULT
+        #expect(throws: MigrationValidationError.self) {
+            _ = try migrator.plan(for: [ValidationTestEntityNoDefault.self])
+        }
+    }
+
+    @Test("Validation error contains correct column info")
+    func testValidationErrorContainsColumnInfo() throws {
+        let store = try createTestStore()
+
+        // Create initial table without requiredField
+        try store.connection.execute("""
+            CREATE TABLE validation_test (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        do {
+            _ = try migrator.plan(for: [ValidationTestEntityNoDefault.self])
+            Issue.record("Expected MigrationValidationError to be thrown")
+        } catch let error as MigrationValidationError {
+            #expect(error.columnsWithoutDefault.count == 1)
+            #expect(error.columnsWithoutDefault[0].tableName == "validation_test")
+            #expect(error.columnsWithoutDefault[0].columnName == "required_field")
+            #expect(error.description.contains("validation_test.required_field"))
+        }
+    }
+
+    @Test("Validation passes for new nullable column without default")
+    func testValidationPassesForNullableWithoutDefault() throws {
+        let store = try createTestStore()
+
+        // Create initial table without optionalField
+        try store.connection.execute("""
+            CREATE TABLE validation_test (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should not throw - optionalField is nullable (NULL is the default)
+        let plan = try migrator.plan(for: [ValidationTestEntityOptional.self])
+
+        // Verify ALTER TABLE statement is generated
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.count == 1)
+        #expect(normalizeSQL(alterStatements[0]).contains("optional_field"))
+    }
+
+    @Test("Validation skips new tables (no existing data)")
+    func testValidationSkipsNewTables() throws {
+        let store = try createTestStore()
+
+        // No existing table - creating new table
+        let migrator = Migrator(connection: store.connection)
+
+        // Should not throw even though requiredField has no default
+        // because the table is new (no existing rows to worry about)
+        let plan = try migrator.plan(for: [ValidationTestEntityNoDefault.self])
+
+        // Verify CREATE TABLE statement is generated
+        let createStatements = plan.statements.filter { $0.uppercased().contains("CREATE TABLE") }
+        #expect(createStatements.count == 1)
+    }
+
+    @Test("Validation passes for columns with default values")
+    func testValidationPassesForColumnsWithDefaults() throws {
+        let store = try createTestStore()
+
+        // Create minimal table - TestUser has email and address with SQL DEFAULT from entity defaults
+        try store.connection.execute("""
+            CREATE TABLE test_user (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should pass because email and address have SQL DEFAULT from entity defaults
+        let plan = try migrator.plan(for: [TestUser.self])
+
+        // Verify ALTER TABLE statements are generated
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.count == 3)  // email, age (nullable), and address
+    }
+
+    @Test("Validation checks multiple tables")
+    func testValidationChecksMultipleTables() throws {
+        let store = try createTestStore()
+
+        // Create table for ValidationTestEntityNoDefault
+        try store.connection.execute("""
+            CREATE TABLE validation_test (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Create table for TestTag (should pass - no missing required fields)
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should throw for ValidationTestEntityNoDefault even though TestTag is fine
+        #expect(throws: MigrationValidationError.self) {
+            _ = try migrator.plan(for: [ValidationTestEntityNoDefault.self, TestTag.self])
+        }
+    }
+
+    @Test("Validation passes when all columns have SQL DEFAULT")
+    func testValidationPassesWithSQLDefault() throws {
+        let store = try createTestStore()
+
+        // Create table without createdAt and updatedAt
+        // These have SQL DEFAULT via the macro
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL
+            )
+        """)
+
+        let migrator = Migrator(connection: store.connection)
+
+        // Should pass - createdAt and updatedAt have SQL DEFAULT (strftime...)
+        let plan = try migrator.plan(for: [TestTag.self])
+
+        // Verify ALTER TABLE statements are generated
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        #expect(alterStatements.count == 2)  // createdAt and updatedAt
     }
 }

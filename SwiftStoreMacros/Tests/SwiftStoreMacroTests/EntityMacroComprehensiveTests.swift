@@ -51,12 +51,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     [
                         ColumnDefinition(name: "id", type: .blob, primaryKey: true),
                         ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "count", type: .integer),
-                        ColumnDefinition(name: "score", type: .real, nullable: true),
-                        ColumnDefinition(name: "tags", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "count", type: .integer, defaultValue: "0"),
+                        ColumnDefinition(name: "score", type: .real, nullable: true, defaultValue: "2.0"),
+                        ColumnDefinition(name: "tags", type: .text, defaultValue: "'[]'", isJSONEncoded: true),
                         ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
                         ColumnDefinition(name: "profile", type: .text, nullable: true, isJSONEncoded: true),
-                        ColumnDefinition(name: "metadata", type: .text, isJSONEncoded: true),
+                        ColumnDefinition(name: "metadata", type: .text, defaultValue: "'{}'", isJSONEncoded: true),
                         ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
                         ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
                     ]
