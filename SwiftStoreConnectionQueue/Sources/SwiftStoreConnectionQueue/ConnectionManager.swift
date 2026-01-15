@@ -270,7 +270,7 @@ public final class ConnectionManager: Sendable {
     /// Run database migration
     /// - Parameter dryRun: If true, only generates the migration plan without applying it
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
-    public func migrate(dryRun: Bool = true) async throws {
+    public func migrate(dryRun: Bool = true, dropUnusedColumns: Bool = false) async throws {
         guard !options.readonly else {
             throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
         }
@@ -280,7 +280,7 @@ public final class ConnectionManager: Sendable {
                 try await self.write { connection in
                     let migrator = Migrator(
                         connection: connection, trackDeletes: self.syncEnabled,
-                        createUpdateTrigger: self.syncEnabled)
+                        createUpdateTrigger: self.syncEnabled, dropUnusedColumns: dropUnusedColumns)
                     let plan: MigrationPlan = try migrator.plan(for: self.entities)
                     if !dryRun {
                         do {
