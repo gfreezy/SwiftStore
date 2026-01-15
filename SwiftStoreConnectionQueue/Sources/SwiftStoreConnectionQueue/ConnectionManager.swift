@@ -3,6 +3,23 @@ import SwiftStoreCore
 import SwiftStoreSync
 import os.log
 
+// MARK: - Errors
+
+/// Errors thrown by ConnectionManager
+public enum ConnectionManagerError: Error, CustomStringConvertible {
+    case invalidConfiguration(String)
+    case readonlyMode(String)
+
+    public var description: String {
+        switch self {
+        case .invalidConfiguration(let message):
+            return "ConnectionManager configuration error: \(message)"
+        case .readonlyMode(let message):
+            return "ConnectionManager readonly error: \(message)"
+        }
+    }
+}
+
 // Re-export commonly used types from SwiftStoreSync
 public typealias SyncState = SwiftStoreSync.SyncState
 public typealias SyncResult = SwiftStoreSync.SyncResult
@@ -107,18 +124,52 @@ public struct SyncOptions: Sendable {
     }
 }
 
+/// Connection options for ConnectionManager
+public struct ConnectionOptions: Sendable {
+    /// Open database in read-only mode (no writer connection will be created)
+    public var readonly: Bool
+    /// Synchronous mode: 0=OFF (fastest, risky), 1=NORMAL (balanced), 2=FULL (safest, slowest)
+    public var synchronous: Int
+    /// Cache size in KB (negative value means KB, positive means pages)
+    public var cacheSize: Int
+    /// Maximum number of read connections in the pool
+    public var maxReadConnections: Int
+
+    public init(
+        readonly: Bool = false,
+        synchronous: Int = 1,
+        cacheSize: Int = -2000,
+        maxReadConnections: Int = 4
+    ) {
+        self.readonly = readonly
+        self.synchronous = synchronous
+        self.cacheSize = cacheSize
+        self.maxReadConnections = maxReadConnections
+    }
+
+    /// Convert to SQLiteConnection.Options with computed walMode
+    /// - Parameter needsWal: Whether WAL mode is needed (based on readonly and syncConfig)
+    func toSQLiteOptions(walMode: Bool) -> SQLiteConnection.Options {
+        var opts = SQLiteConnection.Options()
+        opts.readonly = readonly
+        opts.walMode = walMode
+        opts.synchronous = synchronous
+        opts.cacheSize = cacheSize
+        return opts
+    }
+}
+
 /// Manages database connections with a single writer and multiple readers.
 /// This ensures thread-safety and optimal performance using SQLite's WAL mode.
 /// Thread safety is handled by the internal actor instances.
 public final class ConnectionManager: Sendable {
     private let path: String
-    private let options: SQLiteConnection.Options
-    private let maxReadConnections: Int
+    private let options: ConnectionOptions
     private let setupTask: Lock<Task<Void, Error>?> = Lock(nil)
     private let entities: [any EntityProtocol.Type]
     private let syncEnabled: Bool
 
-    private let writer: WritableConnectionActor
+    private let writer: WritableConnectionActor?
     private let readers: [ReaderEntry]
 
     private struct ReaderEntry: Sendable {
@@ -129,21 +180,29 @@ public final class ConnectionManager: Sendable {
     /// Initialize with database path and options
     /// - Parameters:
     ///   - path: Path to the database file
-    ///   - options: SQLite connection options, `wal` is always set to true
-    ///   - maxReadConnections: Maximum number of read connections in the pool
-    ///   - syncConfig: Optional sync configuration (includes change tracking)
+    ///   - entities: Entity types to manage
+    ///   - options: Connection options (readonly, synchronous, etc.)
+    ///   - syncConfig: Optional sync configuration (includes change tracking). Cannot be used with readonly mode.
     public init(
         path: String,
         entities: [any EntityProtocol.Type],
-        options: SQLiteConnection.Options = .init(),
-        maxReadConnections: Int = 4,
+        options: ConnectionOptions = .init(),
         syncConfig: SyncOptions? = nil
     ) throws {
+        // Validate: readonly mode cannot be used with sync
+        if options.readonly && syncConfig != nil {
+            throw ConnectionManagerError.invalidConfiguration(
+                "Cannot use sync with readonly mode. Sync requires write access.")
+        }
+
         self.path = path
         self.options = options
-        self.maxReadConnections = maxReadConnections
         self.entities = entities
         self.syncEnabled = syncConfig != nil
+
+        // Compute WAL mode: enabled when not readonly or when sync is enabled
+        // WAL provides better concurrent read performance even in write mode
+        let walMode = !options.readonly
 
         // Ensure directory exists for main database
         let directoryPath = (path as NSString).deletingLastPathComponent
@@ -155,33 +214,33 @@ public final class ConnectionManager: Sendable {
             )
         }
 
-        // Ensure directory exists for changelog database
-        if let syncConfig {
-            let changeLogPath = syncConfig.resolvedChangeLogPath(dbPath: path)
-            let changeLogDir = (changeLogPath as NSString).deletingLastPathComponent
-            if !changeLogDir.isEmpty {
-                try FileManager.default.createDirectory(
-                    atPath: changeLogDir,
-                    withIntermediateDirectories: true,
-                    attributes: nil
-                )
+        // Create writer connection only if not readonly
+        if options.readonly {
+            self.writer = nil
+        } else {
+            // Ensure directory exists for changelog database
+            if let syncConfig {
+                let changeLogPath = syncConfig.resolvedChangeLogPath(dbPath: path)
+                let changeLogDir = (changeLogPath as NSString).deletingLastPathComponent
+                if !changeLogDir.isEmpty {
+                    try FileManager.default.createDirectory(
+                        atPath: changeLogDir,
+                        withIntermediateDirectories: true,
+                        attributes: nil
+                    )
+                }
             }
+
+            let writeOptions = options.toSQLiteOptions(walMode: walMode)
+            let writerConn = try SQLiteConnection(path: path, options: writeOptions)
+            let managerConfig = syncConfig?.toSyncManagerConfig(entities: entities, dbPath: path)
+            self.writer = try WritableConnectionActor(connection: writerConn, syncConfig: managerConfig)
         }
-
-        // Ensure WAL mode is enabled for concurrent read/write
-        var writeOptions = options
-        writeOptions.walMode = true
-
-        // Create writer connection with optional sync
-        let writerConn = try SQLiteConnection(path: path, options: writeOptions)
-        let managerConfig = syncConfig?.toSyncManagerConfig(entities: entities, dbPath: path)
-        self.writer = try WritableConnectionActor(connection: writerConn, syncConfig: managerConfig)
 
         // Create reader connections
         var readerEntries: [ReaderEntry] = []
-        for _ in 0..<maxReadConnections {
-            var readOptions = options
-            readOptions.walMode = true
+        let readOptions = options.toSQLiteOptions(walMode: walMode)
+        for _ in 0..<options.maxReadConnections {
             let conn = try SQLiteConnection(path: path, options: readOptions)
             readerEntries.append(
                 ReaderEntry(
@@ -192,13 +251,20 @@ public final class ConnectionManager: Sendable {
         self.readers = readerEntries
     }
 
+    /// Run database migration
+    /// - Parameter dryRun: If true, only generates the migration plan without applying it
+    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func migrate(dryRun: Bool = true) async throws {
+        guard !options.readonly else {
+            throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
+        }
+
         if setupTask.value() == nil {
             let task = Task {
                 try await self.write { connection in
                     let migrator = Migrator(
-                        connection: connection, trackDeletes: syncEnabled,
-                        createUpdateTrigger: syncEnabled)
+                        connection: connection, trackDeletes: self.syncEnabled,
+                        createUpdateTrigger: self.syncEnabled)
                     let plan: MigrationPlan = try migrator.plan(for: self.entities)
                     if !dryRun {
                         do {
@@ -228,10 +294,14 @@ public final class ConnectionManager: Sendable {
 
     /// Execute a block with the write connection.
     /// Only one write operation can happen at a time.
+    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func write<T: Sendable>(
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
-        try await writer.run { conn in
+        guard let writer else {
+            throw ConnectionManagerError.readonlyMode("Cannot write in readonly mode.")
+        }
+        return try await writer.run { conn in
             if transaction {
                 try conn.transaction {
                     try block(conn)
@@ -276,21 +346,28 @@ public final class ConnectionManager: Sendable {
 
     /// Check if sync is configured
     public var hasSyncEnabled: Bool {
-        get async {
-            await writer.hasSyncEnabled
-        }
+        syncEnabled
+    }
+
+    /// Check if connection is in readonly mode
+    public var isReadonly: Bool {
+        options.readonly
     }
 
     /// Perform a full sync (pull then push)
     /// - Returns: Sync result with statistics
+    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func sync() async throws -> SyncResult {
-        try await writer.sync()
+        guard let writer else {
+            throw ConnectionManagerError.readonlyMode("Cannot sync in readonly mode.")
+        }
+        return try await writer.sync()
     }
 
     /// Get current sync state
     public var syncState: SyncState? {
         get async {
-            await writer.syncState
+            await writer?.syncState
         }
     }
 }
