@@ -90,7 +90,7 @@ enum MacroHelpers {
         var catchLines: [String] = []
 
         catchLines.append(
-            "os_log(.error, \"SwiftStore: Failed to decode '\(logTypeName).\(logFieldName)': %{public}@\", String(describing: error))"
+            "SwiftStoreLogger.error(\"Failed to decode '\(logTypeName).\(logFieldName)': \\(error)\")"
         )
 
         catchLines.append(catchContent)
