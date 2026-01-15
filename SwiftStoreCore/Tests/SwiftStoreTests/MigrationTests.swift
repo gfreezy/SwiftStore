@@ -450,6 +450,57 @@ struct MigrationDryRunTests {
         // Query plan should show index usage (SEARCH or USING INDEX)
         #expect(queryPlan.lowercased().contains("index") || queryPlan.lowercased().contains("search"))
     }
+
+    @Test("Plan migration with dropUnusedColumns drops extra columns")
+    func testPlanMigrationDropUnusedColumns() throws {
+        let store = try createTestStore()
+
+        // Create table with extra columns that don't exist in entity
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                extra_column TEXT DEFAULT '',
+                another_unused INTEGER DEFAULT 0,
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Insert test data
+        try store.connection.execute("""
+            INSERT INTO test_tag (id, name, extra_column, another_unused, created_at, updated_at)
+            VALUES (X'0102', 'tag1', 'extra', 42, 0, 0)
+        """)
+
+        // Without dropUnusedColumns: should not drop columns
+        let migratorDefault = Migrator(connection: store.connection)
+        let planDefault = try migratorDefault.plan(for: [TestTag.self])
+        let dropStatementsDefault = planDefault.statements.filter { $0.uppercased().contains("DROP COLUMN") }
+        #expect(dropStatementsDefault.isEmpty)
+
+        // With dropUnusedColumns: should drop extra columns
+        let migratorDrop = Migrator(connection: store.connection, dropUnusedColumns: true)
+        let planDrop = try migratorDrop.plan(for: [TestTag.self])
+        let dropStatementsDrop = planDrop.statements.filter { $0.uppercased().contains("DROP COLUMN") }
+        #expect(dropStatementsDrop.count == 2)
+
+        // Verify correct columns are being dropped
+        let dropSQLs = dropStatementsDrop.map { normalizeSQL($0) }
+        #expect(dropSQLs.contains(normalizeSQL("ALTER TABLE test_tag DROP COLUMN extra_column")))
+        #expect(dropSQLs.contains(normalizeSQL("ALTER TABLE test_tag DROP COLUMN another_unused")))
+
+        // Apply the migration
+        try migratorDrop.apply(planDrop)
+
+        // Verify columns are dropped and data is preserved
+        let rows: [Row] = try store.connection.query("SELECT * FROM test_tag")
+        #expect(rows.count == 1)
+
+        // Should only have the entity columns now
+        let columnNames = rows[0].data.keys.sorted()
+        #expect(columnNames == ["created_at", "id", "name", "updated_at"])
+    }
 }
 
 // MARK: - Migrator.plan SQL Verification Tests

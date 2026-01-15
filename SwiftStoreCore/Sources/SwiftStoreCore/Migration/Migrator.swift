@@ -44,7 +44,8 @@ public struct MigrationPlan: Sendable, CustomStringConvertible {
 
         // Count statement types
         let createTables = statements.filter { $0.uppercased().hasPrefix("CREATE TABLE") }.count
-        let alterTables = statements.filter { $0.uppercased().hasPrefix("ALTER TABLE") }.count
+        let addColumns = statements.filter { $0.uppercased().contains("ADD COLUMN") }.count
+        let dropColumns = statements.filter { $0.uppercased().contains("DROP COLUMN") }.count
         let createIndexes = statements.filter {
             $0.uppercased().hasPrefix("CREATE INDEX") || $0.uppercased().hasPrefix("CREATE UNIQUE INDEX")
         }.count
@@ -52,7 +53,8 @@ public struct MigrationPlan: Sendable, CustomStringConvertible {
 
         var summary: [String] = []
         if createTables > 0 { summary.append("\(createTables) CREATE TABLE") }
-        if alterTables > 0 { summary.append("\(alterTables) ALTER TABLE") }
+        if addColumns > 0 { summary.append("\(addColumns) ADD COLUMN") }
+        if dropColumns > 0 { summary.append("\(dropColumns) DROP COLUMN") }
         if createIndexes > 0 { summary.append("\(createIndexes) CREATE INDEX") }
         if createTriggers > 0 { summary.append("\(createTriggers) CREATE TRIGGER") }
 
@@ -85,11 +87,24 @@ public final class Migrator {
     private let schemaReader: DatabaseSchemaReader
     private let schemaBuilder: DatabaseSchemaBuilder
     private let sqlGenerator: MigrationSQLGenerator
+    private let dropUnusedColumns: Bool
 
     public static var pendingDeletesTableName: String { DatabaseSchemaBuilder.pendingDeletesTableName }
 
-    public init(connection: SQLiteConnection, trackDeletes: Bool = false, createUpdateTrigger: Bool = true) {
+    /// Initialize a migrator
+    /// - Parameters:
+    ///   - connection: SQLite connection
+    ///   - trackDeletes: Whether to track deletes for sync
+    ///   - createUpdateTrigger: Whether to create update triggers
+    ///   - dropUnusedColumns: Whether to drop columns that exist in database but not in entity (default: false)
+    public init(
+        connection: SQLiteConnection,
+        trackDeletes: Bool = false,
+        createUpdateTrigger: Bool = true,
+        dropUnusedColumns: Bool = false
+    ) {
         self.connection = connection
+        self.dropUnusedColumns = dropUnusedColumns
 
         self.schemaReader = DatabaseSchemaReader(connection: connection)
 
@@ -174,7 +189,7 @@ public final class Migrator {
         let tableDiffs = targetSchemas.map { target in
             // currentSchemas[target.name] is nil if table doesn't exist yet -> needsCreate
             let current = currentSchemas[target.name]
-            return SchemaDiff(current: current, target: target)
+            return SchemaDiff(current: current, target: target, dropUnusedColumns: dropUnusedColumns)
         }
 
         return DatabaseDiff(tableDiffs: tableDiffs)

@@ -33,6 +33,11 @@ public struct MigrationSQLGenerator {
                 statements.append(contentsOf: generateAlterTableSQL(tableName: diff.tableName, column: column))
             }
 
+            // Drop unused columns (SQLite 3.35.0+)
+            for columnName in diff.columnsToDrop {
+                statements.append("ALTER TABLE \(diff.tableName) DROP COLUMN \(columnName)")
+            }
+
             // Add new indexes
             for index in diff.indexesToAdd {
                 statements.append(index.toSQL(tableName: diff.tableName))

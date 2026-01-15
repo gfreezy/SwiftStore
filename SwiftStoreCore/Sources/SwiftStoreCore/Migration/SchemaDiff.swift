@@ -6,10 +6,12 @@ import Foundation
 struct SchemaDiff: Sendable {
     let current: TableSchema?
     let target: TableSchema
+    let dropUnusedColumns: Bool
 
-    init(current: TableSchema?, target: TableSchema) {
+    init(current: TableSchema?, target: TableSchema, dropUnusedColumns: Bool = false) {
         self.current = current
         self.target = target
+        self.dropUnusedColumns = dropUnusedColumns
     }
 
     var tableName: String {
@@ -27,6 +29,16 @@ struct SchemaDiff: Sendable {
         return target.columns.filter { column in
             !existingNames.contains(column.name) && !column.isGenerated
         }
+    }
+
+    /// Columns that exist in database but not in entity (to be dropped)
+    var columnsToDrop: [String] {
+        guard dropUnusedColumns, let current = current else { return [] }
+        let targetNames = Set(target.columns.map { $0.name })
+
+        return current.columns
+            .filter { !targetNames.contains($0.name) }
+            .map { $0.name }
     }
 
     /// Columns with type mismatch between current and target schema
@@ -62,7 +74,7 @@ struct SchemaDiff: Sendable {
     }
 
     var hasChanges: Bool {
-        needsCreate || !columnsToAdd.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty
+        needsCreate || !columnsToAdd.isEmpty || !columnsToDrop.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty
     }
 }
 
@@ -89,6 +101,11 @@ public struct DatabaseDiff: Sendable {
     /// Number of columns that need to be added
     public var columnsToAddCount: Int {
         tableDiffs.reduce(0) { $0 + $1.columnsToAdd.count }
+    }
+
+    /// Number of columns that need to be dropped
+    public var columnsToDropCount: Int {
+        tableDiffs.reduce(0) { $0 + $1.columnsToDrop.count }
     }
 
     /// Number of indexes that need to be added
