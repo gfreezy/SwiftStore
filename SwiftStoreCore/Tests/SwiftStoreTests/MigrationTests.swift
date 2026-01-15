@@ -104,6 +104,72 @@ struct MigrationDryRunTests {
         #expect(normalizeSQL(indexStatements[0]) == normalizeSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_test_user_email ON test_user(email)"))
     }
 
+    @Test("Plan migration for Date column with expression default")
+    func testPlanMigrationDateColumnWithExpressionDefault() throws {
+        var store = try createTestStore()
+
+        // Create a minimal table without created_at/updated_at columns
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id blob PRIMARY KEY,
+                name text NOT NULL
+            )
+        """)
+
+        // Insert some existing rows
+        try store.connection.execute("INSERT INTO test_tag (id, name) VALUES (X'0102', 'tag1')")
+        try store.connection.execute("INSERT INTO test_tag (id, name) VALUES (X'0304', 'tag2')")
+
+        try store.register(TestTag.self)
+
+        let plan = try store.planMigration(for: TestTag.self)
+
+        #expect(plan.hasChanges == true)
+
+        // SQLite ALTER TABLE ADD COLUMN doesn't allow expressions as defaults
+        // So we should see: ALTER TABLE with literal default + UPDATE to set the expression value
+        let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
+        let updateStatements = plan.statements.filter { $0.uppercased().hasPrefix("UPDATE") }
+
+        // Should have 2 ALTER TABLE statements (created_at and updated_at)
+        #expect(alterStatements.count == 2)
+
+        // Should have 2 UPDATE statements to set the expression value
+        #expect(updateStatements.count == 2)
+
+        // Verify the ALTER TABLE uses literal default (0.0 for REAL)
+        for alter in alterStatements {
+            let normalized = normalizeSQL(alter)
+            #expect(normalized.contains("default 0.0"))
+        }
+
+        // Verify UPDATE sets the correct expression
+        for update in updateStatements {
+            let normalized = normalizeSQL(update)
+            #expect(normalized.contains("strftime"))
+        }
+
+        // Apply the migration and verify it works
+        try store.migrate()
+
+        // Verify the existing rows now have timestamps
+        let rows: [Row] = try store.connection.query("SELECT created_at, updated_at FROM test_tag")
+        #expect(rows.count == 2)
+        for row in rows {
+            // created_at and updated_at should be non-zero (set by the UPDATE)
+            if case let .real(createdAt) = row["created_at"] {
+                #expect(createdAt > 0)
+            } else {
+                Issue.record("created_at should be a real value")
+            }
+            if case let .real(updatedAt) = row["updated_at"] {
+                #expect(updatedAt > 0)
+            } else {
+                Issue.record("updated_at should be a real value")
+            }
+        }
+    }
+
     @Test("Plan migration generates correct script")
     func testPlanMigrationScript() throws {
         var store = try createTestStore()

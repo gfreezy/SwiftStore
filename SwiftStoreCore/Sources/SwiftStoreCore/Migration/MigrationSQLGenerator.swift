@@ -30,7 +30,7 @@ public struct MigrationSQLGenerator {
         } else {
             // Add new columns
             for column in diff.columnsToAdd {
-                statements.append(generateAlterTableSQL(tableName: diff.tableName, column: column))
+                statements.append(contentsOf: generateAlterTableSQL(tableName: diff.tableName, column: column))
             }
 
             // Add new indexes
@@ -65,13 +65,45 @@ public struct MigrationSQLGenerator {
         return "CREATE TABLE \(schema.name) (\n    \(parts.joined(separator: ",\n    "))\n)"
     }
 
-    private func generateAlterTableSQL(tableName: String, column: ColumnSchema) -> String {
+    private func generateAlterTableSQL(tableName: String, column: ColumnSchema) -> [String] {
+        var statements: [String] = []
         var sql = "ALTER TABLE \(tableName) ADD COLUMN \(column.name) \(column.type)"
+
         if !column.isNullable {
             let defaultVal = column.defaultValue ?? defaultValueForType(column.type)
-            sql += " NOT NULL DEFAULT \(defaultVal)"
+
+            // SQLite ALTER TABLE ADD COLUMN doesn't allow expressions (anything in parentheses)
+            // or CURRENT_TIME, CURRENT_DATE, CURRENT_TIMESTAMP as default values.
+            // We need to use a literal default and then UPDATE existing rows.
+            if isExpressionDefault(defaultVal) {
+                // Use a literal value for ALTER TABLE
+                let literalDefault = defaultValueForType(column.type)
+                sql += " NOT NULL DEFAULT \(literalDefault)"
+                statements.append(sql)
+
+                // Generate UPDATE to set the expression value for existing rows
+                statements.append("UPDATE \(tableName) SET \(column.name) = \(defaultVal)")
+            } else {
+                sql += " NOT NULL DEFAULT \(defaultVal)"
+                statements.append(sql)
+            }
+        } else {
+            statements.append(sql)
         }
-        return sql
+
+        return statements
+    }
+
+    /// Check if a default value is an expression (not allowed in ALTER TABLE ADD COLUMN)
+    private func isExpressionDefault(_ defaultValue: String) -> Bool {
+        let trimmed = defaultValue.trimmingCharacters(in: .whitespaces)
+        // Expressions are wrapped in parentheses
+        if trimmed.hasPrefix("(") && trimmed.hasSuffix(")") {
+            return true
+        }
+        // CURRENT_TIME, CURRENT_DATE, CURRENT_TIMESTAMP are also not allowed
+        let upper = trimmed.uppercased()
+        return upper == "CURRENT_TIME" || upper == "CURRENT_DATE" || upper == "CURRENT_TIMESTAMP"
     }
 
     private func defaultValueForType(_ type: String) -> String {
