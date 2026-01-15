@@ -228,7 +228,7 @@ public final class SQLiteConnection {
             do {
                 try rollback()
             } catch {
-                os_log("SwiftStore: Failed to rollback transaction: %@", log: .default, type: .error, error.localizedDescription)
+                SwiftStoreLogger.error("Failed to rollback transaction: \(error.localizedDescription)")
             }
             transactionDepth -= 1
             throw error
@@ -251,12 +251,12 @@ public final class SQLiteConnection {
             do {
                 _ = try execute("ROLLBACK TO SAVEPOINT \(savepointName)")
             } catch {
-                os_log("SwiftStore: Failed to rollback to savepoint: %@", log: .default, type: .error, error.localizedDescription)
+                SwiftStoreLogger.error("Failed to rollback to savepoint: \(error.localizedDescription)")
             }
             do {
                 _ = try execute("RELEASE SAVEPOINT \(savepointName)")
             } catch {
-                os_log("SwiftStore: Failed to release savepoint: %@", log: .default, type: .error, error.localizedDescription)
+                SwiftStoreLogger.error("Failed to release savepoint: \(error.localizedDescription)")
             }
             throw error
         }

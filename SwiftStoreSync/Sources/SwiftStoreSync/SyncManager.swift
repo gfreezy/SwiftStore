@@ -273,7 +273,7 @@ public final class SyncManager {
             do {
                 try changeTracker.start()
             } catch {
-                os_log(.error, "SwiftStoreSync: Failed to restart change tracking: %{public}@", String(describing: error))
+                SwiftStoreLogger.error("Failed to restart change tracking: \(error)")
             }
         }
 
@@ -282,7 +282,7 @@ public final class SyncManager {
                 try applierRegistry.apply(change: change, to: connection)
                 applied += 1
             } catch {
-                os_log(.error, "SwiftStoreSync: Failed to apply change %{public}@: %{public}@", String(describing: change.id), String(describing: error))
+                SwiftStoreLogger.error("Failed to apply change \(change.id): \(error)")
                 conflicts += 1
             }
         }

@@ -286,9 +286,7 @@ public final class ConnectionManager: Sendable {
                         do {
                             try migrator.apply(plan)
                         } catch {
-                            os_log(
-                                .error, "SwiftStore Migration Error: %{public}@",
-                                String(describing: error))
+                            SwiftStoreLogger.error("Migration Error: \(error)")
                             #if DEBUG
                                 fatalError("SwiftStore Migration Error: \(error)")
                             #else
@@ -297,8 +295,7 @@ public final class ConnectionManager: Sendable {
 
                         }
                     }
-                    os_log(
-                        .info, "SwiftStore Migration Plan:\n%{public}@", String(describing: plan))
+                    SwiftStoreLogger.info("Migration Plan:\n\(plan)")
                 }
             }
             setupTask.setValue(task)

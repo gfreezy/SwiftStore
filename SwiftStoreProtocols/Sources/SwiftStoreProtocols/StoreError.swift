@@ -1,4 +1,45 @@
 import Foundation
+import OSLog
+
+// MARK: - SwiftStore Logger
+
+/// SwiftStore logging utility that includes file and line information
+public enum SwiftStoreLogger {
+    /// Log an error message with file and line information
+    @inlinable
+    public static func error(
+        _ message: String,
+        file: String = #file,
+        line: Int = #line
+    ) {
+        let fileName = (file as NSString).lastPathComponent
+        os_log(.error, "SwiftStore: [%{public}@:%d] %{public}@", fileName, line, message)
+    }
+
+    /// Log an info message with file and line information
+    @inlinable
+    public static func info(
+        _ message: String,
+        file: String = #file,
+        line: Int = #line
+    ) {
+        let fileName = (file as NSString).lastPathComponent
+        os_log(.info, "SwiftStore: [%{public}@:%d] %{public}@", fileName, line, message)
+    }
+
+    /// Log a debug message with file and line information
+    @inlinable
+    public static func debug(
+        _ message: String,
+        file: String = #file,
+        line: Int = #line
+    ) {
+        let fileName = (file as NSString).lastPathComponent
+        os_log(.debug, "SwiftStore: [%{public}@:%d] %{public}@", fileName, line, message)
+    }
+}
+
+// MARK: - Store Errors
 
 /// Errors that can occur during store operations
 public enum StoreError: Error, Sendable {
