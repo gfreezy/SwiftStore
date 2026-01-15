@@ -4,7 +4,7 @@ import Foundation
 public enum StoreError: Error, Sendable {
     case databaseNotFound
     case invalidSchema(String)
-    case entityNotFound(UUIDV7)
+    case entityNotFound(SQLiteValue)
     case constraintViolation(String)
     case migrationFailed(String)
     case queryFailed(String)

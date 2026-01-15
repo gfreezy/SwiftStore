@@ -113,7 +113,7 @@ public struct SQL: ExpressibleByStringInterpolation, Sendable {
         }
 
         /// Interpolate optional value as parameter
-        public mutating func appendInterpolation<V: SQLiteComparable>(_ value: V?) {
+        public mutating func appendInterpolation<V: SQLiteValueComparable>(_ value: V?) {
             sql += "?"
             if let value = value {
                 values.append(value.sqliteValue)

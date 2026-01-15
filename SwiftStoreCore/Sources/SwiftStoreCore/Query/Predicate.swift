@@ -94,11 +94,11 @@ public struct Columns<T>: Sendable {
 
 // MARK: - Column-based operators
 
-public func == <T, V: SQLiteComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func == <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) = ?", values: [rhs.sqliteValue])
 }
 
-public func == <T, V: SQLiteComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
+public func == <T, V: SQLiteValueComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
     if let value = rhs {
         return Predicate(sql: "\(lhs.name) = ?", values: [value.sqliteValue])
     } else {
@@ -106,11 +106,11 @@ public func == <T, V: SQLiteComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicat
     }
 }
 
-public func != <T, V: SQLiteComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func != <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) != ?", values: [rhs.sqliteValue])
 }
 
-public func != <T, V: SQLiteComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
+public func != <T, V: SQLiteValueComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
     if let value = rhs {
         return Predicate(sql: "\(lhs.name) != ?", values: [value.sqliteValue])
     } else {
@@ -118,40 +118,40 @@ public func != <T, V: SQLiteComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicat
     }
 }
 
-public func < <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func < <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) < ?", values: [rhs.sqliteValue])
 }
 
-public func < <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
+public func < <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) < ?", values: [rhs.sqliteValue])
 }
 
-public func <= <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) <= ?", values: [rhs.sqliteValue])
 }
 
-public func <= <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
+public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) <= ?", values: [rhs.sqliteValue])
 }
 
-public func > <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func > <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) > ?", values: [rhs.sqliteValue])
 }
 
-public func > <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
+public func > <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) > ?", values: [rhs.sqliteValue])
 }
 
-public func >= <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
+public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) >= ?", values: [rhs.sqliteValue])
 }
 
-public func >= <T, V: SQLiteComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
+public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
     Predicate(sql: "\(lhs.name) >= ?", values: [rhs.sqliteValue])
 }
 
 /// IN operator for Column
-public func ~= <T, V: SQLiteComparable>(lhs: Column<T, V>, rhs: [V]) -> Predicate<T> {
+public func ~= <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: [V]) -> Predicate<T> {
     guard !rhs.isEmpty else {
         return Predicate(sql: "0 = 1", values: [])
     }
@@ -200,7 +200,7 @@ public extension Column where V == String? {
 
 // MARK: - Column extensions for BETWEEN and IN
 
-public extension Column where V: SQLiteComparable & Comparable {
+public extension Column where V: SQLiteValueComparable & Comparable {
     func between(_ lower: V, and upper: V) -> Predicate<T> {
         Predicate(
             sql: "\(name) BETWEEN ? AND ?",
@@ -236,12 +236,12 @@ public extension Column {
 
 // MARK: - Operator overloads for building predicates
 
-public func == <T, V: SQLiteComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func == <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) = ?", values: [rhs.sqliteValue])
 }
 
-public func == <T, V: SQLiteComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
+public func == <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
     let column = columnName(for: lhs)
     if let value = rhs {
         return Predicate(sql: "\(column) = ?", values: [value.sqliteValue])
@@ -250,12 +250,12 @@ public func == <T, V: SQLiteComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predica
     }
 }
 
-public func != <T, V: SQLiteComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func != <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) != ?", values: [rhs.sqliteValue])
 }
 
-public func != <T, V: SQLiteComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
+public func != <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
     let column = columnName(for: lhs)
     if let value = rhs {
         return Predicate(sql: "\(column) != ?", values: [value.sqliteValue])
@@ -264,44 +264,44 @@ public func != <T, V: SQLiteComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predica
     }
 }
 
-public func < <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func < <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
 }
 
-public func <= <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
 }
 
-public func > <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func > <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
 }
 
-public func >= <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
+public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
 }
 
 // MARK: - Optional comparison operators
 
-public func < <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
+public func < <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
 }
 
-public func <= <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
+public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
 }
 
-public func > <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
+public func > <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
 }
 
-public func >= <T, V: SQLiteComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
+public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
     let column = columnName(for: lhs)
     return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
 }
@@ -348,7 +348,7 @@ public extension KeyPath where Value == String? {
 
 // MARK: - IN predicate
 
-public func ~= <T, V: SQLiteComparable>(lhs: KeyPath<T, V>, rhs: [V]) -> Predicate<T> {
+public func ~= <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: [V]) -> Predicate<T> {
     let column = columnName(for: lhs)
     guard !rhs.isEmpty else {
         // Empty array - always false
@@ -361,7 +361,7 @@ public func ~= <T, V: SQLiteComparable>(lhs: KeyPath<T, V>, rhs: [V]) -> Predica
 
 // MARK: - BETWEEN predicate
 
-public extension KeyPath where Value: SQLiteComparable & Comparable {
+public extension KeyPath where Value: SQLiteValueComparable & Comparable {
     /// Create a BETWEEN predicate
     func between(_ lower: Value, and upper: Value) -> Predicate<Root> {
         let column = columnName(for: self)
@@ -372,7 +372,7 @@ public extension KeyPath where Value: SQLiteComparable & Comparable {
     }
 }
 
-public extension KeyPath where Value: SQLiteComparable {
+public extension KeyPath where Value: SQLiteValueComparable {
     /// IN predicate with array (alternative syntax)
     func `in`(_ values: [Value]) -> Predicate<Root> {
         self ~= values

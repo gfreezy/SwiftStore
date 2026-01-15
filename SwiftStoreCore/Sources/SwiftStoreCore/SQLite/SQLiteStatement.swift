@@ -94,6 +94,21 @@ public final class SQLiteStatementImpl: SQLiteStatementProtocol {
         try bind(index, value.timeIntervalSince1970)
     }
 
+    public func bind(_ index: Int32, _ value: SQLiteValue) throws {
+        switch value {
+        case .null:
+            try bindNull(index)
+        case .integer(let value):
+            try bind(index, value)
+        case .real(let value):
+            try bind(index, value)
+        case .text(let value):
+            try bind(index, value)
+        case .blob(let value):
+            try bind(index, value)
+        }
+    }
+
     // MARK: - Column Access
 
     public func columnInt(_ index: Int32) -> Int {

@@ -79,6 +79,33 @@ struct MacroOrder {
     var updatedAt: Date = Date()
 }
 
+// MARK: - Readonly Test Entities
+
+/// Readonly entity - can use any id type and no createdAt/updatedAt required
+@Entity(readonly: true)
+struct LocalOnlyConfig {
+    var id: Int
+    var key: String
+    var value: String
+}
+
+/// Readonly entity using String id
+@Entity(readonly: true)
+struct LocalCache {
+    var id: String
+    var data: String
+    var expiry: Int?
+}
+
+/// Readonly entity but still has createdAt (optional)
+@Entity(readonly: true)
+struct LocalNote {
+    var id: Int
+    var title: String
+    var content: String
+    var createdAt: Date = Date()
+}
+
 // MARK: - SyncKey Test Entities
 
 /// Entity with single field sync key (no id field)
@@ -1343,5 +1370,96 @@ struct MacroCompilationTests {
         #expect(obj.addresses[2].street == "")
         #expect(obj.addresses[2].city == "")
         #expect(obj.addresses[2].zip == "")
+    }
+
+    // MARK: - Sync Disabled Tests
+
+    @Test("Entity with sync disabled and Int id")
+    func testSyncDisabledIntId() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [LocalOnlyConfig.self])
+
+        // Create entity with Int id
+        let config = LocalOnlyConfig(id: 1, key: "theme", value: "dark")
+        try store.connection.insert(config)
+
+        // Verify columns - no createdAt/updatedAt required
+        let columns = LocalOnlyConfig.columns
+        #expect(columns.count == 3)
+        #expect(columns[0].name == "id")
+        #expect(columns[0].primaryKey == true)
+        #expect(columns[1].name == "key")
+        #expect(columns[2].name == "value")
+
+        // Verify CRUD works (use filter since get only works with UUIDV7)
+        let fetched = try LocalOnlyConfig.filter { $0.id == 1 }.first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.key == "theme")
+        #expect(fetched?.value == "dark")
+
+        // Update using updateAll with assignment builder
+        try LocalOnlyConfig.filter { $0.id == 1 }.updateAll(store.connection) {
+            $0.value.set("light")
+        }
+
+        let fetchedAfterUpdate = try LocalOnlyConfig.filter { $0.id == 1 }.first(store.connection)
+        #expect(fetchedAfterUpdate?.value == "light")
+    }
+
+    @Test("Entity with sync disabled and String id")
+    func testSyncDisabledStringId() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [LocalCache.self])
+
+        // Create entity with String id
+        let cache = LocalCache(id: "user:123", data: "cached data", expiry: 3600)
+        try store.connection.insert(cache)
+
+        // Verify columns
+        let columns = LocalCache.columns
+        #expect(columns.count == 3)
+        #expect(columns[0].name == "id")
+        #expect(columns[0].primaryKey == true)
+        #expect(columns[0].type == .text)
+
+        // Verify CRUD works (use filter since get only works with UUIDV7)
+        let fetched = try LocalCache.filter { $0.id == "user:123" }.first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.data == "cached data")
+        #expect(fetched?.expiry == 3600)
+    }
+
+    @Test("Entity with sync disabled but optional timestamp fields")
+    func testSyncDisabledWithOptionalTimestamps() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [LocalNote.self])
+
+        // Create entity - has createdAt but updatedAt is not required for sync:false
+        let note = LocalNote(id: 1, title: "Test Note", content: "Note content")
+        try store.connection.insert(note)
+
+        // Verify columns - createdAt is present but updatedAt is not required
+        let columns = LocalNote.columns
+        #expect(columns.count == 4)
+        #expect(columns.contains { $0.name == "created_at" })
+        #expect(!columns.contains { $0.name == "updated_at" })
+
+        // Verify CRUD works (use filter since get only works with UUIDV7)
+        let fetched = try LocalNote.filter { $0.id == 1 }.first(store.connection)
+        #expect(fetched != nil)
+        #expect(fetched?.title == "Test Note")
+    }
+
+    @Test("Sync disabled entity table name and syncKeyColumns")
+    func testSyncDisabledMetadata() {
+        // Table name should still work
+        #expect(LocalOnlyConfig.tableName == "local_only_config")
+        #expect(LocalCache.tableName == "local_cache")
+        #expect(LocalNote.tableName == "local_note")
+
+        // syncKeyColumns defaults to ["id"] for non-SyncKey entities
+        #expect(LocalOnlyConfig.syncKeyColumns == ["id"])
+        #expect(LocalCache.syncKeyColumns == ["id"])
+        #expect(LocalNote.syncKeyColumns == ["id"])
     }
 }

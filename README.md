@@ -74,6 +74,31 @@ struct User {
 }
 ```
 
+### Readonly Entities (readonly: true)
+
+For entities that don't need synchronization (local cache, settings, imported data, etc.):
+
+```swift
+// readonly: true allows:
+// - Any id type (Int, String, UUID, etc.) instead of UUIDV7
+// - No createdAt/updatedAt fields required
+// - Can only be used with readonly ConnectionManager
+
+@Entity(readonly: true)
+struct LocalSettings {
+    var id: Int                    // Int id instead of UUIDV7
+    var key: String
+    var value: String
+}
+
+@Entity(readonly: true)
+struct CacheEntry {
+    var id: String                 // String id
+    var data: String
+    var timestamp: Date = Date()   // Optional timestamp
+}
+```
+
 ### Multi-device Sync
 
 ```swift
@@ -183,6 +208,23 @@ struct Favorite {
     var postId: UUIDV7
     let createdAt: Date
     let updatedAt: Date
+}
+
+// MARK: - Readonly Entity (for local-only data, flexible id type)
+
+@Entity(readonly: true)
+struct LocalConfig {
+    var id: Int                                      // Can use Int, String, or any type
+    var key: String
+    var value: String
+    // No createdAt/updatedAt required
+}
+
+@Entity(readonly: true)
+struct CacheEntry {
+    var id: String                                   // String id
+    var data: String
+    var expiry: Int?
 }
 ```
 
@@ -307,12 +349,31 @@ try User.deleteAll(connection)  // Delete all
 ### 5. Connection Pool (Single-Writer Multiple-Reader)
 
 ```swift
-// Create connection manager
+// Create connection manager with default options
 let manager = try ConnectionManager(
     path: dbPath,
-    options: .init(walMode: true),
-    maxReadConnections: 4
+    entities: [User.self, Post.self]
 )
+
+// Custom options
+let managerWithOptions = try ConnectionManager(
+    path: dbPath,
+    entities: [User.self, Post.self],
+    options: ConnectionOptions(
+        readonly: false,           // Read-write mode (default)
+        synchronous: 1,            // NORMAL sync mode
+        cacheSize: -2000,          // 2MB cache
+        maxReadConnections: 4      // Reader pool size
+    )
+)
+
+// Readonly mode - for read-only access to existing database
+let readonlyManager = try ConnectionManager(
+    path: dbPath,
+    entities: [User.self],
+    options: ConnectionOptions(readonly: true)
+)
+// Note: readonly mode disables WAL, write(), migrate(), and sync()
 
 // Concurrent reads (using connection pool)
 async let users1 = manager.read { conn in
@@ -540,11 +601,11 @@ SwiftStoreConnectionQueue
 | Package | Description |
 |---------|-------------|
 | [SwiftStoreProtocols](./SwiftStoreProtocols/) | Protocol definitions - EntityProtocol, SQLiteCodable, etc. |
-| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity, #Index, #SyncKey, @Embedded |
+| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity(readonly:), #Index, #SyncKey, @Embedded |
 | [SwiftStoreCore](./SwiftStoreCore/) | Core functionality - SQLite connection, query builder, migration |
 | [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
-| [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool |
+| [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool, readonly mode |
 
 ## Supported Platforms
 

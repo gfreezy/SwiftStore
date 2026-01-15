@@ -8,11 +8,15 @@
 
 /// Entity macro that generates EntityProtocol conformance
 /// - Parameter tableName: Optional custom table name. If not provided, uses snake_case of struct name.
-/// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date()
+/// - Parameter readonly: Whether the entity is readonly/local-only (default: false).
+///   - When false (default): `id` must be UUIDV7, `createdAt` and `updatedAt` are required, entity can be synced
+///   - When true: `id` can be any type (Int, String, etc.), timestamps are optional, entity is local-only
+/// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date() (when readonly: false)
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(id), named(SyncKeyID))
+/// - Note: Readonly entities can only be used with ConnectionManager in readonly mode
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(id), named(SyncKeyID), named(isReadonly))
 @attached(extension, conformances: EntityProtocol, Identifiable, Sendable, Equatable, Hashable)
-public macro Entity(tableName: String? = nil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
+public macro Entity(tableName: String? = nil, readonly: Bool = false) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
 

@@ -195,6 +195,22 @@ public final class ConnectionManager: Sendable {
                 "Cannot use sync with readonly mode. Sync requires write access.")
         }
 
+        // Validate: readonly entities can only be used with readonly connection
+        let readonlyEntities = entities.filter { $0.isReadonly }
+        let nonReadonlyEntities = entities.filter { !$0.isReadonly }
+
+        if options.readonly && !nonReadonlyEntities.isEmpty {
+            let names = nonReadonlyEntities.map { $0.tableName }.joined(separator: ", ")
+            throw ConnectionManagerError.invalidConfiguration(
+                "Readonly connection can only use readonly entities. Non-readonly entities found: \(names)")
+        }
+
+        if !options.readonly && !readonlyEntities.isEmpty {
+            let names = readonlyEntities.map { $0.tableName }.joined(separator: ", ")
+            throw ConnectionManagerError.invalidConfiguration(
+                "Readonly entities can only be used with readonly connection. Readonly entities found: \(names)")
+        }
+
         self.path = path
         self.options = options
         self.entities = entities

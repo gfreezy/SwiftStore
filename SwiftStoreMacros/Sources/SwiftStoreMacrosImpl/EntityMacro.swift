@@ -21,15 +21,35 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
         // Parse optional tableName argument
         let tableName: String
-        if let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-            let tableNameArg = arguments.first(where: { $0.label?.text == "tableName" }),
-            let stringLiteral = tableNameArg.expression.as(StringLiteralExprSyntax.self),
-            let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self)
-        {
-            tableName = segment.content.text
+        // Parse readonly parameter (default: false)
+        let isReadonly: Bool
+
+        if let arguments = node.arguments?.as(LabeledExprListSyntax.self) {
+            // Parse tableName
+            if let tableNameArg = arguments.first(where: { $0.label?.text == "tableName" }),
+                let stringLiteral = tableNameArg.expression.as(StringLiteralExprSyntax.self),
+                let segment = stringLiteral.segments.first?.as(StringSegmentSyntax.self)
+            {
+                tableName = segment.content.text
+            } else {
+                tableName = MacroHelpers.camelToSnakeCase(structName)
+            }
+
+            // Parse readonly parameter
+            if let readonlyArg = arguments.first(where: { $0.label?.text == "readonly" }),
+                let boolLiteral = readonlyArg.expression.as(BooleanLiteralExprSyntax.self)
+            {
+                isReadonly = boolLiteral.literal.text == "true"
+            } else {
+                isReadonly = false
+            }
         } else {
             tableName = MacroHelpers.camelToSnakeCase(structName)
+            isReadonly = false
         }
+
+        // syncEnabled is the inverse of readonly
+        let syncEnabled = !isReadonly
 
         var properties = structDecl.extractProperties()
 
@@ -38,9 +58,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let hasSyncKey = syncKeyInfo != nil
         let syncKeyColumns = syncKeyInfo?.columns ?? ["id"]
 
-        // Validate required fields based on whether #SyncKey is used
+        // Validate required fields based on whether #SyncKey is used and sync is enabled
         try validateAndAddDefaultValuesForRequiredFields(
-            properties: &properties, structName: structName, hasSyncKey: hasSyncKey
+            properties: &properties, structName: structName, hasSyncKey: hasSyncKey, syncEnabled: syncEnabled
         )
 
         // Generate column definitions
@@ -133,12 +153,17 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             public static var syncKeyColumns: [String] { [\(raw: syncKeyColumnsStr)] }
             """
 
+        // Generate isReadonly property
+        let isReadonlyDecl: DeclSyntax = """
+            public static var isReadonly: Bool { \(raw: isReadonly ? "true" : "false") }
+            """
+
         // Generate init method and Decodable init using shared implementation from EmbeddedMacro
         let initDecl = EmbeddedMacro.generateMemberwiseInit(properties: properties)
         let decodableInitDecl = EmbeddedMacro.generateDecodableInit(properties: properties, typeName: structName)
 
         var result: [DeclSyntax] = [
-            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, initDecl,
+            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, isReadonlyDecl, initDecl,
             decodableInitDecl,
         ]
 
@@ -384,9 +409,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
 
     /// Validate that required fields exist with correct types and add default values if missing
     /// - hasSyncKey: If true, #SyncKey is used and id field is NOT allowed
-    ///               If false, id field is required and #SyncKey is not allowed
+    ///               If false, id field is required (UUIDV7 only when syncEnabled)
+    /// - syncEnabled: If true, enforce UUIDV7 id and require createdAt/updatedAt
+    ///                If false, allow any id type and createdAt/updatedAt are optional
     private static func validateAndAddDefaultValuesForRequiredFields(
-        properties: inout [PropertyInfo], structName: String, hasSyncKey: Bool
+        properties: inout [PropertyInfo], structName: String, hasSyncKey: Bool, syncEnabled: Bool
     ) throws {
         let hasIdField = properties.contains(where: { $0.name == "id" })
 
@@ -396,18 +423,28 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 throw MacroError.syncKeyAndIdMutuallyExclusive(structName: structName)
             }
         } else {
-            // When no #SyncKey, id: UUIDV7 is required
+            // id field is required
             guard let idIndex = properties.firstIndex(where: { $0.name == "id" }) else {
-                throw MacroError.missingRequiredField(
-                    structName: structName,
-                    fieldName: "id",
-                    expectedType: "UUIDV7"
-                )
+                if syncEnabled {
+                    throw MacroError.missingRequiredField(
+                        structName: structName,
+                        fieldName: "id",
+                        expectedType: "UUIDV7"
+                    )
+                } else {
+                    throw MacroError.missingRequiredField(
+                        structName: structName,
+                        fieldName: "id",
+                        expectedType: "any type"
+                    )
+                }
             }
 
             let idProp = properties[idIndex]
             let idBaseType = idProp.type.replacingOccurrences(of: "?", with: "")
-            if idBaseType != "UUIDV7" {
+
+            // When sync is enabled, id must be UUIDV7
+            if syncEnabled && idBaseType != "UUIDV7" {
                 throw MacroError.wrongFieldType(
                     structName: structName,
                     fieldName: "id",
@@ -423,74 +460,77 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 )
             }
 
-            // Add default value for id if not present
-            if properties[idIndex].defaultValue == nil {
+            // Add default value for id if not present (only for UUIDV7)
+            if syncEnabled && properties[idIndex].defaultValue == nil {
                 properties[idIndex].defaultValue = "UUIDV7()"
             }
         }
 
-        // Check for createdAt: Date (always required)
-        guard let createdAtIndex = properties.firstIndex(where: { $0.name == "createdAt" }) else {
-            throw MacroError.missingRequiredField(
-                structName: structName,
-                fieldName: "createdAt",
-                expectedType: "Date"
-            )
-        }
+        // createdAt and updatedAt are only required when sync is enabled
+        if syncEnabled {
+            // Check for createdAt: Date
+            guard let createdAtIndex = properties.firstIndex(where: { $0.name == "createdAt" }) else {
+                throw MacroError.missingRequiredField(
+                    structName: structName,
+                    fieldName: "createdAt",
+                    expectedType: "Date"
+                )
+            }
 
-        let createdAtProp = properties[createdAtIndex]
-        let createdAtBaseType = createdAtProp.type.replacingOccurrences(of: "?", with: "")
-        if createdAtBaseType != "Date" {
-            throw MacroError.wrongFieldType(
-                structName: structName,
-                fieldName: "createdAt",
-                expectedType: "Date",
-                actualType: createdAtProp.type
-            )
-        }
+            let createdAtProp = properties[createdAtIndex]
+            let createdAtBaseType = createdAtProp.type.replacingOccurrences(of: "?", with: "")
+            if createdAtBaseType != "Date" {
+                throw MacroError.wrongFieldType(
+                    structName: structName,
+                    fieldName: "createdAt",
+                    expectedType: "Date",
+                    actualType: createdAtProp.type
+                )
+            }
 
-        if createdAtProp.isOptional {
-            throw MacroError.fieldMustNotBeOptional(
-                structName: structName,
-                fieldName: "createdAt"
-            )
-        }
+            if createdAtProp.isOptional {
+                throw MacroError.fieldMustNotBeOptional(
+                    structName: structName,
+                    fieldName: "createdAt"
+                )
+            }
 
-        // Add default value for createdAt if not present
-        if properties[createdAtIndex].defaultValue == nil {
-            properties[createdAtIndex].defaultValue = "Date()"
-        }
+            // Add default value for createdAt if not present
+            if properties[createdAtIndex].defaultValue == nil {
+                properties[createdAtIndex].defaultValue = "Date()"
+            }
 
-        // Check for updatedAt: Date (always required)
-        guard let updatedAtIndex = properties.firstIndex(where: { $0.name == "updatedAt" }) else {
-            throw MacroError.missingRequiredField(
-                structName: structName,
-                fieldName: "updatedAt",
-                expectedType: "Date"
-            )
-        }
+            // Check for updatedAt: Date
+            guard let updatedAtIndex = properties.firstIndex(where: { $0.name == "updatedAt" }) else {
+                throw MacroError.missingRequiredField(
+                    structName: structName,
+                    fieldName: "updatedAt",
+                    expectedType: "Date"
+                )
+            }
 
-        let updatedAtProp = properties[updatedAtIndex]
-        let updatedAtBaseType = updatedAtProp.type.replacingOccurrences(of: "?", with: "")
-        if updatedAtBaseType != "Date" {
-            throw MacroError.wrongFieldType(
-                structName: structName,
-                fieldName: "updatedAt",
-                expectedType: "Date",
-                actualType: updatedAtProp.type
-            )
-        }
+            let updatedAtProp = properties[updatedAtIndex]
+            let updatedAtBaseType = updatedAtProp.type.replacingOccurrences(of: "?", with: "")
+            if updatedAtBaseType != "Date" {
+                throw MacroError.wrongFieldType(
+                    structName: structName,
+                    fieldName: "updatedAt",
+                    expectedType: "Date",
+                    actualType: updatedAtProp.type
+                )
+            }
 
-        if updatedAtProp.isOptional {
-            throw MacroError.fieldMustNotBeOptional(
-                structName: structName,
-                fieldName: "updatedAt"
-            )
-        }
+            if updatedAtProp.isOptional {
+                throw MacroError.fieldMustNotBeOptional(
+                    structName: structName,
+                    fieldName: "updatedAt"
+                )
+            }
 
-        // Add default value for updatedAt if not present
-        if properties[updatedAtIndex].defaultValue == nil {
-            properties[updatedAtIndex].defaultValue = "Date()"
+            // Add default value for updatedAt if not present
+            if properties[updatedAtIndex].defaultValue == nil {
+                properties[updatedAtIndex].defaultValue = "Date()"
+            }
         }
     }
 }

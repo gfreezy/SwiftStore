@@ -83,7 +83,9 @@ public struct DatabaseSchemaBuilder {
     private func buildTriggers(for entity: any EntityProtocol.Type) -> [TriggerSchema] {
         var triggers: [TriggerSchema] = []
 
-        if options.createUpdateTrigger {
+        // Only create update trigger if entity has updated_at column
+        let hasUpdatedAt = entity.columns.contains { $0.name == "updated_at" }
+        if options.createUpdateTrigger && hasUpdatedAt {
             triggers.append(buildUpdateTrigger(for: entity.tableName))
         }
 

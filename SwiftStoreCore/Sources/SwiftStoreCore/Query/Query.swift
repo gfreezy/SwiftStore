@@ -170,7 +170,7 @@ public struct Query<T: EntityProtocol> {
     // MARK: - Aggregate Functions
 
     /// Get the minimum value of a column
-    public func min<V: SQLiteComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V>) throws -> V? {
+    public func min<V: SQLiteValueComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V>) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -185,7 +185,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the minimum value of an optional column
-    public func min<V: SQLiteComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V?>) throws -> V? {
+    public func min<V: SQLiteValueComparable>(_ connection: SQLiteConnection, _ keyPath: KeyPath<T, V?>) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MIN(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -200,7 +200,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the maximum value of a column
-    public func max<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, _ connection: SQLiteConnection) throws -> V? {
+    public func max<V: SQLiteValueComparable>(_ keyPath: KeyPath<T, V>, _ connection: SQLiteConnection) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MAX(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -215,7 +215,7 @@ public struct Query<T: EntityProtocol> {
     }
 
     /// Get the maximum value of an optional column
-    public func max<V: SQLiteComparable>(_ keyPath: KeyPath<T, V?>, _ connection: SQLiteConnection) throws -> V? {
+    public func max<V: SQLiteValueComparable>(_ keyPath: KeyPath<T, V?>, _ connection: SQLiteConnection) throws -> V? {
         let column = columnName(for: keyPath)
         var sql = "SELECT MAX(\(column)) FROM \(T.tableName)"
         var values: [SQLiteValue] = []
@@ -456,11 +456,11 @@ public struct AssignmentBuilder<T> {
 /// Example: `.updateAll([\.name <- "Alice"])`
 infix operator <- : AssignmentPrecedence
 
-public func <- <T, V: SQLiteComparable>(keyPath: KeyPath<T, V>, value: V) -> ColumnAssignment<T> {
+public func <- <T, V: SQLiteValueComparable>(keyPath: KeyPath<T, V>, value: V) -> ColumnAssignment<T> {
     ColumnAssignment(column: columnName(for: keyPath), value: value.sqliteValue)
 }
 
-public func <- <T, V: SQLiteComparable>(keyPath: KeyPath<T, V?>, value: V?) -> ColumnAssignment<T> {
+public func <- <T, V: SQLiteValueComparable>(keyPath: KeyPath<T, V?>, value: V?) -> ColumnAssignment<T> {
     if let value = value {
         return ColumnAssignment(column: columnName(for: keyPath), value: value.sqliteValue)
     } else {
@@ -470,7 +470,7 @@ public func <- <T, V: SQLiteComparable>(keyPath: KeyPath<T, V?>, value: V?) -> C
 
 // MARK: - Column assignment operators for closure syntax
 
-extension Column where V: SQLiteComparable {
+extension Column where V: SQLiteValueComparable {
     /// Set column to value: `$0.name.set("Alice")`
     public func set(_ value: V) -> ColumnAssignment<T> {
         ColumnAssignment(column: name, value: value.sqliteValue)
@@ -524,17 +524,17 @@ public func -= <T>(column: Column<T, Double>, value: Double) -> ColumnAssignment
 
 extension Query {
     /// Filter where column equals value (convenience for simple equality)
-    public func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, equals value: V) -> Query<T> {
+    public func filter<V: SQLiteValueComparable>(_ keyPath: KeyPath<T, V>, equals value: V) -> Query<T> {
         filter(keyPath == value)
     }
 
     /// Filter where column is in array
-    public func filter<V: SQLiteComparable>(_ keyPath: KeyPath<T, V>, in values: [V]) -> Query<T> {
+    public func filter<V: SQLiteValueComparable>(_ keyPath: KeyPath<T, V>, in values: [V]) -> Query<T> {
         filter(keyPath ~= values)
     }
 
     /// Filter where column is between two values
-    public func filter<V: SQLiteComparable & Comparable>(
+    public func filter<V: SQLiteValueComparable & Comparable>(
         _ keyPath: KeyPath<T, V>,
         between lower: V,
         and upper: V
@@ -545,14 +545,14 @@ extension Query {
 
 // MARK: - Identifiable Entity Extensions
 
-extension Query where T: Identifiable, T.ID == UUIDV7 {
+extension Query where T: Identifiable, T.ID: SQLiteValueComparable {
     /// Filter by primary key (only available for entities with id field)
-    public func filter(id: UUIDV7) -> Query<T> {
+    public func filter(id: T.ID) -> Query<T> {
         filter(\T.id == id)
     }
 
     /// Filter by multiple primary keys (only available for entities with id field)
-    public func filter(ids: [UUIDV7]) -> Query<T> {
+    public func filter(ids: [T.ID]) -> Query<T> {
         filter(\T.id ~= ids)
     }
 }

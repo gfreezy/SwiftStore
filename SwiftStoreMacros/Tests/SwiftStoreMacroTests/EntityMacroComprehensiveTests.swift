@@ -137,6 +137,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ["id"]
                 }
 
+                public static var isReadonly: Bool {
+                    false
+                }
+
                 public init(
                     id: UUIDV7 = UUIDV7(),
                     name: String,
@@ -324,6 +328,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ["email"]
                 }
 
+                public static var isReadonly: Bool {
+                    false
+                }
+
                 public init(
                     email: String,
                     name: String,
@@ -470,6 +478,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ["id"]
                 }
 
+                public static var isReadonly: Bool {
+                    false
+                }
+
                 public init(
                     id: UUIDV7 = UUIDV7(),
                     sku: String,
@@ -536,6 +548,556 @@ final class EntityMacroComprehensiveTests: XCTestCase {
             }
 
             extension Product: Hashable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    // MARK: - Readonly Entity Tests
+
+    /// Test Entity with readonly = true and Int id
+    func testReadonlyEntityWithIntId() {
+        assertMacroExpansion(
+            """
+            @Entity(readonly: true)
+            struct LocalConfig {
+                var id: Int
+                var key: String
+                var value: String
+            }
+            """,
+            expandedSource: """
+            struct LocalConfig {
+                var id: Int
+                var key: String
+                var value: String
+
+                public static var tableName: String {
+                    "local_config"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .integer, primaryKey: true),
+                        ColumnDefinition(name: "key", type: .text),
+                        ColumnDefinition(name: "value", type: .text)
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                    result["key"] = try self.key.sqliteEncode()
+                    result["value"] = try self.value.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = try Int(from: statement.columnValue(Int32(0), type: .integer))
+                    let _key = try String(from: statement.columnValue(Int32(1), type: .text))
+                    let _value = try String(from: statement.columnValue(Int32(2), type: .text))
+                    return Self(id: _id, key: _key, value: _value)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public static var isReadonly: Bool {
+                    true
+                }
+
+                public init(
+                    id: Int,
+                    key: String,
+                    value: String
+                ) {
+                    self.id = id
+                    self.key = key
+                    self.value = value
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case key
+                    case value
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decode(Int.self, forKey: .id)
+                    self.key = try container.decode(String.self, forKey: .key)
+                    self.value = try container.decode(String.self, forKey: .value)
+                }
+            }
+
+            extension LocalConfig: EntityProtocol {
+            }
+
+            extension LocalConfig: Identifiable {
+            }
+
+            extension LocalConfig: Sendable {
+            }
+
+            extension LocalConfig: Equatable {
+            }
+
+            extension LocalConfig: Hashable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    /// Test Entity with readonly = true and String id
+    func testReadonlyEntityWithStringId() {
+        assertMacroExpansion(
+            """
+            @Entity(readonly: true)
+            struct CacheEntry {
+                var id: String
+                var data: String
+                var expiresAt: Double?
+            }
+            """,
+            expandedSource: """
+            struct CacheEntry {
+                var id: String
+                var data: String
+                var expiresAt: Double?
+
+                public static var tableName: String {
+                    "cache_entry"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .text, primaryKey: true),
+                        ColumnDefinition(name: "data", type: .text),
+                        ColumnDefinition(name: "expires_at", type: .real, nullable: true)
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                    result["data"] = try self.data.sqliteEncode()
+                    result["expires_at"] = try self.expiresAt.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = try String(from: statement.columnValue(Int32(0), type: .text))
+                    let _data = try String(from: statement.columnValue(Int32(1), type: .text))
+                    let _expiresAt = try Optional<Double>(from: statement.columnValue(Int32(2), type: .real))
+                    return Self(id: _id, data: _data, expiresAt: _expiresAt)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public static var isReadonly: Bool {
+                    true
+                }
+
+                public init(
+                    id: String,
+                    data: String,
+                    expiresAt: Double?
+                ) {
+                    self.id = id
+                    self.data = data
+                    self.expiresAt = expiresAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case data
+                    case expiresAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decode(String.self, forKey: .id)
+                    self.data = try container.decode(String.self, forKey: .data)
+                    self.expiresAt = try container.decodeIfPresent(Double.self, forKey: .expiresAt)
+                }
+            }
+
+            extension CacheEntry: EntityProtocol {
+            }
+
+            extension CacheEntry: Identifiable {
+            }
+
+            extension CacheEntry: Sendable {
+            }
+
+            extension CacheEntry: Equatable {
+            }
+
+            extension CacheEntry: Hashable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    /// Test Entity with readonly = true with optional timestamps
+    func testReadonlyEntityWithOptionalTimestamps() {
+        assertMacroExpansion(
+            """
+            @Entity(readonly: true)
+            struct ExternalData {
+                var id: Int
+                var name: String
+                var createdAt: Date?
+                var modifiedAt: Date?
+            }
+            """,
+            expandedSource: """
+            struct ExternalData {
+                var id: Int
+                var name: String
+                var createdAt: Date?
+                var modifiedAt: Date?
+
+                public static var tableName: String {
+                    "external_data"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .integer, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, nullable: true),
+                        ColumnDefinition(name: "modified_at", type: .real, nullable: true)
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                    result["name"] = try self.name.sqliteEncode()
+                    result["created_at"] = try self.createdAt.sqliteEncode()
+                    result["modified_at"] = try self.modifiedAt.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = try Int(from: statement.columnValue(Int32(0), type: .integer))
+                    let _name = try String(from: statement.columnValue(Int32(1), type: .text))
+                    let _createdAt = try Optional<Date>(from: statement.columnValue(Int32(2), type: .real))
+                    let _modifiedAt = try Optional<Date>(from: statement.columnValue(Int32(3), type: .real))
+                    return Self(id: _id, name: _name, createdAt: _createdAt, modifiedAt: _modifiedAt)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public static var isReadonly: Bool {
+                    true
+                }
+
+                public init(
+                    id: Int,
+                    name: String,
+                    createdAt: Date?,
+                    modifiedAt: Date?
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.modifiedAt = modifiedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case createdAt
+                    case modifiedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decode(Int.self, forKey: .id)
+                    self.name = try container.decode(String.self, forKey: .name)
+                    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+                    self.modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt)
+                }
+            }
+
+            extension ExternalData: EntityProtocol {
+            }
+
+            extension ExternalData: Identifiable {
+            }
+
+            extension ExternalData: Sendable {
+            }
+
+            extension ExternalData: Equatable {
+            }
+
+            extension ExternalData: Hashable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    /// Test Entity with readonly = true and custom table name
+    func testReadonlyEntityWithCustomTableName() {
+        assertMacroExpansion(
+            """
+            @Entity(tableName: "app_settings", readonly: true)
+            struct Settings {
+                var id: String
+                var theme: String = "light"
+                var fontSize: Int = 14
+            }
+            """,
+            expandedSource: """
+            struct Settings {
+                var id: String
+                var theme: String = "light"
+                var fontSize: Int = 14
+
+                public static var tableName: String {
+                    "app_settings"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .text, primaryKey: true),
+                        ColumnDefinition(name: "theme", type: .text, defaultValue: "'light'"),
+                        ColumnDefinition(name: "font_size", type: .integer, defaultValue: "14")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                    result["theme"] = try self.theme.sqliteEncode()
+                    result["font_size"] = try self.fontSize.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    let _id = try String(from: statement.columnValue(Int32(0), type: .text))
+                    var _theme: String
+                    do {
+                        _theme = try String(from: statement.columnValue(Int32(1), type: .text))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'Settings.theme': %{public}@", String(describing: error))
+                        _theme = "light"
+                    }
+                    var _fontSize: Int
+                    do {
+                        _fontSize = try Int(from: statement.columnValue(Int32(2), type: .integer))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'Settings.fontSize': %{public}@", String(describing: error))
+                        _fontSize = 14
+                    }
+                    return Self(id: _id, theme: _theme, fontSize: _fontSize)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public static var isReadonly: Bool {
+                    true
+                }
+
+                public init(
+                    id: String,
+                    theme: String = "light",
+                    fontSize: Int = 14
+                ) {
+                    self.id = id
+                    self.theme = theme
+                    self.fontSize = fontSize
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case theme
+                    case fontSize
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    self.id = try container.decode(String.self, forKey: .id)
+                    do {
+                        self.theme = try container.decode(String.self, forKey: .theme)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'Settings.theme': %{public}@", String(describing: error))
+                        self.theme = "light"
+                    }
+                    do {
+                        self.fontSize = try container.decode(Int.self, forKey: .fontSize)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'Settings.fontSize': %{public}@", String(describing: error))
+                        self.fontSize = 14
+                    }
+                }
+            }
+
+            extension Settings: EntityProtocol {
+            }
+
+            extension Settings: Identifiable {
+            }
+
+            extension Settings: Sendable {
+            }
+
+            extension Settings: Equatable {
+            }
+
+            extension Settings: Hashable {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    /// Test standard Entity (readonly = false) still generates isReadonly = false
+    func testStandardEntityHasIsReadonlyFalse() {
+        assertMacroExpansion(
+            """
+            @Entity
+            struct StandardEntity {
+                var id: UUIDV7
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+            }
+            """,
+            expandedSource: """
+            struct StandardEntity {
+                var id: UUIDV7
+                var name: String
+                let createdAt: Date
+                let updatedAt: Date
+
+                public static var tableName: String {
+                    "standard_entity"
+                }
+
+                public static var columns: [ColumnDefinition] {
+                    [
+                        ColumnDefinition(name: "id", type: .blob, primaryKey: true),
+                        ColumnDefinition(name: "name", type: .text),
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                    ]
+                }
+
+                public func sqliteEncode() throws -> [String: SQLiteValue] {
+                    var result: [String: SQLiteValue] = [:]
+                    result["id"] = try self.id.sqliteEncode()
+                    result["name"] = try self.name.sqliteEncode()
+                    result["created_at"] = try self.createdAt.sqliteEncode()
+                    result["updated_at"] = try self.updatedAt.sqliteEncode()
+                    return result
+                }
+
+                public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
+                    var _id: UUIDV7
+                    do {
+                        _id = try UUIDV7(from: statement.columnValue(Int32(0), type: .blob))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.id': %{public}@", String(describing: error))
+                        _id = UUIDV7()
+                    }
+                    let _name = try String(from: statement.columnValue(Int32(1), type: .text))
+                    var _createdAt: Date
+                    do {
+                        _createdAt = try Date(from: statement.columnValue(Int32(2), type: .real))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.createdAt': %{public}@", String(describing: error))
+                        _createdAt = Date()
+                    }
+                    var _updatedAt: Date
+                    do {
+                        _updatedAt = try Date(from: statement.columnValue(Int32(3), type: .real))
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.updatedAt': %{public}@", String(describing: error))
+                        _updatedAt = Date()
+                    }
+                    return Self(id: _id, name: _name, createdAt: _createdAt, updatedAt: _updatedAt)
+                }
+
+                public static var syncKeyColumns: [String] {
+                    ["id"]
+                }
+
+                public static var isReadonly: Bool {
+                    false
+                }
+
+                public init(
+                    id: UUIDV7 = UUIDV7(),
+                    name: String,
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
+                ) {
+                    self.id = id
+                    self.name = name
+                    self.createdAt = createdAt
+                    self.updatedAt = updatedAt
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case createdAt
+                    case updatedAt
+                }
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    do {
+                        self.id = try container.decode(UUIDV7.self, forKey: .id)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.id': %{public}@", String(describing: error))
+                        self.id = UUIDV7()
+                    }
+                    self.name = try container.decode(String.self, forKey: .name)
+                    do {
+                        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.createdAt': %{public}@", String(describing: error))
+                        self.createdAt = Date()
+                    }
+                    do {
+                        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    } catch {
+                        os_log(.error, "SwiftStore: Failed to decode 'StandardEntity.updatedAt': %{public}@", String(describing: error))
+                        self.updatedAt = Date()
+                    }
+                }
+            }
+
+            extension StandardEntity: EntityProtocol {
+            }
+
+            extension StandardEntity: Identifiable {
+            }
+
+            extension StandardEntity: Sendable {
+            }
+
+            extension StandardEntity: Equatable {
+            }
+
+            extension StandardEntity: Hashable {
             }
             """,
             macros: testMacros

@@ -64,7 +64,7 @@ public typealias SQLiteValueCodable = SQLiteValueEncodable & SQLiteValueDecodabl
 ///
 /// **Important**: Types conforming to `SQLiteComparable` must have infallible encoding.
 /// The `sqliteValue` property provides non-optional access for use in predicates.
-public protocol SQLiteComparable: SQLiteValueCodable {
+public protocol SQLiteValueComparable: SQLiteValueCodable {
     /// Non-optional SQLite value for use in predicates.
     /// Types conforming to SQLiteComparable must guarantee encoding never fails.
     var sqliteValue: SQLiteValue { get }
@@ -350,65 +350,65 @@ extension Optional: SQLiteValueDecodable where Wrapped: SQLiteValueDecodable {
 
 // MARK: - SQLiteComparable Conformances
 
-extension String: SQLiteComparable {
+extension String: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .text(self) }
 }
-extension Int: SQLiteComparable {
+extension Int: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension Int64: SQLiteComparable {
+extension Int64: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(self) }
 }
-extension Int32: SQLiteComparable {
+extension Int32: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension Int16: SQLiteComparable {
+extension Int16: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension Int8: SQLiteComparable {
+extension Int8: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension UInt: SQLiteComparable {
+extension UInt: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension UInt64: SQLiteComparable {
+extension UInt64: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension UInt32: SQLiteComparable {
+extension UInt32: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension UInt16: SQLiteComparable {
+extension UInt16: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension UInt8: SQLiteComparable {
+extension UInt8: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(Int64(self)) }
 }
-extension Double: SQLiteComparable {
+extension Double: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .real(self) }
 }
-extension Float: SQLiteComparable {
+extension Float: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .real(Double(self)) }
 }
-extension Bool: SQLiteComparable {
+extension Bool: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .integer(self ? 1 : 0) }
 }
-extension Date: SQLiteComparable {
+extension Date: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .real(timeIntervalSince1970) }
 }
-extension UUID: SQLiteComparable {
+extension UUID: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .text(uuidString) }
 }
-extension UUIDV7: SQLiteComparable {
+extension UUIDV7: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .blob(data) }
 }
-extension Data: SQLiteComparable {
+extension Data: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .blob(self) }
 }
-extension URL: SQLiteComparable {
+extension URL: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue { .text(absoluteString) }
 }
 
-extension Optional: SQLiteComparable where Wrapped: SQLiteComparable {
+extension Optional: SQLiteValueComparable where Wrapped: SQLiteValueComparable {
     public var sqliteValue: SQLiteValue {
         switch self {
         case .some(let value): return value.sqliteValue

@@ -17,23 +17,25 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 
 /// Protocol that all entities must conform to
 ///
-/// Required fields (enforced by @Entity macro):
+/// Required fields (enforced by @Entity macro when readonly: false):
 /// - Either `id: UUIDV7` (standard entity) OR `#SyncKey` (syncable entity without id)
 /// - `createdAt: Date` - Creation timestamp (auto-filled on insert)
 /// - `updatedAt: Date` - Update timestamp (auto-filled on insert/update)
 ///
+/// When readonly: true, `createdAt` and `updatedAt` are optional, and `id` can be any type.
+/// Readonly entities can only be used with ConnectionManager in readonly mode.
+///
 /// Note: Entities using @Entity macro will automatically get optimized SQLiteCodable implementations.
 public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
-    var createdAt: Date { get }
-    var updatedAt: Date { get }
-
     static var tableName: String { get }
     static var columns: [ColumnDefinition] { get }
     static var indexes: [IndexDefinition] { get }
     static var syncKeyColumns: [String] { get }
+    static var isReadonly: Bool { get }
 }
 
 /// Default implementations
 public extension EntityProtocol {
     static var indexes: [IndexDefinition] { [] }
+    static var isReadonly: Bool { false }
 }

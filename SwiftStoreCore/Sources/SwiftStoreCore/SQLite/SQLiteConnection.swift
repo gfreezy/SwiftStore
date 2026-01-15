@@ -438,11 +438,11 @@ public final class SQLiteConnection {
 
 public extension SQLiteConnection {
     /// Get entity by ID (only available for entities with id field)
-    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV7) throws -> E? where E.ID == UUIDV7 {
+    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws -> E? where E.ID: SQLiteValueComparable {
         // Use explicit column names from entity definition to ensure correct ordering
         // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
         let columnList = E.columns.filter { $0.generatedAs == nil }.map { $0.name }.joined(separator: ", ")
-        let sql: SQL = "SELECT \(raw: columnList) FROM \(E.self) WHERE id = \(id)"
+        let sql: SQL = "SELECT \(raw: columnList) FROM \(E.self) WHERE id = \(try id.sqliteEncode())"
         let stmt = try prepareAndBind(sql.sql, values: sql.values)
 
         guard try stmt.step() else {
@@ -454,7 +454,7 @@ public extension SQLiteConnection {
 
     /// Update an existing entity (only available for entities with id field)
     /// Timestamp (updated_at) is set automatically by trigger
-    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV7 {
+    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID: SQLiteValueComparable {
         var values = try encoder.encode(entity)
         // Remove id, created_at, updated_at - trigger will set updated_at
         values.removeValue(forKey: "id")
@@ -472,25 +472,26 @@ public extension SQLiteConnection {
                 try value.bind(to: stmt, at: Int32(index + 1))
             }
         }
+        let idValue = try entity.id.sqliteEncode()
 
         // Bind ID
-        try stmt.bind(Int32(columns.count + 1), entity.id.data)
+        try stmt.bind(Int32(columns.count + 1), idValue)
 
         try stmt.step()
 
         if changes == 0 {
-            throw StoreError.entityNotFound(entity.id)
+            throw StoreError.entityNotFound(idValue)
         }
     }
 
     /// Delete an entity (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID == UUIDV7 {
+    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID: SQLiteValueComparable {
         try delete(E.self, id: entity.id)
     }
 
     /// Delete entity by ID (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: UUIDV7) throws where E.ID == UUIDV7 {
-        let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(id)"
+    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws where E.ID: SQLiteValueComparable {
+        let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(try id.sqliteEncode())"
         try execute(sql)
     }
 }
