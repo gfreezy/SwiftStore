@@ -162,12 +162,12 @@ public struct ConnectionOptions: Sendable {
 /// Manages database connections with a single writer and multiple readers.
 /// This ensures thread-safety and optimal performance using SQLite's WAL mode.
 /// Thread safety is handled by the internal actor instances.
-public final class ConnectionManager: Sendable {
-    private let path: String
-    private let options: ConnectionOptions
+open class ConnectionManager: @unchecked Sendable {
+    public let path: String
+    public let options: ConnectionOptions
     private let setupTask: Lock<Task<Void, Error>?> = Lock(nil)
-    private let entities: [any EntityProtocol.Type]
-    private let syncEnabled: Bool
+    public let entities: [any EntityProtocol.Type]
+    public let syncEnabled: Bool
 
     private let writer: WritableConnectionActor?
     private let readers: [ReaderEntry]
@@ -297,12 +297,20 @@ public final class ConnectionManager: Sendable {
                     }
                     SwiftStoreLogger.info("Migration Plan:\n\(plan)")
                 }
+                // Call additional setup after migration completes
+                try await self.performAdditionalSetup()
             }
             setupTask.setValue(task)
         }
         if let task = setupTask.value() {
             try await task.value
         }
+    }
+
+    /// Subclasses can override this method to add additional initialization logic.
+    /// This method is called after migration completes but before setupTask is marked as complete.
+    open func performAdditionalSetup() async throws {
+        // Default implementation is empty, subclasses can override
     }
 
     /// Execute a block with the write connection.
