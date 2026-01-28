@@ -26,13 +26,14 @@ enum HTMLTemplates {
             .header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
-                padding: 16px 24px;
+                padding: 0 24px;
                 font-size: 20px;
                 font-weight: 600;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 display: flex;
                 align-items: center;
                 gap: 24px;
+                height: 56px;
             }
 
             .header-title {
@@ -237,6 +238,14 @@ enum HTMLTemplates {
                 position: sticky;
                 top: 0;
                 white-space: nowrap;
+            }
+
+            .column-type-hint {
+                font-weight: 400;
+                font-size: 11px;
+                color: #888;
+                margin-top: 2px;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             }
 
             td {
@@ -596,8 +605,11 @@ enum HTMLTemplates {
                             <span class="data-title" id="dataTitle">Select a table</span>
                             <span class="data-info" id="dataInfo"></span>
                         </div>
-                        <div class="schema-toggle" id="schemaToggle" onclick="toggleSchema()">
-                            <span id="schemaArrow">&#9654;</span> View Schema
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <button class="btn-copy" id="downloadCsvBtn" onclick="downloadCSV()" style="display: none;">Download CSV</button>
+                            <div class="schema-toggle" id="schemaToggle" onclick="toggleSchema()">
+                                <span id="schemaArrow">&#9654;</span> View Schema
+                            </div>
                         </div>
                     </div>
 
@@ -714,9 +726,11 @@ enum HTMLTemplates {
 
             function renderTable(data) {
                 const container = document.getElementById('tableContainer');
+                const downloadBtn = document.getElementById('downloadCsvBtn');
 
                 if (!data.success) {
                     container.innerHTML = `<div class="error-message">${data.error || 'Query failed'}</div>`;
+                    downloadBtn.style.display = 'none';
                     return;
                 }
 
@@ -727,8 +741,12 @@ enum HTMLTemplates {
                             <p>No data found</p>
                         </div>
                     `;
+                    downloadBtn.style.display = 'none';
                     return;
                 }
+
+                // Show download button when we have data
+                downloadBtn.style.display = 'inline-block';
 
                 const columns = Object.keys(data.data[0]);
 
@@ -736,11 +754,24 @@ enum HTMLTemplates {
                 window._tableData = data.data;
                 window._tableColumns = columns;
 
+                // Get column types from schema
+                function getColumnType(colName) {
+                    if (!currentTable || !schema || !schema.tables) return null;
+                    const tableSchema = schema.tables.find(t => t.name === currentTable);
+                    if (!tableSchema) return null;
+                    const col = tableSchema.columns.find(c => c.name === colName);
+                    return col ? col.type : null;
+                }
+
                 const html = `
                     <table>
                         <thead>
                             <tr>
-                                ${columns.map(col => `<th>${escapeHtml(col)}</th>`).join('')}
+                                ${columns.map(col => {
+                                    const colType = getColumnType(col);
+                                    const typeHtml = colType ? `<div class="column-type-hint">${escapeHtml(colType)}</div>` : '';
+                                    return `<th><div>${escapeHtml(col)}</div>${typeHtml}</th>`;
+                                }).join('')}
                             </tr>
                         </thead>
                         <tbody>
@@ -1110,6 +1141,57 @@ enum HTMLTemplates {
                     }
                     document.body.removeChild(textarea);
                 }
+            }
+
+            function downloadCSV() {
+                if (!window._tableData || !window._tableColumns) return;
+
+                const columns = window._tableColumns;
+                const data = window._tableData;
+
+                // Build CSV content
+                const csvRows = [];
+
+                // Header row
+                csvRows.push(columns.map(col => escapeCsvValue(col)).join(','));
+
+                // Data rows
+                for (const row of data) {
+                    const values = columns.map(col => {
+                        const rawValue = row[col];
+                        const displayValue = formatValue(rawValue);
+                        return escapeCsvValue(displayValue === null ? '' : String(displayValue));
+                    });
+                    csvRows.push(values.join(','));
+                }
+
+                const csvContent = csvRows.join('\\n');
+
+                // Create blob and download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+
+                // Generate filename
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+                const tableName = currentTable || 'query_result';
+                link.download = `${tableName}_${timestamp}.csv`;
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+
+            function escapeCsvValue(value) {
+                if (value === null || value === undefined) return '';
+                const str = String(value);
+                // Escape quotes and wrap in quotes if contains comma, quote, or newline
+                if (str.includes(',') || str.includes('"') || str.includes('\\n') || str.includes('\\r')) {
+                    return '"' + str.replace(/"/g, '""') + '"';
+                }
+                return str;
             }
 
             function closeModalOnOverlay(event) {
