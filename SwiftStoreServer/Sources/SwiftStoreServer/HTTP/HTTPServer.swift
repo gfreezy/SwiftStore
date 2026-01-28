@@ -73,7 +73,11 @@ public actor HTTPServer {
     private func handleListenerState(_ state: NWListener.State) {
         switch state {
         case .ready:
-            logger.info("Server listening on \(self.configuration.host):\(self.configuration.port)")
+            if configuration.host == "0.0.0.0", let ipAddress = getLocalIPAddress() {
+                logger.info("Server listening on \(ipAddress):\(self.configuration.port)")
+            } else {
+                logger.info("Server listening on \(self.configuration.host):\(self.configuration.port)")
+            }
         case .failed(let error):
             logger.error("Server failed: \(error.localizedDescription)")
         case .cancelled:

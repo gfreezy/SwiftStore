@@ -590,6 +590,7 @@ enum FileTemplates {
                             </tr>
                         `;
                     } else {
+                        const isViewable = isViewableFile(item.name);
                         html += `
                             <tr>
                                 <td class="file-icon">${icon}</td>
@@ -597,8 +598,7 @@ enum FileTemplates {
                                 <td class="file-size">${size}</td>
                                 <td class="file-modified">${modified}</td>
                                 <td class="file-actions">
-                                    <a href="/api/files/download?path=${encodeURIComponent(itemPath)}" target="_blank">Open</a>
-                                    <a href="/api/files/download?path=${encodeURIComponent(itemPath)}&download=true">Download</a>
+                                    ${isViewable ? `<a href="/api/files/download?path=${encodeURIComponent(itemPath)}&download=true">Download</a>` : ''}
                                 </td>
                             </tr>
                         `;
@@ -760,6 +760,28 @@ enum FileTemplates {
             function formatDate(dateString) {
                 const date = new Date(dateString);
                 return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            }
+
+            function isViewableFile(filename) {
+                const ext = filename.split('.').pop().toLowerCase();
+                const viewableExtensions = new Set([
+                    // Images
+                    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico', 'bmp', 'heic', 'heif',
+                    // Documents
+                    'pdf',
+                    // Text
+                    'txt', 'md', 'json', 'xml', 'csv', 'log',
+                    // Web
+                    'html', 'htm', 'css', 'js',
+                    // Code
+                    'swift', 'py', 'rb', 'java', 'c', 'h', 'cpp', 'hpp',
+                    'rs', 'go', 'ts', 'sh', 'yaml', 'yml', 'toml',
+                    'sql', 'graphql',
+                    // Audio/Video
+                    'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac',
+                    'mp4', 'webm', 'mov', 'm4v',
+                ]);
+                return viewableExtensions.has(ext);
             }
 
             function getFileIcon(filename) {
