@@ -315,6 +315,27 @@ enum HTMLTemplates {
                 color: #333;
             }
 
+            .btn-copy {
+                padding: 6px 12px;
+                border: 1px solid #ddd;
+                background: white;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+            }
+
+            .btn-copy:hover {
+                background: #f5f5f5;
+                border-color: #ccc;
+            }
+
+            .btn-copy.copied {
+                background: #e8f5e9;
+                border-color: #4caf50;
+                color: #2e7d32;
+            }
+
             .modal-body {
                 padding: 16px;
                 overflow: auto;
@@ -620,6 +641,7 @@ enum HTMLTemplates {
                             <input type="checkbox" id="formatToggle" onchange="toggleJsonFormat()">
                             Format JSON
                         </label>
+                        <button class="btn-copy" id="copyBtn" onclick="copyValue()">Copy</button>
                         <button class="modal-close" onclick="closeModal()">&times;</button>
                     </div>
                 </div>
@@ -940,6 +962,41 @@ enum HTMLTemplates {
                 }
             }
 
+            // Try to parse number as timestamp
+            function tryParseTimestamp(value) {
+                const num = typeof value === 'number' ? value : parseFloat(value);
+                if (isNaN(num) || !isFinite(num) || num <= 0) return null;
+
+                // Define reasonable date range: 2000-01-01 to 2100-01-01
+                const minSeconds = 946684800;      // 2000-01-01
+                const maxSeconds = 4102444800;     // 2100-01-01
+                const minMillis = minSeconds * 1000;
+                const maxMillis = maxSeconds * 1000;
+
+                let date = null;
+                let type = null;
+
+                // Try as seconds timestamp (10 digits)
+                if (num >= minSeconds && num <= maxSeconds) {
+                    date = new Date(num * 1000);
+                    type = 'seconds';
+                }
+                // Try as milliseconds timestamp (13 digits)
+                else if (num >= minMillis && num <= maxMillis) {
+                    date = new Date(num);
+                    type = 'milliseconds';
+                }
+
+                if (date && !isNaN(date.getTime())) {
+                    return {
+                        date: date,
+                        type: type,
+                        formatted: date.toLocaleString() + ' (' + type + ')'
+                    };
+                }
+                return null;
+            }
+
             // Modal functions
             function showValueModal(rawValue, columnName) {
                 modalRawValue = rawValue;
@@ -993,7 +1050,15 @@ enum HTMLTemplates {
 
                 if (!foundJson) {
                     formatToggleLabel.style.display = 'none';
-                    content.textContent = displayValue;
+
+                    // Try to parse as timestamp if it's a number
+                    const timestamp = tryParseTimestamp(rawValue);
+                    if (timestamp) {
+                        content.innerHTML = `<div style="margin-bottom: 12px;"><strong>Original value:</strong> ${escapeHtml(String(displayValue))}</div>` +
+                            `<div><strong>As timestamp:</strong> ${escapeHtml(timestamp.formatted)}</div>`;
+                    } else {
+                        content.textContent = displayValue;
+                    }
                 }
 
                 modal.classList.add('visible');
@@ -1001,6 +1066,31 @@ enum HTMLTemplates {
 
             function closeModal() {
                 document.getElementById('valueModal').classList.remove('visible');
+            }
+
+            function copyValue() {
+                const content = document.getElementById('modalContent');
+                const copyBtn = document.getElementById('copyBtn');
+
+                // Get text content (strips HTML tags from syntax highlighted JSON)
+                const textToCopy = content.textContent;
+
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    // Show success feedback
+                    copyBtn.textContent = 'Copied!';
+                    copyBtn.classList.add('copied');
+
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy';
+                        copyBtn.classList.remove('copied');
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    copyBtn.textContent = 'Failed';
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy';
+                    }, 2000);
+                });
             }
 
             function closeModalOnOverlay(event) {
