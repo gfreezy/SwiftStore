@@ -574,6 +574,142 @@ enum HTMLTemplates {
             .tab:hover:not(.active) {
                 background: #e8e8e8;
             }
+
+            /* SQL History styles */
+            .query-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            .history-container {
+                position: relative;
+            }
+
+            .history-btn {
+                padding: 6px 12px;
+                border: 1px solid #ddd;
+                background: white;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .history-btn:hover {
+                background: #f5f5f5;
+                border-color: #ccc;
+            }
+
+            .history-dropdown {
+                display: none;
+                position: absolute;
+                top: 100%;
+                right: 0;
+                margin-top: 4px;
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 100;
+                min-width: 400px;
+                max-width: 600px;
+                max-height: 400px;
+                overflow: hidden;
+                display: none;
+                flex-direction: column;
+            }
+
+            .history-dropdown.visible {
+                display: flex;
+            }
+
+            .history-header {
+                padding: 12px 16px;
+                border-bottom: 1px solid #e0e0e0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: #f8f9fa;
+            }
+
+            .history-title {
+                font-weight: 600;
+                font-size: 13px;
+                color: #555;
+            }
+
+            .history-clear {
+                padding: 4px 8px;
+                border: none;
+                background: #fee;
+                color: #c00;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s;
+            }
+
+            .history-clear:hover {
+                background: #fcc;
+            }
+
+            .history-list {
+                flex: 1;
+                overflow-y: auto;
+                list-style: none;
+            }
+
+            .history-item {
+                padding: 10px 16px;
+                border-bottom: 1px solid #f0f0f0;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 12px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .history-item:hover {
+                background-color: #e8f0fe;
+            }
+
+            .history-item:last-child {
+                border-bottom: none;
+            }
+
+            .history-time {
+                font-size: 10px;
+                color: #999;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin-bottom: 4px;
+            }
+
+            .history-sql {
+                color: #333;
+            }
+
+            .history-empty {
+                padding: 20px;
+                text-align: center;
+                color: #999;
+                font-size: 13px;
+            }
+
+            .history-badge {
+                background: #667eea;
+                color: white;
+                font-size: 10px;
+                padding: 2px 6px;
+                border-radius: 10px;
+                margin-left: 4px;
+            }
         </style>
     </head>
     <body>
@@ -593,7 +729,24 @@ enum HTMLTemplates {
             </div>
             <div class="main-content">
                 <div class="query-section">
-                    <div class="query-label">SQL Query</div>
+                    <div class="query-header">
+                        <div class="query-label">SQL Query</div>
+                        <div class="history-container">
+                            <button class="history-btn" onclick="toggleHistory()">
+                                <span>History</span>
+                                <span class="history-badge" id="historyBadge" style="display: none;">0</span>
+                            </button>
+                            <div class="history-dropdown" id="historyDropdown">
+                                <div class="history-header">
+                                    <span class="history-title">SQL History</span>
+                                    <button class="history-clear" onclick="clearHistory()">Clear All</button>
+                                </div>
+                                <ul class="history-list" id="historyList">
+                                    <li class="history-empty">No history yet</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                     <textarea class="query-input" id="queryInput" placeholder="SELECT * FROM table_name LIMIT 100"></textarea>
                     <button class="btn btn-primary" onclick="executeQuery()">Execute</button>
                     <button class="btn btn-secondary" onclick="clearQuery()">Clear</button>
@@ -891,6 +1044,8 @@ enum HTMLTemplates {
 
                 if (result.success) {
                     document.getElementById('dataInfo').textContent = `(${result.data ? result.data.length : 0} rows returned)`;
+                    // Add to history on successful execution
+                    addToHistory(sql);
                 }
 
                 renderTable(result);
@@ -1237,6 +1392,133 @@ enum HTMLTemplates {
                 );
             }
 
+            // SQL History functions
+            const HISTORY_KEY = 'swiftstore_sql_history';
+            const MAX_HISTORY = 50;
+
+            function getHistory() {
+                try {
+                    const data = localStorage.getItem(HISTORY_KEY);
+                    return data ? JSON.parse(data) : [];
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function saveHistory(history) {
+                try {
+                    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+                } catch (e) {
+                    console.error('Failed to save history:', e);
+                }
+            }
+
+            function addToHistory(sql) {
+                const trimmedSql = sql.trim();
+                if (!trimmedSql) return;
+
+                let history = getHistory();
+
+                // Remove duplicate if exists
+                history = history.filter(item => item.sql !== trimmedSql);
+
+                // Add new entry at the beginning
+                history.unshift({
+                    sql: trimmedSql,
+                    time: Date.now()
+                });
+
+                // Limit history size
+                if (history.length > MAX_HISTORY) {
+                    history = history.slice(0, MAX_HISTORY);
+                }
+
+                saveHistory(history);
+                updateHistoryUI();
+            }
+
+            function clearHistory() {
+                if (confirm('Clear all SQL history?')) {
+                    localStorage.removeItem(HISTORY_KEY);
+                    updateHistoryUI();
+                    toggleHistory(); // Close dropdown
+                }
+            }
+
+            function toggleHistory() {
+                const dropdown = document.getElementById('historyDropdown');
+                dropdown.classList.toggle('visible');
+
+                // Close when clicking outside
+                if (dropdown.classList.contains('visible')) {
+                    setTimeout(() => {
+                        document.addEventListener('click', closeHistoryOnClickOutside);
+                    }, 0);
+                }
+            }
+
+            function closeHistoryOnClickOutside(e) {
+                const container = document.querySelector('.history-container');
+                if (!container.contains(e.target)) {
+                    document.getElementById('historyDropdown').classList.remove('visible');
+                    document.removeEventListener('click', closeHistoryOnClickOutside);
+                }
+            }
+
+            function selectHistoryItem(sql) {
+                document.getElementById('queryInput').value = sql;
+                document.getElementById('historyDropdown').classList.remove('visible');
+                document.removeEventListener('click', closeHistoryOnClickOutside);
+            }
+
+            function formatHistoryTime(timestamp) {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diff = now - date;
+
+                if (diff < 60000) return 'Just now';
+                if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+                if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+                if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
+
+                return date.toLocaleDateString();
+            }
+
+            function updateHistoryUI() {
+                const history = getHistory();
+                const list = document.getElementById('historyList');
+                const badge = document.getElementById('historyBadge');
+
+                // Update badge
+                if (history.length > 0) {
+                    badge.textContent = history.length;
+                    badge.style.display = 'inline';
+                } else {
+                    badge.style.display = 'none';
+                }
+
+                // Update list
+                if (history.length === 0) {
+                    list.innerHTML = '<li class="history-empty">No history yet</li>';
+                    return;
+                }
+
+                list.innerHTML = history.map((item, index) => `
+                    <li class="history-item" data-index="${index}">
+                        <div class="history-time">${formatHistoryTime(item.time)}</div>
+                        <div class="history-sql">${escapeHtml(item.sql)}</div>
+                    </li>
+                `).join('');
+
+                // Attach click handlers
+                list.querySelectorAll('.history-item').forEach(li => {
+                    li.addEventListener('click', function() {
+                        const index = parseInt(this.dataset.index);
+                        selectHistoryItem(history[index].sql);
+                    });
+                });
+            }
+
             // Keyboard shortcuts
             document.getElementById('queryInput').addEventListener('keydown', function(e) {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1248,11 +1530,13 @@ enum HTMLTemplates {
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
                     closeModal();
+                    document.getElementById('historyDropdown').classList.remove('visible');
                 }
             });
 
             // Initialize
             fetchSchema();
+            updateHistoryUI();
         </script>
     </body>
     </html>

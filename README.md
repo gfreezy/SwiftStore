@@ -625,10 +625,41 @@ Features:
 - Smart BLOB display (auto-decode as UUID, UTF-8 string, or show size)
 - Double-click cell to view full content in modal
 - JSON syntax highlighting with format toggle
+- SQL history with localStorage persistence
+- Download query results as CSV
+
+### File Manager
+
+Visit `http://127.0.0.1:8080/files` to access the file manager:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  SwiftStore Admin    [Database] [Files]             │
+├─────────────────────────────────────────────────────┤
+│  Root / Documents                [Upload] [Refresh] │
+├─────────────────────────────────────────────────────┤
+│  Type │ Name           │ Size    │ Modified         │
+│  ──── │ ────────────── │ ─────── │ ──────────────── │
+│  📁   │ ..             │ -       │ -                │
+│  📁   │ images         │ -       │ 2024-01-15 10:30 │
+│  📄   │ config.json    │ 2.3 KB  │ 2024-01-14 15:22 │
+│  🖼️   │ avatar.png     │ 45.2 KB │ 2024-01-13 09:15 │
+└─────────────────────────────────────────────────────┘
+```
+
+Features:
+- Browse files and directories
+- Upload files with drag-and-drop support
+- Download files directly
+- Navigate with breadcrumb trail
+- Browser back/forward navigation support
+- File type icons for common formats
 
 ### REST API
 
 The server also exposes REST endpoints:
+
+**Database API:**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -636,6 +667,15 @@ The server also exposes REST endpoints:
 | `/api/schema` | GET | Get database schema |
 | `/api/query` | POST | Execute SELECT queries |
 | `/api/execute` | POST | Execute INSERT/UPDATE/DELETE |
+
+**File API:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/files/list` | GET | List files in directory |
+| `/api/files/download` | GET | Download a file |
+| `/api/files/upload` | POST | Upload a file |
+| `/api/files/info` | GET | Get file information |
 
 ## Architecture
 
