@@ -520,14 +520,28 @@ enum FileTemplates {
                     }
                 });
 
-                // Load initial directory
-                loadDirectory('/');
+                // Handle browser back/forward
+                window.addEventListener('popstate', function(e) {
+                    const path = e.state?.path || '/';
+                    loadDirectory(path, false);
+                });
+
+                // Load initial directory from URL or default to root
+                const urlParams = new URLSearchParams(window.location.search);
+                const initialPath = urlParams.get('path') || '/';
+                loadDirectory(initialPath, true);
             });
 
             // API calls
-            async function loadDirectory(path) {
+            async function loadDirectory(path, pushState = true) {
                 currentPath = path;
                 updateBreadcrumb(path);
+
+                // Update browser history
+                if (pushState) {
+                    const url = path === '/' ? '/files' : '/files?path=' + encodeURIComponent(path);
+                    history.pushState({ path: path }, '', url);
+                }
 
                 const fileList = document.getElementById('fileList');
                 fileList.innerHTML = '<tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>';
@@ -590,7 +604,6 @@ enum FileTemplates {
                             </tr>
                         `;
                     } else {
-                        const isViewable = isViewableFile(item.name);
                         html += `
                             <tr>
                                 <td class="file-icon">${icon}</td>
@@ -598,7 +611,7 @@ enum FileTemplates {
                                 <td class="file-size">${size}</td>
                                 <td class="file-modified">${modified}</td>
                                 <td class="file-actions">
-                                    ${isViewable ? `<a href="/api/files/download?path=${encodeURIComponent(itemPath)}&download=true">Download</a>` : ''}
+                                    <a href="/api/files/download?path=${encodeURIComponent(itemPath)}&download=true">Download</a>
                                 </td>
                             </tr>
                         `;
@@ -609,11 +622,11 @@ enum FileTemplates {
             }
 
             function navigateTo(path) {
-                loadDirectory(path);
+                loadDirectory(path, true);
             }
 
             function refresh() {
-                loadDirectory(currentPath);
+                loadDirectory(currentPath, false);
             }
 
             // Upload
@@ -760,28 +773,6 @@ enum FileTemplates {
             function formatDate(dateString) {
                 const date = new Date(dateString);
                 return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-            }
-
-            function isViewableFile(filename) {
-                const ext = filename.split('.').pop().toLowerCase();
-                const viewableExtensions = new Set([
-                    // Images
-                    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico', 'bmp', 'heic', 'heif',
-                    // Documents
-                    'pdf',
-                    // Text
-                    'txt', 'md', 'json', 'xml', 'csv', 'log',
-                    // Web
-                    'html', 'htm', 'css', 'js',
-                    // Code
-                    'swift', 'py', 'rb', 'java', 'c', 'h', 'cpp', 'hpp',
-                    'rs', 'go', 'ts', 'sh', 'yaml', 'yml', 'toml',
-                    'sql', 'graphql',
-                    // Audio/Video
-                    'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac',
-                    'mp4', 'webm', 'mov', 'm4v',
-                ]);
-                return viewableExtensions.has(ext);
             }
 
             function getFileIcon(filename) {

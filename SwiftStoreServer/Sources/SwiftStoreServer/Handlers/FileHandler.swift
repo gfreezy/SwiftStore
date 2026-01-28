@@ -128,14 +128,8 @@ public struct FileHandler: Sendable {
             let data = try Data(contentsOf: URL(fileURLWithPath: safePath))
             let filename = (safePath as NSString).lastPathComponent
 
-            // Determine if file should be downloaded or viewed inline
-            let shouldDownload: Bool
-            if let downloadParam = request.queryParams["download"] {
-                shouldDownload = downloadParam == "true"
-            } else {
-                // Auto-detect based on file type
-                shouldDownload = !Self.isViewableInBrowser(filename: filename)
-            }
+            // Download if explicitly requested, otherwise open inline
+            let shouldDownload = request.queryParams["download"] == "true"
 
             if shouldDownload {
                 return HTTPResponse.fileDownload(data: data, filename: filename, corsEnabled: configuration.enableCORS)
@@ -145,31 +139,6 @@ public struct FileHandler: Sendable {
         } catch {
             return HTTPResponse.error("Failed to read file: \(error.localizedDescription)", status: .internalServerError, corsEnabled: configuration.enableCORS)
         }
-    }
-
-    /// Check if a file type can be viewed inline in browser
-    private static func isViewableInBrowser(filename: String) -> Bool {
-        let ext = (filename as NSString).pathExtension.lowercased()
-
-        let viewableExtensions: Set<String> = [
-            // Images
-            "jpg", "jpeg", "png", "gif", "svg", "webp", "ico", "bmp", "heic", "heif",
-            // Documents
-            "pdf",
-            // Text
-            "txt", "md", "json", "xml", "csv", "log",
-            // Web
-            "html", "htm", "css", "js",
-            // Code (browsers can display as text)
-            "swift", "py", "rb", "java", "c", "h", "cpp", "hpp",
-            "rs", "go", "ts", "sh", "yaml", "yml", "toml",
-            "sql", "graphql",
-            // Audio/Video
-            "mp3", "wav", "ogg", "m4a", "aac", "flac",
-            "mp4", "webm", "mov", "m4v",
-        ]
-
-        return viewableExtensions.contains(ext)
     }
 
     /// Upload a file
