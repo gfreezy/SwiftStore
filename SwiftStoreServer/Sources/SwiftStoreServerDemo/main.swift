@@ -115,12 +115,18 @@ struct SwiftStoreServerDemo {
             print("Sample data inserted: 3 users, 3 posts, 3 comments")
         }
 
+        // Get user home directory for file browsing demo
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+
         // Start server
         let server = try await SwiftStoreServer(
             connectionManager: manager,
             configuration: ServerConfiguration(
                 host: "127.0.0.1",
-                port: 8080
+                port: 8080,
+                fileServerRoot: homeDir,
+                allowFileUpload: true,
+                maxUploadSize: 50 * 1024 * 1024
             )
         )
 
@@ -130,7 +136,10 @@ struct SwiftStoreServerDemo {
         print("========================================")
         print("")
         print("  Web Admin: http://127.0.0.1:8080/admin")
+        print("  Files:     http://127.0.0.1:8080/files")
         print("  API:       http://127.0.0.1:8080/api/health")
+        print("")
+        print("  File Root: \(homeDir)")
         print("")
         print("  Press Ctrl+C to stop")
         print("========================================")

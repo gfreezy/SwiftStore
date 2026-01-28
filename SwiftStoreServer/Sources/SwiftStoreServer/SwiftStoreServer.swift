@@ -46,6 +46,14 @@ public actor SwiftStoreServer {
         let schemaHandler = SchemaHandler(connectionManager: connectionManager)
         let webUIHandler = WebUIHandler()
 
+        // Create file handler if file server root is configured
+        let fileHandler: FileHandler?
+        if let fileRoot = configuration.fileServerRoot {
+            fileHandler = FileHandler(rootPath: fileRoot, configuration: configuration)
+        } else {
+            fileHandler = nil
+        }
+
         // Create router and register routes
         let router = Router(corsEnabled: configuration.enableCORS)
         await Self.registerRoutes(
@@ -53,6 +61,7 @@ public actor SwiftStoreServer {
             queryHandler: queryHandler,
             schemaHandler: schemaHandler,
             webUIHandler: webUIHandler,
+            fileHandler: fileHandler,
             configuration: configuration
         )
 
@@ -66,6 +75,7 @@ public actor SwiftStoreServer {
         queryHandler: QueryHandler,
         schemaHandler: SchemaHandler,
         webUIHandler: WebUIHandler,
+        fileHandler: FileHandler?,
         configuration: ServerConfiguration
     ) async {
         // Web UI routes
@@ -100,6 +110,31 @@ public actor SwiftStoreServer {
         await router.get("/api/schema") { _ in
             let response = try await schemaHandler.getSchema()
             return HTTPResponse.json(response, corsEnabled: configuration.enableCORS)
+        }
+
+        // File management routes (only if fileHandler is configured)
+        if let fileHandler = fileHandler {
+            // File management UI
+            await router.get("/files") { _ in
+                HTTPResponse.html(FileTemplates.filePage)
+            }
+
+            // File API endpoints
+            await router.get("/api/files/list") { request in
+                try await fileHandler.handleList(request)
+            }
+
+            await router.get("/api/files/download") { request in
+                try await fileHandler.handleDownload(request)
+            }
+
+            await router.post("/api/files/upload") { request in
+                try await fileHandler.handleUpload(request)
+            }
+
+            await router.get("/api/files/info") { request in
+                try await fileHandler.handleInfo(request)
+            }
         }
     }
 

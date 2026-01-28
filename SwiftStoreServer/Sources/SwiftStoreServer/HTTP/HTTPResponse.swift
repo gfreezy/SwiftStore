@@ -88,6 +88,7 @@ public struct HTTPResponse: Sendable {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
             let body = try encoder.encode(value)
             return HTTPResponse(status: status, headers: headers, body: body)
         } catch {
@@ -153,5 +154,118 @@ public struct HTTPResponse: Sendable {
             status: .found,
             headers: ["Location": location]
         )
+    }
+
+    /// Create a file download response
+    public static func fileDownload(
+        data: Data,
+        filename: String,
+        mimeType: String? = nil,
+        corsEnabled: Bool = true
+    ) -> HTTPResponse {
+        let contentType = mimeType ?? Self.mimeType(for: filename)
+
+        var headers = [
+            "Content-Type": contentType,
+            "Content-Disposition": "attachment; filename=\"\(filename)\"",
+        ]
+
+        if corsEnabled {
+            headers["Access-Control-Allow-Origin"] = "*"
+            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        }
+
+        return HTTPResponse(status: .ok, headers: headers, body: data)
+    }
+
+    /// Create an inline file response (for viewing in browser)
+    public static func fileInline(
+        data: Data,
+        filename: String,
+        mimeType: String? = nil,
+        corsEnabled: Bool = true
+    ) -> HTTPResponse {
+        let contentType = mimeType ?? Self.mimeType(for: filename)
+
+        var headers = [
+            "Content-Type": contentType,
+            "Content-Disposition": "inline; filename=\"\(filename)\"",
+        ]
+
+        if corsEnabled {
+            headers["Access-Control-Allow-Origin"] = "*"
+            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        }
+
+        return HTTPResponse(status: .ok, headers: headers, body: data)
+    }
+
+    /// Get MIME type for a filename based on extension
+    public static func mimeType(for filename: String) -> String {
+        let ext = (filename as NSString).pathExtension.lowercased()
+
+        switch ext {
+        // Text
+        case "txt": return "text/plain"
+        case "html", "htm": return "text/html"
+        case "css": return "text/css"
+        case "js": return "application/javascript"
+        case "json": return "application/json"
+        case "xml": return "application/xml"
+        case "csv": return "text/csv"
+        case "md": return "text/markdown"
+
+        // Images
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "svg": return "image/svg+xml"
+        case "ico": return "image/x-icon"
+        case "webp": return "image/webp"
+
+        // Documents
+        case "pdf": return "application/pdf"
+        case "doc": return "application/msword"
+        case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        case "xls": return "application/vnd.ms-excel"
+        case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        case "ppt": return "application/vnd.ms-powerpoint"
+        case "pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+        // Archives
+        case "zip": return "application/zip"
+        case "tar": return "application/x-tar"
+        case "gz": return "application/gzip"
+        case "rar": return "application/vnd.rar"
+        case "7z": return "application/x-7z-compressed"
+
+        // Audio/Video
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "mp4": return "video/mp4"
+        case "webm": return "video/webm"
+        case "mov": return "video/quicktime"
+
+        // Code
+        case "swift": return "text/x-swift"
+        case "py": return "text/x-python"
+        case "rb": return "text/x-ruby"
+        case "java": return "text/x-java"
+        case "c", "h": return "text/x-c"
+        case "cpp", "hpp": return "text/x-c++src"
+        case "rs": return "text/x-rust"
+        case "go": return "text/x-go"
+        case "ts": return "application/typescript"
+        case "sh": return "application/x-sh"
+        case "yaml", "yml": return "text/yaml"
+
+        // Database
+        case "sqlite", "db": return "application/x-sqlite3"
+        case "sql": return "application/sql"
+
+        default: return "application/octet-stream"
+        }
     }
 }

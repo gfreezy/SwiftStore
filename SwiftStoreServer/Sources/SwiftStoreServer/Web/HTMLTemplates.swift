@@ -30,6 +30,39 @@ enum HTMLTemplates {
                 font-size: 20px;
                 font-weight: 600;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                display: flex;
+                align-items: center;
+                gap: 24px;
+            }
+
+            .header-title {
+                font-size: 20px;
+                font-weight: 600;
+            }
+
+            .header-nav {
+                display: flex;
+                gap: 8px;
+            }
+
+            .header-nav a {
+                color: rgba(255, 255, 255, 0.7);
+                text-decoration: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: 500;
+                transition: all 0.2s;
+            }
+
+            .header-nav a:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+            }
+
+            .header-nav a.active {
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
             }
 
             .container {
@@ -514,7 +547,13 @@ enum HTMLTemplates {
         </style>
     </head>
     <body>
-        <div class="header">SwiftStore Admin</div>
+        <div class="header">
+            <span class="header-title">SwiftStore Admin</span>
+            <nav class="header-nav">
+                <a href="/admin" class="active">Database</a>
+                <a href="/files">Files</a>
+            </nav>
+        </div>
         <div class="container">
             <div class="sidebar">
                 <div class="sidebar-title">Tables</div>

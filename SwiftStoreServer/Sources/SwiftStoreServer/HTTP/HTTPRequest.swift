@@ -53,6 +53,128 @@ public struct HTTPRequest: Sendable {
             throw HTTPError.badRequest("Invalid JSON: \(error.localizedDescription)")
         }
     }
+
+    /// Parse multipart/form-data body
+    public func parseMultipart() throws -> [MultipartPart] {
+        guard let body = body else {
+            throw HTTPError.badRequest("Missing request body")
+        }
+
+        guard let contentType = headers["content-type"],
+              contentType.contains("multipart/form-data") else {
+            throw HTTPError.badRequest("Content-Type must be multipart/form-data")
+        }
+
+        // Extract boundary from Content-Type header
+        guard let boundaryMatch = contentType.range(of: "boundary="),
+              boundaryMatch.upperBound < contentType.endIndex else {
+            throw HTTPError.badRequest("Missing boundary in Content-Type")
+        }
+
+        var boundary = String(contentType[boundaryMatch.upperBound...])
+        // Remove quotes if present
+        if boundary.hasPrefix("\"") && boundary.hasSuffix("\"") {
+            boundary = String(boundary.dropFirst().dropLast())
+        }
+        // Handle potential semicolon after boundary
+        if let semicolonIndex = boundary.firstIndex(of: ";") {
+            boundary = String(boundary[..<semicolonIndex])
+        }
+        boundary = boundary.trimmingCharacters(in: .whitespaces)
+
+        let boundaryData = Data("--\(boundary)".utf8)
+
+        var parts: [MultipartPart] = []
+        var position = 0
+
+        // Find parts separated by boundary
+        while position < body.count {
+            // Find next boundary
+            guard let boundaryRange = body.range(of: boundaryData, in: position..<body.count) else {
+                break
+            }
+
+            // Skip to after the boundary
+            position = boundaryRange.upperBound
+
+            // Skip CRLF after boundary
+            if position + 2 <= body.count,
+               body[position] == 0x0D, body[position + 1] == 0x0A {
+                position += 2
+            }
+
+            // Check if this is the end boundary
+            if position < body.count {
+                let remaining = body.subdata(in: position..<min(position + 2, body.count))
+                if remaining == Data("--".utf8) {
+                    break
+                }
+            }
+
+            // Find the end of headers (double CRLF)
+            guard let headerEndRange = body.range(of: Data("\r\n\r\n".utf8), in: position..<body.count) else {
+                break
+            }
+
+            // Parse headers
+            let headerData = body.subdata(in: position..<headerEndRange.lowerBound)
+            guard let headerString = String(data: headerData, encoding: .utf8) else {
+                position = headerEndRange.upperBound
+                continue
+            }
+
+            var partName: String?
+            var partFilename: String?
+            var partContentType: String?
+
+            for line in headerString.components(separatedBy: "\r\n") {
+                let lowercaseLine = line.lowercased()
+                if lowercaseLine.hasPrefix("content-disposition:") {
+                    // Parse name and filename from Content-Disposition
+                    if let nameMatch = line.range(of: "name=\"") {
+                        let start = nameMatch.upperBound
+                        if let endQuote = line[start...].firstIndex(of: "\"") {
+                            partName = String(line[start..<endQuote])
+                        }
+                    }
+                    if let filenameMatch = line.range(of: "filename=\"") {
+                        let start = filenameMatch.upperBound
+                        if let endQuote = line[start...].firstIndex(of: "\"") {
+                            partFilename = String(line[start..<endQuote])
+                        }
+                    }
+                } else if lowercaseLine.hasPrefix("content-type:") {
+                    partContentType = line.dropFirst(13).trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            // Move to content start
+            let contentStart = headerEndRange.upperBound
+
+            // Find next boundary or end
+            let nextBoundaryRange = body.range(of: boundaryData, in: contentStart..<body.count)
+            let contentEnd: Int
+
+            if let nextRange = nextBoundaryRange {
+                // Content ends at boundary minus CRLF
+                contentEnd = nextRange.lowerBound - 2
+            } else {
+                contentEnd = body.count
+            }
+
+            if contentEnd > contentStart, let name = partName {
+                let partData = body.subdata(in: contentStart..<contentEnd)
+                parts.append(MultipartPart(
+                    name: name,
+                    filename: partFilename,
+                    contentType: partContentType,
+                    data: partData
+                ))
+            }
+        }
+
+        return parts
+    }
 }
 
 /// HTTP request parser

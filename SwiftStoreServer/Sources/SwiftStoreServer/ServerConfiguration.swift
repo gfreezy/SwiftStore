@@ -20,6 +20,15 @@ public struct ServerConfiguration: Sendable {
     /// Whether to enable CORS headers for cross-origin requests
     public var enableCORS: Bool
 
+    /// File server root directory, nil to disable file service
+    public var fileServerRoot: String?
+
+    /// Whether to allow file uploads (only effective when fileServerRoot is set)
+    public var allowFileUpload: Bool
+
+    /// Maximum upload file size in bytes (default: 50MB)
+    public var maxUploadSize: Int
+
     /// Initialize server configuration
     /// - Parameters:
     ///   - host: Host address (default: "127.0.0.1")
@@ -28,13 +37,19 @@ public struct ServerConfiguration: Sendable {
     ///   - maxPageSize: Maximum page size (default: 1000)
     ///   - defaultPageSize: Default page size (default: 50)
     ///   - enableCORS: Enable CORS headers (default: true)
+    ///   - fileServerRoot: Root directory for file service (default: nil, disabled)
+    ///   - allowFileUpload: Allow file uploads (default: true)
+    ///   - maxUploadSize: Maximum upload size in bytes (default: 50MB)
     public init(
         host: String = "127.0.0.1",
         port: Int = 8080,
         readOnly: Bool = false,
         maxPageSize: Int = 1000,
         defaultPageSize: Int = 50,
-        enableCORS: Bool = true
+        enableCORS: Bool = true,
+        fileServerRoot: String? = nil,
+        allowFileUpload: Bool = true,
+        maxUploadSize: Int = 50 * 1024 * 1024
     ) {
         self.host = host
         self.port = port
@@ -42,5 +57,8 @@ public struct ServerConfiguration: Sendable {
         self.maxPageSize = maxPageSize
         self.defaultPageSize = defaultPageSize
         self.enableCORS = enableCORS
+        self.fileServerRoot = fileServerRoot
+        self.allowFileUpload = allowFileUpload
+        self.maxUploadSize = maxUploadSize
     }
 }
