@@ -63,6 +63,21 @@ struct SchemaDiff: Sendable {
         return mismatches
     }
 
+    /// Indexes that exist in database but not in entity (to be dropped)
+    /// Also includes indexes that reference columns being dropped
+    var indexesToDrop: [IndexSchema] {
+        guard dropUnusedColumns, let current = current else { return [] }
+        let targetIndexNames = target.indexNames
+        let columnsToDrop = Set(self.columnsToDrop)
+
+        return current.indexes.filter { index in
+            // Drop if index doesn't exist in target schema
+            !targetIndexNames.contains(index.name) ||
+            // Or if it references columns being dropped
+            index.columns.contains { columnsToDrop.contains($0) }
+        }
+    }
+
     var indexesToAdd: [IndexSchema] {
         guard let current = current else { return target.indexes }
         return target.indexes.filter { !current.indexNames.contains($0.name) }
@@ -74,7 +89,7 @@ struct SchemaDiff: Sendable {
     }
 
     var hasChanges: Bool {
-        needsCreate || !columnsToAdd.isEmpty || !columnsToDrop.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty
+        needsCreate || !columnsToAdd.isEmpty || !columnsToDrop.isEmpty || !indexesToDrop.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty
     }
 }
 
@@ -106,6 +121,11 @@ public struct DatabaseDiff: Sendable {
     /// Number of columns that need to be dropped
     public var columnsToDropCount: Int {
         tableDiffs.reduce(0) { $0 + $1.columnsToDrop.count }
+    }
+
+    /// Number of indexes that need to be dropped
+    public var indexesToDropCount: Int {
+        tableDiffs.reduce(0) { $0 + $1.indexesToDrop.count }
     }
 
     /// Number of indexes that need to be added

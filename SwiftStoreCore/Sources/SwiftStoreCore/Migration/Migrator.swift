@@ -45,6 +45,7 @@ public struct MigrationPlan: Sendable, CustomStringConvertible {
         // Count statement types
         let createTables = statements.filter { $0.uppercased().hasPrefix("CREATE TABLE") }.count
         let addColumns = statements.filter { $0.uppercased().contains("ADD COLUMN") }.count
+        let dropIndexes = statements.filter { $0.uppercased().hasPrefix("DROP INDEX") }.count
         let dropColumns = statements.filter { $0.uppercased().contains("DROP COLUMN") }.count
         let createIndexes = statements.filter {
             $0.uppercased().hasPrefix("CREATE INDEX") || $0.uppercased().hasPrefix("CREATE UNIQUE INDEX")
@@ -54,6 +55,7 @@ public struct MigrationPlan: Sendable, CustomStringConvertible {
         var summary: [String] = []
         if createTables > 0 { summary.append("\(createTables) CREATE TABLE") }
         if addColumns > 0 { summary.append("\(addColumns) ADD COLUMN") }
+        if dropIndexes > 0 { summary.append("\(dropIndexes) DROP INDEX") }
         if dropColumns > 0 { summary.append("\(dropColumns) DROP COLUMN") }
         if createIndexes > 0 { summary.append("\(createIndexes) CREATE INDEX") }
         if createTriggers > 0 { summary.append("\(createTriggers) CREATE TRIGGER") }

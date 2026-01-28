@@ -48,13 +48,16 @@ struct SwiftStoreServerTests {
             #expect(json == "true")
         }
 
-        @Test("JSONValue encodes data as base64")
+        @Test("JSONValue encodes data as base64 blob object")
         func encodeData() throws {
             let data = Data([0x48, 0x65, 0x6c, 0x6c, 0x6f]) // "Hello"
             let value = JSONValue.data(data)
             let encoded = try JSONEncoder().encode(value)
-            let json = String(data: encoded, encoding: .utf8)
-            #expect(json == "\"SGVsbG8=\"") // Base64 of "Hello"
+            let json = String(data: encoded, encoding: .utf8)!
+            // Data is encoded as a blob object with type, size, and base64 content
+            #expect(json.contains("\"_type\":\"blob\""))
+            #expect(json.contains("\"size\":\"5\""))
+            #expect(json.contains("\"base64\":\"SGVsbG8=\""))
         }
 
         @Test("JSONValue encodes array correctly")

@@ -806,6 +806,10 @@ enum HTMLTemplates {
                             <input type="checkbox" id="formatToggle" onchange="toggleJsonFormat()">
                             Format JSON
                         </label>
+                        <label class="format-toggle" id="timestampToggleLabel" style="display: none;">
+                            <input type="checkbox" id="timestampToggle" onchange="toggleTimestampFormat()">
+                            Show Time
+                        </label>
                         <button class="btn-copy" id="copyBtn" onclick="copyValue()">Copy</button>
                         <button class="modal-close" onclick="closeModal()">&times;</button>
                     </div>
@@ -932,11 +936,11 @@ enum HTMLTemplates {
                                 <tr>
                                     ${columns.map((col, colIndex) => {
                                         const rawValue = row[col];
-                                        const value = formatValue(rawValue);
-                                        if (value === null) {
+                                        const displayValue = formatDisplayValue(rawValue);
+                                        if (displayValue === null) {
                                             return `<td class="null-value" data-row="${rowIndex}" data-col="${colIndex}">NULL</td>`;
                                         }
-                                        return `<td title="${escapeHtml(String(value))}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(String(value))}</td>`;
+                                        return `<td title="${escapeHtml(String(displayValue))}" data-row="${rowIndex}" data-col="${colIndex}">${escapeHtml(String(displayValue))}</td>`;
                                     }).join('')}
                                 </tr>
                             `).join('')}
@@ -1109,6 +1113,24 @@ enum HTMLTemplates {
                 return String(value);
             }
 
+            // Format value for table cell display, including timestamp formatting
+            function formatDisplayValue(value) {
+                if (value === null) return null;
+
+                // Check if it's a blob object from backend
+                if (typeof value === 'object' && value._type === 'blob') {
+                    return decodeBlobValue(value.base64, parseInt(value.size));
+                }
+
+                // Try to parse as timestamp
+                const timestamp = tryParseTimestamp(value);
+                if (timestamp) {
+                    return timestamp.short;
+                }
+
+                return String(value);
+            }
+
             // Decode base64 blob data as common types
             function decodeBlobValue(base64, size) {
                 try {
@@ -1174,33 +1196,45 @@ enum HTMLTemplates {
                 }
 
                 if (date && !isNaN(date.getTime())) {
+                    // Format as YYYY-MM-DD HH:mm:ss
+                    const pad = n => String(n).padStart(2, '0');
+                    const short = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
                     return {
                         date: date,
                         type: type,
-                        formatted: date.toLocaleString() + ' (' + type + ')'
+                        short: short,
+                        formatted: short
                     };
                 }
                 return null;
             }
 
+            // Modal state for timestamp toggle
+            let modalTimestamp = null;
+            let modalDisplayValue = null;
+
             // Modal functions
             function showValueModal(rawValue, columnName) {
                 modalRawValue = rawValue;
                 modalParsedJson = null;
+                modalTimestamp = null;
+                modalDisplayValue = null;
 
                 const modal = document.getElementById('valueModal');
                 const title = document.getElementById('modalTitle');
                 const content = document.getElementById('modalContent');
                 const formatToggleLabel = document.getElementById('formatToggleLabel');
                 const formatToggle = document.getElementById('formatToggle');
+                const timestampToggleLabel = document.getElementById('timestampToggleLabel');
+                const timestampToggle = document.getElementById('timestampToggle');
 
                 title.textContent = columnName || 'Value Details';
 
                 // Get display value (handles blob decoding)
-                let displayValue = formatValue(rawValue);
+                modalDisplayValue = formatValue(rawValue);
 
                 // For blob that decoded to string, also try the original base64 decoded content
-                let valuesToTryJson = [displayValue];
+                let valuesToTryJson = [modalDisplayValue];
                 if (typeof rawValue === 'object' && rawValue._type === 'blob') {
                     // Also try direct blob content as potential JSON
                     try {
@@ -1211,23 +1245,28 @@ enum HTMLTemplates {
                         }
                         const decoder = new TextDecoder('utf-8', { fatal: true });
                         const blobStr = decoder.decode(bytes);
-                        if (blobStr !== displayValue) {
+                        if (blobStr !== modalDisplayValue) {
                             valuesToTryJson.push(blobStr);
                         }
                     } catch (e) {}
                 }
 
-                // Try to parse as JSON
+                // Try to parse as JSON (but not simple numbers/strings - those should be handled separately)
                 let foundJson = false;
                 for (const val of valuesToTryJson) {
                     if (typeof val === 'string') {
                         try {
-                            modalParsedJson = JSON.parse(val);
-                            formatToggleLabel.style.display = 'flex';
-                            formatToggle.checked = true;
-                            content.innerHTML = syntaxHighlightJson(JSON.stringify(modalParsedJson, null, 2));
-                            foundJson = true;
-                            break;
+                            const parsed = JSON.parse(val);
+                            // Only treat as JSON if it's an object or array, not primitive values
+                            if (typeof parsed === 'object' && parsed !== null) {
+                                modalParsedJson = parsed;
+                                formatToggleLabel.style.display = 'flex';
+                                formatToggle.checked = true;
+                                timestampToggleLabel.style.display = 'none';
+                                content.innerHTML = syntaxHighlightJson(JSON.stringify(modalParsedJson, null, 2));
+                                foundJson = true;
+                                break;
+                            }
                         } catch (e) {
                             // Not JSON, continue
                         }
@@ -1238,16 +1277,29 @@ enum HTMLTemplates {
                     formatToggleLabel.style.display = 'none';
 
                     // Try to parse as timestamp if it's a number
-                    const timestamp = tryParseTimestamp(rawValue);
-                    if (timestamp) {
-                        content.innerHTML = `<div style="margin-bottom: 12px;"><strong>Original value:</strong> ${escapeHtml(String(displayValue))}</div>` +
-                            `<div><strong>As timestamp:</strong> ${escapeHtml(timestamp.formatted)}</div>`;
+                    modalTimestamp = tryParseTimestamp(rawValue);
+                    if (modalTimestamp) {
+                        timestampToggleLabel.style.display = 'flex';
+                        timestampToggle.checked = true;
+                        content.textContent = modalTimestamp.formatted;
                     } else {
-                        content.textContent = displayValue;
+                        timestampToggleLabel.style.display = 'none';
+                        content.textContent = modalDisplayValue;
                     }
                 }
 
                 modal.classList.add('visible');
+            }
+
+            function toggleTimestampFormat() {
+                const content = document.getElementById('modalContent');
+                const timestampToggle = document.getElementById('timestampToggle');
+
+                if (timestampToggle.checked && modalTimestamp) {
+                    content.textContent = modalTimestamp.formatted;
+                } else {
+                    content.textContent = modalDisplayValue;
+                }
             }
 
             function closeModal() {

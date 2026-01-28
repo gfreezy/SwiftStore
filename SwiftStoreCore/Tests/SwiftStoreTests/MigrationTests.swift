@@ -501,6 +501,85 @@ struct MigrationDryRunTests {
         let columnNames = rows[0].data.keys.sorted()
         #expect(columnNames == ["created_at", "id", "name", "updated_at"])
     }
+
+    @Test("Plan migration drops indexes before dropping columns")
+    func testPlanMigrationDropIndexBeforeColumn() throws {
+        let store = try createTestStore()
+
+        // Create table with an extra column that has an index
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                extra_column TEXT DEFAULT '',
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Create an index on the extra column
+        try store.connection.execute("CREATE INDEX idx_extra ON test_tag(extra_column)")
+
+        // With dropUnusedColumns: should drop index before dropping column
+        let migrator = Migrator(connection: store.connection, dropUnusedColumns: true)
+        let plan = try migrator.plan(for: [TestTag.self])
+
+        // Find DROP INDEX and DROP COLUMN statements
+        let dropIndexStatements = plan.statements.filter { $0.uppercased().hasPrefix("DROP INDEX") }
+        let dropColumnStatements = plan.statements.filter { $0.uppercased().contains("DROP COLUMN") }
+
+        #expect(dropIndexStatements.count == 1)
+        #expect(dropColumnStatements.count == 1)
+        #expect(dropIndexStatements[0].contains("idx_extra"))
+        #expect(dropColumnStatements[0].contains("extra_column"))
+
+        // Verify DROP INDEX comes before DROP COLUMN
+        let dropIndexIndex = plan.statements.firstIndex { $0.uppercased().hasPrefix("DROP INDEX") }!
+        let dropColumnIndex = plan.statements.firstIndex { $0.uppercased().contains("DROP COLUMN") }!
+        #expect(dropIndexIndex < dropColumnIndex)
+
+        // Apply the migration and verify it succeeds
+        try migrator.apply(plan)
+
+        // Verify column is dropped
+        let rows: [Row] = try store.connection.query("SELECT * FROM test_tag")
+        #expect(rows.isEmpty || !rows[0].data.keys.contains("extra_column"))
+    }
+
+    @Test("Plan migration drops unused indexes")
+    func testPlanMigrationDropUnusedIndexes() throws {
+        let store = try createTestStore()
+
+        // Create table matching entity schema
+        try store.connection.execute("""
+            CREATE TABLE test_tag (
+                id BLOB NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        // Create an index that doesn't exist in entity schema
+        try store.connection.execute("CREATE INDEX idx_unused ON test_tag(name)")
+
+        // With dropUnusedColumns: should also drop unused indexes
+        let migrator = Migrator(connection: store.connection, dropUnusedColumns: true)
+        let plan = try migrator.plan(for: [TestTag.self])
+
+        let dropIndexStatements = plan.statements.filter { $0.uppercased().hasPrefix("DROP INDEX") }
+        #expect(dropIndexStatements.count == 1)
+        #expect(dropIndexStatements[0].contains("idx_unused"))
+
+        // Apply and verify
+        try migrator.apply(plan)
+
+        // Verify index is dropped by checking sqlite_master
+        let indexRows: [Row] = try store.connection.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='test_tag' AND name='idx_unused'"
+        )
+        #expect(indexRows.isEmpty)
+    }
 }
 
 // MARK: - Migrator.plan SQL Verification Tests
