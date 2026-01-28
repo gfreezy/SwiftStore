@@ -40,6 +40,15 @@ let package = Package(
             name: "SwiftStoreMacros",
             targets: ["SwiftStoreMacros"]
         ),
+        .library(
+            name: "SwiftStoreServer",
+            targets: ["SwiftStoreServer"]
+        ),
+        // Development server demo executable
+        .executable(
+            name: "SwiftStoreServerDemo",
+            targets: ["SwiftStoreServerDemo"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax", from: "600.0.0"),
@@ -109,6 +118,15 @@ let package = Package(
             path: "SwiftStoreConnectionQueue/Sources/SwiftStoreConnectionQueue"
         ),
 
+        // MARK: - Server Layer (Development HTTP Server)
+        .target(
+            name: "SwiftStoreServer",
+            dependencies: [
+                "SwiftStoreConnectionQueue",
+            ],
+            path: "SwiftStoreServer/Sources/SwiftStoreServer"
+        ),
+
         // MARK: - Umbrella Target
         .target(
             name: "SwiftStore",
@@ -119,6 +137,16 @@ let package = Package(
                 "SwiftStoreConnectionQueue",
             ],
             path: "Sources/SwiftStore"
+        ),
+
+        // MARK: - Demo Executable
+        .executableTarget(
+            name: "SwiftStoreServerDemo",
+            dependencies: [
+                "SwiftStore",
+                "SwiftStoreServer",
+            ],
+            path: "SwiftStoreServer/Sources/SwiftStoreServerDemo"
         ),
 
         // MARK: - Tests
@@ -145,6 +173,11 @@ let package = Package(
             name: "SwiftStoreSyncTests",
             dependencies: ["SwiftStoreSync"],
             path: "SwiftStoreSync/Tests/SwiftStoreSyncTests"
+        ),
+        .testTarget(
+            name: "SwiftStoreServerTests",
+            dependencies: ["SwiftStoreServer"],
+            path: "SwiftStoreServer/Tests/SwiftStoreServerTests"
         ),
     ]
 )

@@ -568,6 +568,74 @@ struct User {
 3. **Non-optional without default**: Throws error if value is missing or invalid
 4. **Nested types**: Must conform to `Embedded` protocol (compile-time validation)
 
+## Development Server
+
+SwiftStore provides a built-in development server with a Web admin interface (similar to phpMyAdmin) for easy database inspection and management during development.
+
+### Quick Start
+
+```swift
+import SwiftStore
+import SwiftStoreServer
+
+let manager = try ConnectionManager(
+    path: "app.sqlite",
+    entities: [User.self, Post.self]
+)
+try await manager.migrate(dryRun: false)
+
+#if DEBUG
+let server = try await SwiftStoreServer(
+    connectionManager: manager,
+    configuration: .init(port: 8080)
+)
+print("Dev server: http://127.0.0.1:8080")
+try await server.start()
+#endif
+```
+
+### Web Admin Interface
+
+Visit `http://127.0.0.1:8080/admin` to access the admin panel:
+
+```
+┌─────────────────────────────────────────────────┐
+│  SwiftStore Admin                               │
+├────────────┬────────────────────────────────────┤
+│            │  SQL Query Input                   │
+│  Tables    │  [                              ]  │
+│  ────────  │  [Execute]                         │
+│  - users   ├────────────────────────────────────┤
+│  - posts   │  Table: users                      │
+│            │  ┌────┬──────┬─────────┐          │
+│            │  │ id │ name │ email   │          │
+│            │  ├────┼──────┼─────────┤          │
+│            │  │ 1  │ John │ j@x.com │          │
+│            │  └────┴──────┴─────────┘          │
+│            │  [< Prev] Page 1/10 [Next >]       │
+└────────────┴────────────────────────────────────┘
+```
+
+Features:
+- View all tables in the database
+- Browse table data with pagination
+- Execute custom SQL queries (Ctrl/Cmd+Enter)
+- View table schema (columns, types, constraints)
+- Smart BLOB display (auto-decode as UUID, UTF-8 string, or show size)
+- Double-click cell to view full content in modal
+- JSON syntax highlighting with format toggle
+
+### REST API
+
+The server also exposes REST endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check |
+| `/api/schema` | GET | Get database schema |
+| `/api/query` | POST | Execute SELECT queries |
+| `/api/execute` | POST | Execute INSERT/UPDATE/DELETE |
+
 ## Architecture
 
 ```
@@ -577,7 +645,8 @@ SwiftStore
 ├── SwiftStoreCore          # Core (connection, query, migration)
 ├── SwiftStoreChangeTracker # Change tracking
 ├── SwiftStoreSync          # Sync layer
-└── SwiftStoreConnectionQueue # Connection management
+├── SwiftStoreConnectionQueue # Connection management
+└── SwiftStoreServer        # Development HTTP server with Web UI
 ```
 
 ### Dependency Graph
@@ -594,6 +663,8 @@ SwiftStoreChangeTracker
 SwiftStoreSync
        ↓
 SwiftStoreConnectionQueue
+       ↓
+SwiftStoreServer (development only)
 ```
 
 ## Packages
@@ -606,6 +677,7 @@ SwiftStoreConnectionQueue
 | [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
 | [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool, readonly mode |
+| [SwiftStoreServer](./SwiftStoreServer/) | Development HTTP server with Web admin UI for database inspection |
 
 ## Supported Platforms
 
@@ -637,6 +709,11 @@ import SwiftStoreCore
 
 // With sync support
 import SwiftStoreConnectionQueue
+
+// Development server (DEBUG only)
+#if DEBUG
+import SwiftStoreServer
+#endif
 ```
 
 ## License
