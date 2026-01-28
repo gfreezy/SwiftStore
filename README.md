@@ -585,6 +585,7 @@ let manager = try ConnectionManager(
 try await manager.migrate(dryRun: false)
 
 #if DEBUG
+// You must store server to a variable to keep it running
 let server = try await SwiftStoreServer(
     connectionManager: manager,
     configuration: .init(port: 8080)
