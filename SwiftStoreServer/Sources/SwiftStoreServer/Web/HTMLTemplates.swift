@@ -905,7 +905,8 @@ enum HTMLTemplates {
                 // Show download button when we have data
                 downloadBtn.style.display = 'inline-block';
 
-                const columns = Object.keys(data.data[0]);
+                // Use columns from response (schema order) or fallback to object keys
+                const columns = data.columns || Object.keys(data.data[0]);
 
                 // Store data for double-click access
                 window._tableData = data.data;
