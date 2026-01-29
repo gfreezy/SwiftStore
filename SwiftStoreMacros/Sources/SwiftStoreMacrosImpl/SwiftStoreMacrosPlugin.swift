@@ -8,5 +8,6 @@ struct SwiftStoreMacrosPlugin: CompilerPlugin {
         IndexMacro.self,
         SyncKeyMacro.self,
         EmbeddedMacro.self,
+        DefaultMacro.self,
     ]
 }

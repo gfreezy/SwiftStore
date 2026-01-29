@@ -6,4 +6,5 @@ nonisolated(unsafe) let testMacros: [String: Macro.Type] = [
     "Index": IndexMacro.self,
     "SyncKey": SyncKeyMacro.self,
     "Embedded": EmbeddedMacro.self,
+    "Default": DefaultMacro.self,
 ]

@@ -19,7 +19,7 @@ struct MacroUser {
 
 /// Entity with nested Codable type (must use @Embedded for compile-time validation)
 @Embedded
-struct UserSettings: Sendable {
+struct UserSettings {
     var theme: String = "light"
     var notifications: Bool = true
 }
@@ -104,6 +104,59 @@ struct LocalNote {
     var title: String
     var content: String
     var createdAt: Date = Date()
+}
+
+// MARK: - @Default Macro Test Entities
+
+/// Entity using @Default for let properties
+@Entity
+struct DefaultLetEntity {
+    @Default(UUIDV7())
+    let id: UUIDV7
+
+    var name: String
+
+    @Default(Date())
+    let createdAt: Date
+
+    @Default(Date())
+    let updatedAt: Date
+}
+
+/// Embedded struct using @Default for let properties
+@Embedded
+struct DefaultLetSettings {
+    @Default("light")
+    let theme: String
+
+    @Default(true)
+    let notifications: Bool
+
+    @Default(14)
+    let fontSize: Int
+
+    @Default(nil)
+    let optionalNote: String?
+}
+
+/// Entity with mixed var and @Default let properties
+@Entity
+struct MixedVarLetEntity {
+    @Default(UUIDV7())
+    let id: UUIDV7
+
+    var name: String
+
+    @Default("active")
+    let status: String
+
+    var score: Int = 0
+
+    @Default(Date())
+    let createdAt: Date
+
+    @Default(Date())
+    let updatedAt: Date
 }
 
 // MARK: - SyncKey Test Entities
@@ -1461,5 +1514,118 @@ struct MacroCompilationTests {
         #expect(LocalOnlyConfig.syncKeyColumns == ["id"])
         #expect(LocalCache.syncKeyColumns == ["id"])
         #expect(LocalNote.syncKeyColumns == ["id"])
+    }
+
+    // MARK: - @Default Macro Tests
+
+    @Test("@Default macro on Entity let properties")
+    func testDefaultMacroOnEntityLetProperties() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [DefaultLetEntity.self])
+
+        // Create entity using only required parameters (name)
+        // id, createdAt, updatedAt should use @Default values
+        let entity = DefaultLetEntity(name: "Test Entity")
+        #expect(entity.name == "Test Entity")
+        // id should be a valid UUIDV7 (not empty string representation)
+        #expect(!entity.id.description.isEmpty)
+
+        // Insert and verify
+        try store.connection.insert(entity)
+
+        let fetched = try store.connection.get(DefaultLetEntity.self, id: entity.id)
+        #expect(fetched != nil)
+        #expect(fetched?.name == "Test Entity")
+    }
+
+    @Test("@Default macro on Embedded let properties")
+    func testDefaultMacroOnEmbeddedLetProperties() throws {
+        // Create settings using no parameters (all have @Default values)
+        let settings = DefaultLetSettings()
+        #expect(settings.theme == "light")
+        #expect(settings.notifications == true)
+        #expect(settings.fontSize == 14)
+        #expect(settings.optionalNote == nil)  // @Default(nil)
+
+        // Test JSON decoding with empty object uses @Default values
+        let json = "{}"
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let decoded = try decoder.decode(DefaultLetSettings.self, from: data)
+        #expect(decoded.theme == "light")
+        #expect(decoded.notifications == true)
+        #expect(decoded.fontSize == 14)
+        #expect(decoded.optionalNote == nil)
+    }
+
+    @Test("@Default macro with partial overrides")
+    func testDefaultMacroWithPartialOverrides() throws {
+        // Test decoding with partial values (some from JSON, some from @Default)
+        let json = """
+        {
+            "theme": "dark",
+            "fontSize": 18
+        }
+        """
+        let decoder = JSONDecoder()
+        let data = json.data(using: .utf8)!
+
+        let decoded = try decoder.decode(DefaultLetSettings.self, from: data)
+        #expect(decoded.theme == "dark")  // from JSON
+        #expect(decoded.notifications == true)  // from @Default
+        #expect(decoded.fontSize == 18)  // from JSON
+    }
+
+    @Test("@Default macro mixed with var properties")
+    func testDefaultMacroMixedWithVarProperties() throws {
+        let store = try createTestStore()
+        try store.migrate(entities: [MixedVarLetEntity.self])
+
+        // Create entity with mixed var and @Default let properties
+        // Only name is required, score has inline default, others have @Default
+        let entity = MixedVarLetEntity(name: "Test Mixed")
+        #expect(entity.name == "Test Mixed")
+        #expect(entity.status == "active")  // from @Default
+        #expect(entity.score == 0)  // from inline default
+
+        // Create with partial overrides
+        let entity2 = MixedVarLetEntity(name: "Test Mixed 2", score: 100)
+        #expect(entity2.name == "Test Mixed 2")
+        #expect(entity2.status == "active")  // from @Default
+        #expect(entity2.score == 100)
+
+        // Insert and verify
+        try store.connection.insert(entity)
+
+        let fetched = try store.connection.get(MixedVarLetEntity.self, id: entity.id)
+        #expect(fetched != nil)
+        #expect(fetched?.name == "Test Mixed")
+        #expect(fetched?.status == "active")
+        #expect(fetched?.score == 0)
+    }
+
+    @Test("@Default macro generates memberwise init with default values")
+    func testDefaultMacroGeneratesMemberwiseInit() {
+        // The @Default macro should generate a memberwise init where
+        // let properties with @Default have default parameter values
+
+        // This should compile - creates entity with all @Default values
+        let entity1 = DefaultLetEntity(name: "Name Only")
+        #expect(entity1.name == "Name Only")
+
+        // This should also compile - override the @Default values
+        let customId = UUIDV7()
+        let customDate = Date(timeIntervalSince1970: 0)
+        let entity2 = DefaultLetEntity(
+            id: customId,
+            name: "All Params",
+            createdAt: customDate,
+            updatedAt: customDate
+        )
+        #expect(entity2.id == customId)
+        #expect(entity2.name == "All Params")
+        #expect(entity2.createdAt == customDate)
+        #expect(entity2.updatedAt == customDate)
     }
 }

@@ -468,12 +468,14 @@ extension StructDeclSyntax {
                         let isOptional = MacroHelpers.isOptional(type)
 
                         // Extract default value if present (e.g., var name: String = "")
-                        let defaultValue: String?
+                        // Also check for @Default attribute on `let` properties
+                        var defaultValue: String?
                         if let initializer = binding.initializer {
                             // Use trimmedDescription to remove trivia (comments, whitespace)
                             defaultValue = initializer.value.trimmedDescription
                         } else {
-                            defaultValue = nil
+                            // Check for @Default(value) attribute
+                            defaultValue = DefaultMarkerParser.extractDefaultValue(from: varDecl.attributes)
                         }
 
                         // Parse collection kind

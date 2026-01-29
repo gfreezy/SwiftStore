@@ -11,10 +11,10 @@
 /// - Parameter readonly: Whether the entity is readonly/local-only (default: false).
 ///   - When false (default): `id` must be UUIDV7, `createdAt` and `updatedAt` are required, entity can be synced
 ///   - When true: `id` can be any type (Int, String, etc.), timestamps are optional, entity is local-only
-/// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date() (when readonly: false)
+/// - Use `@Default` or inline initializers for default values on `let` and `var` properties
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
 /// - Note: Readonly entities can only be used with ConnectionManager in readonly mode
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly))
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly), named(init))
 @attached(extension, conformances: EntityProtocol, Encodable, Decodable, Identifiable, Sendable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Entity(tableName: String? = nil, readonly: Bool = false) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
@@ -91,6 +91,54 @@ public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #ext
 ///     case active, inactive
 /// }
 /// ```
-@attached(member)
+@attached(member, names: named(init))
 @attached(extension, conformances: Embedded, Codable, Encodable, Decodable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Embedded() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EmbeddedMacro")
+
+// MARK: - Default Macro
+
+/// Marker type for nil default values in @Default macro.
+/// This allows `@Default(nil)` to compile by providing a concrete type for the nil literal.
+public struct OptionalNil: ExpressibleByNilLiteral, Sendable {
+    public init(nilLiteral: ()) {}
+}
+
+/// Default value marker macro for `let` properties in @Entity and @Embedded structs.
+///
+/// This macro allows specifying default values for `let` properties, which cannot have
+/// inline initializers while still allowing a memberwise init to be generated.
+///
+/// Usage:
+/// ```swift
+/// @Entity
+/// struct User {
+///     @Default(UUIDV7())
+///     let id: UUIDV7
+///
+///     var name: String
+///
+///     @Default(Date())
+///     let createdAt: Date
+///
+///     @Default(Date())
+///     let updatedAt: Date
+/// }
+///
+/// @Embedded
+/// struct Settings {
+///     @Default("light")
+///     let theme: String
+///
+///     @Default(true)
+///     let notifications: Bool
+///
+///     @Default(nil)
+///     let optionalField: String?
+/// }
+/// ```
+@attached(peer)
+public macro Default<T>(_ value: T) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")
+
+/// Overload for @Default(nil) to support optional properties with nil default.
+@attached(peer)
+public macro Default(_ value: OptionalNil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")

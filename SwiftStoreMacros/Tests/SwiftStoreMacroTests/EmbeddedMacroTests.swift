@@ -26,6 +26,16 @@ final class EmbeddedMacroTests: XCTestCase {
                     var theme: String = "light"
                     var fontSize: Int = 14
                     var n: CGFloat
+
+                    public init(
+                        theme: String = "light",
+                        fontSize: Int = 14,
+                        n: CGFloat
+                    ) {
+                        self.theme = theme
+                        self.fontSize = fontSize
+                        self.n = n
+                    }
                 }
 
                 extension Settings: Embedded {
@@ -85,6 +95,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct UserPrefs {
                     var userId: String
                     var theme: String = "light"
+
+                    public init(
+                        userId: String,
+                        theme: String = "light"
+                    ) {
+                        self.userId = userId
+                        self.theme = theme
+                    }
                 }
 
                 extension UserPrefs: Embedded {
@@ -137,6 +155,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct Config {
                     var name: String = "default"
                     var description: String?
+
+                    public init(
+                        name: String = "default",
+                        description: String?
+                    ) {
+                        self.name = name
+                        self.description = description
+                    }
                 }
 
                 extension Config: Embedded {
@@ -189,6 +215,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct ArrayTypes {
                     var emptyArray: [String] = []
                     var nonEmptyArray: [Int] = [1, 2, 3]
+
+                    public init(
+                        emptyArray: [String] = [],
+                        nonEmptyArray: [Int] = [1, 2, 3]
+                    ) {
+                        self.emptyArray = emptyArray
+                        self.nonEmptyArray = nonEmptyArray
+                    }
                 }
 
                 extension ArrayTypes: Embedded {
@@ -244,6 +278,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct DictTypes {
                     var emptyDict: [String: Int] = [:]
                     var nonEmptyDict: [String: String] = ["key": "value"]
+
+                    public init(
+                        emptyDict: [String: Int] = [:],
+                        nonEmptyDict: [String: String] = ["key": "value"]
+                    ) {
+                        self.emptyDict = emptyDict
+                        self.nonEmptyDict = nonEmptyDict
+                    }
                 }
 
                 extension DictTypes: Embedded {
@@ -301,6 +343,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct Container {
                     var name: String = ""
                     var nested: NestedType = NestedType()
+
+                    public init(
+                        name: String = "",
+                        nested: NestedType = NestedType()
+                    ) {
+                        self.name = name
+                        self.nested = nested
+                    }
                 }
 
                 extension Container: Embedded {
@@ -366,6 +416,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct ContainerOptional {
                     var name: String = ""
                     var nested: NestedType?
+
+                    public init(
+                        name: String = "",
+                        nested: NestedType?
+                    ) {
+                        self.name = name
+                        self.nested = nested
+                    }
                 }
 
                 extension ContainerOptional: Embedded {
@@ -483,7 +541,7 @@ final class EmbeddedMacroTests: XCTestCase {
 
     // MARK: - Mixed Types Tests
 
-        func testDefaultWithMixedTypes() {
+    func testDefaultWithMixedTypes() {
         assertMacroExpansion(
             """
             @Embedded
@@ -500,6 +558,18 @@ final class EmbeddedMacroTests: XCTestCase {
                     var withDefault: String = "default"
                     var optional: String? = "hello"
                     var array: [Int] = []
+
+                    public init(
+                        required: String,
+                        withDefault: String = "default",
+                        optional: String? = "hello",
+                        array: [Int] = []
+                    ) {
+                        self.required = required
+                        self.withDefault = withDefault
+                        self.optional = optional
+                        self.array = array
+                    }
                 }
 
                 extension MixedTypes: Embedded {
@@ -568,6 +638,16 @@ final class EmbeddedMacroTests: XCTestCase {
                     var optString: String?
                     var optInt: Int?
                     var optBool: Bool?
+
+                    public init(
+                        optString: String?,
+                        optInt: Int?,
+                        optBool: Bool?
+                    ) {
+                        self.optString = optString
+                        self.optInt = optInt
+                        self.optBool = optBool
+                    }
                 }
 
                 extension AllOptionals: Embedded {
@@ -617,6 +697,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct WithEnumDefault {
                     var status: Status = .active
                     var optionalStatus: Status?
+
+                    public init(
+                        status: Status = .active,
+                        optionalStatus: Status?
+                    ) {
+                        self.status = status
+                        self.optionalStatus = optionalStatus
+                    }
                 }
 
                 extension WithEnumDefault: Embedded {
@@ -677,6 +765,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithNestedArrayEmpty {
                     var addresses: [Address] = []
+
+                    public init(
+                        addresses: [Address] = []
+                    ) {
+                        self.addresses = addresses
+                    }
                 }
 
                 extension WithNestedArrayEmpty: Embedded {
@@ -733,6 +827,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithNestedArrayNonEmpty {
                     var addresses: [Address] = [Address()]
+
+                    public init(
+                        addresses: [Address] = [Address()]
+                    ) {
+                        self.addresses = addresses
+                    }
                 }
 
                 extension WithNestedArrayNonEmpty: Embedded {
@@ -791,6 +891,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithNestedDictEmpty {
                     var addressBook: [String: Address] = [:]
+
+                    public init(
+                        addressBook: [String: Address] = [:]
+                    ) {
+                        self.addressBook = addressBook
+                    }
                 }
 
                 extension WithNestedDictEmpty: Embedded {
@@ -847,6 +953,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithNestedDictNonEmpty {
                     var addressBook: [String: Address] = ["home": Address()]
+
+                    public init(
+                        addressBook: [String: Address] = ["home": Address()]
+                    ) {
+                        self.addressBook = addressBook
+                    }
                 }
 
                 extension WithNestedDictNonEmpty: Embedded {
@@ -905,6 +1017,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithEnumArrayEmpty {
                     var statuses: [Status] = []
+
+                    public init(
+                        statuses: [Status] = []
+                    ) {
+                        self.statuses = statuses
+                    }
                 }
 
                 extension WithEnumArrayEmpty: Embedded {
@@ -961,6 +1079,12 @@ final class EmbeddedMacroTests: XCTestCase {
             expandedSource: """
                 struct WithEnumArrayNonEmpty {
                     var statuses: [Status] = [.active, .pending]
+
+                    public init(
+                        statuses: [Status] = [.active, .pending]
+                    ) {
+                        self.statuses = statuses
+                    }
                 }
 
                 extension WithEnumArrayNonEmpty: Embedded {
@@ -1021,6 +1145,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct WithEnumDict {
                     var statusMap: [String: Status] = [:]
                     var priorityMap: [String: Priority] = ["default": .medium]
+
+                    public init(
+                        statusMap: [String: Status] = [:],
+                        priorityMap: [String: Priority] = ["default": .medium]
+                    ) {
+                        self.statusMap = statusMap
+                        self.priorityMap = priorityMap
+                    }
                 }
 
                 extension WithEnumDict: Embedded {
@@ -1088,6 +1220,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct WithOptionalCollections {
                     var addresses: [Address]?
                     var itemMap: [String: Item]?
+
+                    public init(
+                        addresses: [Address]?,
+                        itemMap: [String: Item]?
+                    ) {
+                        self.addresses = addresses
+                        self.itemMap = itemMap
+                    }
                 }
 
                 extension WithOptionalCollections: Embedded {
@@ -1145,6 +1285,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct IntegerTypes {
                     var intValue: Int = 0
                     var int64Value: Int64 = 64
+
+                    public init(
+                        intValue: Int = 0,
+                        int64Value: Int64 = 64
+                    ) {
+                        self.intValue = intValue
+                        self.int64Value = int64Value
+                    }
                 }
 
                 extension IntegerTypes: Embedded {
@@ -1202,6 +1350,14 @@ final class EmbeddedMacroTests: XCTestCase {
                 struct FloatBoolTypes {
                     var doubleValue: Double = 3.14
                     var boolTrue: Bool = true
+
+                    public init(
+                        doubleValue: Double = 3.14,
+                        boolTrue: Bool = true
+                    ) {
+                        self.doubleValue = doubleValue
+                        self.boolTrue = boolTrue
+                    }
                 }
 
                 extension FloatBoolTypes: Embedded {
