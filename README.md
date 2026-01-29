@@ -119,15 +119,21 @@ try user.delete(connection)
 struct User {
     #Index<Self>(\.email, unique: true)           // Unique index
     #Index<Self>(\.firstName, \.lastName)         // Composite index
+    #Index<Self>(\.address.city)                  // JSON field index
+    #Index<Self>(\.profile.settings.theme)        // Deep nested JSON field index
 
     let id: UUIDV7
     var email: String
     var firstName: String
     var lastName: String
+    var address: Address                          // Nested Codable type (stored as JSON)
+    var profile: Profile                          // Deep nested type (stored as JSON)
     let createdAt: Date
     let updatedAt: Date
 }
 ```
+
+> **JSON Field Indexing**: SwiftStore supports indexing nested fields within JSON columns using keypath syntax (e.g., `\.address.city`). The index is created on the extracted JSON value using SQLite's `json_extract()` function.
 
 ### Readonly Entities (readonly: true)
 
