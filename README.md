@@ -9,22 +9,81 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 - **Auto Migration** - Smart schema migration without manual SQL
 - **Multi-device Sync** - Changelog-based bidirectional synchronization
 - **High Performance** - SQLite WAL mode + single-writer multiple-reader connection pool
+- **Dev Server** - Built-in web admin UI for database inspection and file management
+
+## Entity Requirements
+
+| Entity Type | Primary Key | `createdAt` | `updatedAt` | Sync Support |
+|-------------|-------------|-------------|-------------|--------------|
+| `@Entity` (standard) | `id: UUIDV7` **or** `#SyncKey` **required** | `Date` **required** | `Date` **required** | ✅ Yes |
+| `@Entity(readonly: true)` | `id` of any type (Int, String, etc.) | Optional | Optional | ❌ No |
+
+> **Primary Key Options**: Use `id: UUIDV7` for single-field primary key, or `#SyncKey` for composite primary key (no `id` field needed).
+
+## Requirements
+
+- Swift 6.0+
+- Xcode 16+
+- macOS 14+ / iOS 17+ / tvOS 17+ / watchOS 10+
+
+## Installation
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/gfreezy/SwiftStore", from: "1.0.0")
+]
+```
+
+```swift
+// Import modules
+import SwiftStoreCore              // Basic functionality
+import SwiftStoreConnectionQueue   // With sync support
+
+#if DEBUG
+import SwiftStoreServer            // Development server
+#endif
+```
 
 ## Quick Start
 
 ### Define Entities
+
+> **⚠️ Required Fields**: Standard entities **MUST** have:
+> - **Primary key**: Either `id: UUIDV7` or `#SyncKey` (composite key)
+> - `createdAt: Date` - Creation timestamp, auto-set on insert
+> - `updatedAt: Date` - Update timestamp, auto-updated on save
+>
+> These fields are required for sync functionality and data integrity.
+
+**Option 1: Using `id` field**
 
 ```swift
 import SwiftStoreCore
 
 @Entity
 struct User {
-    let id: UUIDV7
+    let id: UUIDV7          // ✅ Primary key
     var name: String
     var email: String
     var age: Int?
-    let createdAt: Date
-    let updatedAt: Date
+    let createdAt: Date     // ✅ Required
+    let updatedAt: Date     // ✅ Required
+}
+```
+
+**Option 2: Using `#SyncKey` (composite primary key)**
+
+```swift
+@Entity
+struct UserDevice {
+    #SyncKey<Self>(\.userId, \.deviceId)  // ✅ Composite primary key (no id field)
+
+    var userId: UUIDV7
+    var deviceId: String
+    var deviceName: String
+    let createdAt: Date     // ✅ Required
+    let updatedAt: Date     // ✅ Required
 }
 ```
 
@@ -78,6 +137,8 @@ struct User {
 
 For entities that don't need synchronization (local cache, settings, imported data, etc.):
 
+> **💡 Readonly Exception**: `readonly: true` entities do NOT require `id: UUIDV7`, `createdAt`, or `updatedAt` fields.
+
 ```swift
 // readonly: true allows:
 // - Any id type (Int, String, UUID, etc.) instead of UUIDV7
@@ -86,16 +147,17 @@ For entities that don't need synchronization (local cache, settings, imported da
 
 @Entity(readonly: true)
 struct LocalSettings {
-    var id: Int                    // Int id instead of UUIDV7
+    var id: Int                    // ✅ Int id allowed (not UUIDV7)
     var key: String
     var value: String
+    // ✅ No createdAt/updatedAt required
 }
 
 @Entity(readonly: true)
 struct CacheEntry {
-    var id: String                 // String id
+    var id: String                 // ✅ String id allowed
     var data: String
-    var timestamp: Date = Date()   // Optional timestamp
+    var timestamp: Date = Date()   // Optional, not required
 }
 ```
 
@@ -153,6 +215,7 @@ struct UserSettings: Codable, Sendable {
 }
 
 // MARK: - Standard Entity (using id as primary key)
+// ⚠️ Required fields: id (UUIDV7), createdAt (Date), updatedAt (Date)
 
 @Entity
 struct User {
@@ -161,15 +224,15 @@ struct User {
     #Index<Self>(\.address.city)                     // Nested field index
     #Index<Self>(\.profile.settings.theme)           // Deep nested index
 
-    let id: UUIDV7
+    let id: UUIDV7                                   // ✅ Required
     var name: String
     var email: String
     var age: Int?
     var address: Address                             // Nested Codable type
     var profile: Profile                             // Deep nested type
     var tags: [String]                               // Array type
-    let createdAt: Date
-    let updatedAt: Date
+    let createdAt: Date                              // ✅ Required
+    let updatedAt: Date                              // ✅ Required
 }
 
 @Entity
@@ -186,28 +249,29 @@ struct Post {
     let updatedAt: Date
 }
 
-// MARK: - Sync Entity (using #SyncKey as primary key, no id field)
+// MARK: - Sync Entity (using #SyncKey instead of id field)
+// ⚠️ When using #SyncKey, do NOT define id field. createdAt/updatedAt still required.
 
 @Entity
 struct UserDevice {
-    #SyncKey<Self>(\.userId, \.deviceId)             // Composite sync key
+    #SyncKey<Self>(\.userId, \.deviceId)             // ✅ Composite primary key (replaces id)
 
-    var userId: UUIDV7
-    var deviceId: String
+    var userId: UUIDV7                               // Part of SyncKey
+    var deviceId: String                             // Part of SyncKey
     var deviceName: String
     var lastActiveAt: Date
-    let createdAt: Date
-    let updatedAt: Date
+    let createdAt: Date                              // ✅ Required
+    let updatedAt: Date                              // ✅ Required
 }
 
 @Entity
 struct Favorite {
-    #SyncKey<Self>(\.userId, \.postId)               // Many-to-many sync key
+    #SyncKey<Self>(\.userId, \.postId)               // ✅ Many-to-many composite key
 
     var userId: UUIDV7
     var postId: UUIDV7
-    let createdAt: Date
-    let updatedAt: Date
+    let createdAt: Date                              // ✅ Required
+    let updatedAt: Date                              // ✅ Required
 }
 
 // MARK: - Readonly Entity (for local-only data, flexible id type)
@@ -719,43 +783,6 @@ SwiftStoreServer (development only)
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
 | [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool, readonly mode |
 | [SwiftStoreServer](./SwiftStoreServer/) | Development HTTP server with Web admin UI for database inspection |
-
-## Supported Platforms
-
-- macOS 14+
-- iOS 17+
-- tvOS 17+
-- watchOS 10+
-
-## Requirements
-
-- Swift 6.0+
-- Xcode 16+
-
-## Installation
-
-### Swift Package Manager
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/gfreezy/SwiftStore", from: "1.0.0")
-]
-```
-
-Import the modules you need:
-
-```swift
-// Basic functionality
-import SwiftStoreCore
-
-// With sync support
-import SwiftStoreConnectionQueue
-
-// Development server (DEBUG only)
-#if DEBUG
-import SwiftStoreServer
-#endif
-```
 
 ## License
 
