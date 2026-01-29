@@ -11,15 +11,6 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 - **High Performance** - SQLite WAL mode + single-writer multiple-reader connection pool
 - **Dev Server** - Built-in web admin UI for database inspection and file management
 
-## Entity Requirements
-
-| Entity Type | Primary Key | `createdAt` | `updatedAt` | Sync Support |
-|-------------|-------------|-------------|-------------|--------------|
-| `@Entity` (standard) | `id: UUIDV7` **or** `#SyncKey` **required** | `Date` **required** | `Date` **required** | ✅ Yes |
-| `@Entity(readonly: true)` | `id` of any type (Int, String, etc.) | Optional | Optional | ❌ No |
-
-> **Primary Key Options**: Use `id: UUIDV7` for single-field primary key, or `#SyncKey` for composite primary key (no `id` field needed).
-
 ## Requirements
 
 - Swift 6.0+
@@ -49,8 +40,13 @@ import SwiftStoreServer            // Development server
 
 ### Define Entities
 
+| Entity Type | Primary Key | `createdAt` | `updatedAt` | Sync Support |
+|-------------|-------------|-------------|-------------|--------------|
+| `@Entity` (standard) | `id: UUIDV7` **or** `#SyncKey` **required** | `Date` **required** | `Date` **required** | ✅ Yes |
+| `@Entity(readonly: true)` | `id` of any type (Int, String, etc.) | Optional | Optional | ❌ No |
+
 > **⚠️ Required Fields**: Standard entities **MUST** have:
-> - **Primary key**: Either `id: UUIDV7` or `#SyncKey` (composite key)
+> - **Primary key**: Either `id: UUIDV7` or `#SyncKey` (composite key, no `id` field needed)
 > - `createdAt: Date` - Creation timestamp, auto-set on insert
 > - `updatedAt: Date` - Update timestamp, auto-updated on save
 >
