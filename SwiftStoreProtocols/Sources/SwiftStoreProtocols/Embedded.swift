@@ -8,21 +8,19 @@ import Foundation
 /// - Conform to SQLiteValueCodable for unified encode/decode
 ///
 /// Use the @Embedded macro to automatically generate conformance.
+/// Note: Do NOT declare Codable on your type - the macro adds it automatically.
 ///
 /// Example:
 /// ```swift
 /// @Embedded
-/// struct Address: Codable {
+/// struct Address {
 ///     var street: String = ""
 ///     var city: String = ""
 /// }
 ///
-/// @Entity
-/// struct User {
-///     var id: UUIDV7
-///     var address: Address  // Stored as JSON
-///     var createdAt: Date
-///     var updatedAt: Date
+/// @Embedded
+/// enum Status: String {
+///     case active, inactive
 /// }
 /// ```
 public protocol Embedded: Codable, Sendable, SQLiteValueCodable {}

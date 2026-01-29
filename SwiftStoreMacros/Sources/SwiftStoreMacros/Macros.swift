@@ -14,8 +14,8 @@
 /// - Auto-generates init with default values: id = UUIDV7(), createdAt = Date(), updatedAt = Date() (when readonly: false)
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
 /// - Note: Readonly entities can only be used with ConnectionManager in readonly mode
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(init), named(CodingKeys), named(_decodeNested), named(_decodeNestedIfPresent), named(id), named(SyncKeyID), named(isReadonly))
-@attached(extension, conformances: EntityProtocol, Identifiable, Sendable, Equatable, Hashable)
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly))
+@attached(extension, conformances: EntityProtocol, Encodable, Decodable, Identifiable, Sendable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Entity(tableName: String? = nil, readonly: Bool = false) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
 // MARK: - Index Macro
@@ -70,30 +70,27 @@ public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #ext
 /// Embedded macro for types that can be embedded in @Entity structs as JSON.
 ///
 /// This macro generates:
-/// - `CodingKeys` enum
-/// - `init(from decoder: Decoder)` that uses default values for missing fields (fault-tolerant)
+/// - `Codable` conformance (for enums, Swift auto-synthesizes; for structs, fault-tolerant Decodable init)
 /// - `Embedded` protocol conformance (includes SQLiteValueCodable)
+/// - `Equatable` and `Hashable` conformances
 ///
+/// Note: Do NOT declare Codable/Decodable on your type - the macro adds it automatically.
 /// Types marked with @Embedded are stored as JSON TEXT in SQLite.
-/// They automatically get encode/decode methods for SQLite storage.
 ///
 /// Usage:
 /// ```swift
 /// @Embedded
-/// struct Address: Codable {
+/// struct Address {
 ///     var street: String = ""
 ///     var city: String = ""
 ///     var zipCode: String = ""
 /// }
 ///
-/// @Entity
-/// struct User {
-///     var id: UUIDV7
-///     var address: Address  // Stored as JSON TEXT
-///     var createdAt: Date
-///     var updatedAt: Date
+/// @Embedded
+/// enum Status: String {
+///     case active, inactive
 /// }
 /// ```
-@attached(member, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
-@attached(extension, conformances: Embedded, Equatable, Hashable)
+@attached(member)
+@attached(extension, conformances: Embedded, Codable, Encodable, Decodable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Embedded() = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EmbeddedMacro")

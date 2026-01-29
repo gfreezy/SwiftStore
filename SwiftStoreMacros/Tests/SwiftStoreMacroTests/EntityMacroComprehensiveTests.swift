@@ -140,31 +140,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     false
                 }
+            }
 
-                public init(
-                    id: UUIDV7 = UUIDV7(),
-                    name: String,
-                    count: Int = 0,
-                    score: Double? = 2.0,
-                    tags: [String] = [],
-                    settings: UserSettings,
-                    profile: Profile?,
-                    metadata: Metadata = Metadata(),
-                    createdAt: Date = Date(),
-                    updatedAt: Date = Date()
-                ) {
-                    self.id = id
-                    self.name = name
-                    self.count = count
-                    self.score = score
-                    self.tags = tags
-                    self.settings = settings
-                    self.profile = profile
-                    self.metadata = metadata
-                    self.createdAt = createdAt
-                    self.updatedAt = updatedAt
-                }
+            extension TestEntity: EntityProtocol {
+            }
 
+            extension TestEntity: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case name
@@ -226,8 +207,6 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         self.updatedAt = Date()
                     }
                 }
-
-
                 /// Helper to decode nested types with Embedded constraint (compile-time validation)
                 @inline(__always)
                 private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -241,7 +220,7 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 }
             }
 
-            extension TestEntity: EntityProtocol {
+            extension TestEntity: Encodable {
             }
 
             extension TestEntity: Identifiable {
@@ -332,18 +311,21 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     false
                 }
 
-                public init(
-                    email: String,
-                    name: String,
-                    createdAt: Date = Date(),
-                    updatedAt: Date = Date()
-                ) {
-                    self.email = email
-                    self.name = name
-                    self.createdAt = createdAt
-                    self.updatedAt = updatedAt
+                public var id: String {
+                    email
                 }
 
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_customer_sync_key", columns: ["email"], unique: true)
+                    ]
+                }
+            }
+
+            extension Customer: EntityProtocol {
+            }
+
+            extension Customer: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case email
                     case name
@@ -369,18 +351,9 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     }
                 }
 
-                public var id: String {
-                    email
-                }
-
-                public static var indexes: [IndexDefinition] {
-                    [
-                        IndexDefinition(name: "idx_customer_sync_key", columns: ["email"], unique: true)
-                    ]
-                }
             }
 
-            extension Customer: EntityProtocol {
+            extension Customer: Encodable {
             }
 
             extension Customer: Identifiable {
@@ -482,20 +455,17 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     false
                 }
 
-                public init(
-                    id: UUIDV7 = UUIDV7(),
-                    sku: String,
-                    name: String,
-                    createdAt: Date = Date(),
-                    updatedAt: Date = Date()
-                ) {
-                    self.id = id
-                    self.sku = sku
-                    self.name = name
-                    self.createdAt = createdAt
-                    self.updatedAt = updatedAt
+                public static var indexes: [IndexDefinition] {
+                    [
+                        IndexDefinition(name: "idx_product_sku", columns: ["sku"])
+                    ]
                 }
+            }
 
+            extension Product: EntityProtocol {
+            }
+
+            extension Product: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case sku
@@ -528,14 +498,9 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     }
                 }
 
-                public static var indexes: [IndexDefinition] {
-                    [
-                        IndexDefinition(name: "idx_product_sku", columns: ["sku"])
-                    ]
-                }
             }
 
-            extension Product: EntityProtocol {
+            extension Product: Encodable {
             }
 
             extension Product: Identifiable {
@@ -607,17 +572,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     true
                 }
+            }
 
-                public init(
-                    id: Int,
-                    key: String,
-                    value: String
-                ) {
-                    self.id = id
-                    self.key = key
-                    self.value = value
-                }
+            extension LocalConfig: EntityProtocol {
+            }
 
+            extension LocalConfig: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case key
@@ -630,9 +590,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     self.key = try container.decode(String.self, forKey: .key)
                     self.value = try container.decode(String.self, forKey: .value)
                 }
+
             }
 
-            extension LocalConfig: EntityProtocol {
+            extension LocalConfig: Encodable {
             }
 
             extension LocalConfig: Identifiable {
@@ -702,17 +663,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     true
                 }
+            }
 
-                public init(
-                    id: String,
-                    data: String,
-                    expiresAt: Double?
-                ) {
-                    self.id = id
-                    self.data = data
-                    self.expiresAt = expiresAt
-                }
+            extension CacheEntry: EntityProtocol {
+            }
 
+            extension CacheEntry: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case data
@@ -725,9 +681,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     self.data = try container.decode(String.self, forKey: .data)
                     self.expiresAt = try container.decodeIfPresent(Double.self, forKey: .expiresAt)
                 }
+
             }
 
-            extension CacheEntry: EntityProtocol {
+            extension CacheEntry: Encodable {
             }
 
             extension CacheEntry: Identifiable {
@@ -802,19 +759,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     true
                 }
+            }
 
-                public init(
-                    id: Int,
-                    name: String,
-                    createdAt: Date?,
-                    modifiedAt: Date?
-                ) {
-                    self.id = id
-                    self.name = name
-                    self.createdAt = createdAt
-                    self.modifiedAt = modifiedAt
-                }
+            extension ExternalData: EntityProtocol {
+            }
 
+            extension ExternalData: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case name
@@ -829,9 +779,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
                     self.modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt)
                 }
+
             }
 
-            extension ExternalData: EntityProtocol {
+            extension ExternalData: Encodable {
             }
 
             extension ExternalData: Identifiable {
@@ -913,17 +864,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     true
                 }
+            }
 
-                public init(
-                    id: String,
-                    theme: String = "light",
-                    fontSize: Int = 14
-                ) {
-                    self.id = id
-                    self.theme = theme
-                    self.fontSize = fontSize
-                }
+            extension Settings: EntityProtocol {
+            }
 
+            extension Settings: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case theme
@@ -946,9 +892,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         self.fontSize = 14
                     }
                 }
+
             }
 
-            extension Settings: EntityProtocol {
+            extension Settings: Encodable {
             }
 
             extension Settings: Identifiable {
@@ -1041,19 +988,12 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static var isReadonly: Bool {
                     false
                 }
+            }
 
-                public init(
-                    id: UUIDV7 = UUIDV7(),
-                    name: String,
-                    createdAt: Date = Date(),
-                    updatedAt: Date = Date()
-                ) {
-                    self.id = id
-                    self.name = name
-                    self.createdAt = createdAt
-                    self.updatedAt = updatedAt
-                }
+            extension StandardEntity: EntityProtocol {
+            }
 
+            extension StandardEntity: Decodable {
                 private enum CodingKeys: String, CodingKey {
                     case id
                     case name
@@ -1083,9 +1023,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         self.updatedAt = Date()
                     }
                 }
+
             }
 
-            extension StandardEntity: EntityProtocol {
+            extension StandardEntity: Encodable {
             }
 
             extension StandardEntity: Identifiable {

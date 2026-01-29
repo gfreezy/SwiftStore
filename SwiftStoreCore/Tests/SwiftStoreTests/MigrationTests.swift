@@ -1068,7 +1068,7 @@ struct MigrationUserV2 {
 
 /// V3 entity with optional field and nested Codable
 @Embedded
-struct MigrationSettings: Codable, Sendable {
+struct MigrationSettings: Sendable {
     var theme: String = "light"
     var language: String = "en"
 }

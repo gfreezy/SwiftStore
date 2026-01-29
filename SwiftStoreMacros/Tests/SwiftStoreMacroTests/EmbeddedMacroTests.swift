@@ -14,7 +14,7 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct Settings: Codable {
+            struct Settings {
                 var theme: String = "light"
                 var fontSize: Int = 14
                 var n: CGFloat
@@ -22,11 +22,16 @@ final class EmbeddedMacroTests: XCTestCase {
             """,
             expandedSource:
                 """
-                struct Settings: Codable {
+                struct Settings {
                     var theme: String = "light"
                     var fontSize: Int = 14
                     var n: CGFloat
+                }
 
+                extension Settings: Embedded {
+                }
+
+                extension Settings: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case theme
                         case fontSize
@@ -50,18 +55,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         self.n = try container.decode(CGFloat.self, forKey: .n)
                     }
 
-                    public init(
-                        theme: String = "light",
-                        fontSize: Int = 14,
-                        n: CGFloat
-                    ) {
-                        self.theme = theme
-                        self.fontSize = fontSize
-                        self.n = n
-                    }
                 }
-                
-                extension Settings: Embedded {
+
+                extension Settings: Encodable {
                 }
 
                 extension Settings: Equatable {
@@ -80,16 +76,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct UserPrefs: Codable {
+            struct UserPrefs {
                 var userId: String
                 var theme: String = "light"
             }
             """,
             expandedSource: """
-                struct UserPrefs: Codable {
+                struct UserPrefs {
                     var userId: String
                     var theme: String = "light"
+                }
 
+                extension UserPrefs: Embedded {
+                }
+
+                extension UserPrefs: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case userId
                         case theme
@@ -106,16 +107,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        userId: String,
-                        theme: String = "light"
-                    ) {
-                        self.userId = userId
-                        self.theme = theme
-                    }
                 }
 
-                extension UserPrefs: Embedded {
+                extension UserPrefs: Encodable {
                 }
 
                 extension UserPrefs: Equatable {
@@ -134,16 +128,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct Config: Codable {
+            struct Config {
                 var name: String = "default"
                 var description: String?
             }
             """,
             expandedSource: """
-                struct Config: Codable {
+                struct Config {
                     var name: String = "default"
                     var description: String?
+                }
 
+                extension Config: Embedded {
+                }
+
+                extension Config: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case name
                         case description
@@ -160,16 +159,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         self.description = try container.decodeIfPresent(String.self, forKey: .description)
                     }
 
-                    public init(
-                        name: String = "default",
-                        description: String?
-                    ) {
-                        self.name = name
-                        self.description = description
-                    }
                 }
 
-                extension Config: Embedded {
+                extension Config: Encodable {
                 }
 
                 extension Config: Equatable {
@@ -188,16 +180,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct ArrayTypes: Codable {
+            struct ArrayTypes {
                 var emptyArray: [String] = []
                 var nonEmptyArray: [Int] = [1, 2, 3]
             }
             """,
             expandedSource: """
-                struct ArrayTypes: Codable {
+                struct ArrayTypes {
                     var emptyArray: [String] = []
                     var nonEmptyArray: [Int] = [1, 2, 3]
+                }
 
+                extension ArrayTypes: Embedded {
+                }
+
+                extension ArrayTypes: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case emptyArray
                         case nonEmptyArray
@@ -219,16 +216,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        emptyArray: [String] = [],
-                        nonEmptyArray: [Int] = [1, 2, 3]
-                    ) {
-                        self.emptyArray = emptyArray
-                        self.nonEmptyArray = nonEmptyArray
-                    }
                 }
 
-                extension ArrayTypes: Embedded {
+                extension ArrayTypes: Encodable {
                 }
 
                 extension ArrayTypes: Equatable {
@@ -245,16 +235,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct DictTypes: Codable {
+            struct DictTypes {
                 var emptyDict: [String: Int] = [:]
                 var nonEmptyDict: [String: String] = ["key": "value"]
             }
             """,
             expandedSource: """
-                struct DictTypes: Codable {
+                struct DictTypes {
                     var emptyDict: [String: Int] = [:]
                     var nonEmptyDict: [String: String] = ["key": "value"]
+                }
 
+                extension DictTypes: Embedded {
+                }
+
+                extension DictTypes: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case emptyDict
                         case nonEmptyDict
@@ -276,16 +271,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        emptyDict: [String: Int] = [:],
-                        nonEmptyDict: [String: String] = ["key": "value"]
-                    ) {
-                        self.emptyDict = emptyDict
-                        self.nonEmptyDict = nonEmptyDict
-                    }
                 }
 
-                extension DictTypes: Embedded {
+                extension DictTypes: Encodable {
                 }
 
                 extension DictTypes: Equatable {
@@ -304,16 +292,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct Container: Codable {
+            struct Container {
                 var name: String = ""
                 var nested: NestedType = NestedType()
             }
             """,
             expandedSource: """
-                struct Container: Codable {
+                struct Container {
                     var name: String = ""
                     var nested: NestedType = NestedType()
+                }
 
+                extension Container: Embedded {
+                }
+
+                extension Container: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case name
                         case nested
@@ -334,8 +327,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.nested = NestedType()
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -347,17 +338,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        name: String = "",
-                        nested: NestedType = NestedType()
-                    ) {
-                        self.name = name
-                        self.nested = nested
-                    }
                 }
 
-                extension Container: Embedded {
+                extension Container: Encodable {
                 }
 
                 extension Container: Equatable {
@@ -374,16 +357,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct ContainerOptional: Codable {
+            struct ContainerOptional {
                 var name: String = ""
                 var nested: NestedType?
             }
             """,
             expandedSource: """
-                struct ContainerOptional: Codable {
+                struct ContainerOptional {
                     var name: String = ""
                     var nested: NestedType?
+                }
 
+                extension ContainerOptional: Embedded {
+                }
+
+                extension ContainerOptional: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case name
                         case nested
@@ -399,8 +387,6 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                         self.nested = try Self._decodeNestedIfPresent(NestedType.self, from: container, forKey: .nested)
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -412,17 +398,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        name: String = "",
-                        nested: NestedType?
-                    ) {
-                        self.name = name
-                        self.nested = nested
-                    }
                 }
 
-                extension ContainerOptional: Embedded {
+                extension ContainerOptional: Encodable {
                 }
 
                 extension ContainerOptional: Equatable {
@@ -441,20 +419,23 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            enum Status: String, Codable {
+            enum Status: String {
                 case active
                 case inactive
                 case pending
             }
             """,
             expandedSource: """
-                enum Status: String, Codable {
+                enum Status: String {
                     case active
                     case inactive
                     case pending
                 }
 
                 extension Status: Embedded {
+                }
+
+                extension Status: Codable {
                 }
 
                 extension Status: Equatable {
@@ -471,20 +452,23 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            enum Priority: Int, Codable {
+            enum Priority: Int {
                 case low = 0
                 case medium = 1
                 case high = 2
             }
             """,
             expandedSource: """
-                enum Priority: Int, Codable {
+                enum Priority: Int {
                     case low = 0
                     case medium = 1
                     case high = 2
                 }
 
                 extension Priority: Embedded {
+                }
+
+                extension Priority: Codable {
                 }
 
                 extension Priority: Equatable {
@@ -503,7 +487,7 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct MixedTypes: Codable {
+            struct MixedTypes {
                 var required: String
                 var withDefault: String = "default"
                 var optional: String? = "hello"
@@ -511,12 +495,17 @@ final class EmbeddedMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-                struct MixedTypes: Codable {
+                struct MixedTypes {
                     var required: String
                     var withDefault: String = "default"
                     var optional: String? = "hello"
                     var array: [Int] = []
+                }
 
+                extension MixedTypes: Embedded {
+                }
+
+                extension MixedTypes: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case required
                         case withDefault
@@ -547,20 +536,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        required: String,
-                        withDefault: String = "default",
-                        optional: String? = "hello",
-                        array: [Int] = []
-                    ) {
-                        self.required = required
-                        self.withDefault = withDefault
-                        self.optional = optional
-                        self.array = array
-                    }
                 }
 
-                extension MixedTypes: Embedded {
+                extension MixedTypes: Encodable {
                 }
 
                 extension MixedTypes: Equatable {
@@ -579,18 +557,23 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct AllOptionals: Codable {
+            struct AllOptionals {
                 var optString: String?
                 var optInt: Int?
                 var optBool: Bool?
             }
             """,
             expandedSource: """
-                struct AllOptionals: Codable {
+                struct AllOptionals {
                     var optString: String?
                     var optInt: Int?
                     var optBool: Bool?
+                }
 
+                extension AllOptionals: Embedded {
+                }
+
+                extension AllOptionals: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case optString
                         case optInt
@@ -604,18 +587,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         self.optBool = try container.decodeIfPresent(Bool.self, forKey: .optBool)
                     }
 
-                    public init(
-                        optString: String?,
-                        optInt: Int?,
-                        optBool: Bool?
-                    ) {
-                        self.optString = optString
-                        self.optInt = optInt
-                        self.optBool = optBool
-                    }
                 }
 
-                extension AllOptionals: Embedded {
+                extension AllOptionals: Encodable {
                 }
 
                 extension AllOptionals: Equatable {
@@ -634,16 +608,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithEnumDefault: Codable {
+            struct WithEnumDefault {
                 var status: Status = .active
                 var optionalStatus: Status?
             }
             """,
             expandedSource: """
-                struct WithEnumDefault: Codable {
+                struct WithEnumDefault {
                     var status: Status = .active
                     var optionalStatus: Status?
+                }
 
+                extension WithEnumDefault: Embedded {
+                }
+
+                extension WithEnumDefault: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case status
                         case optionalStatus
@@ -659,8 +638,6 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                         self.optionalStatus = try Self._decodeNestedIfPresent(Status.self, from: container, forKey: .optionalStatus)
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -672,17 +649,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        status: Status = .active,
-                        optionalStatus: Status?
-                    ) {
-                        self.status = status
-                        self.optionalStatus = optionalStatus
-                    }
                 }
 
-                extension WithEnumDefault: Embedded {
+                extension WithEnumDefault: Encodable {
                 }
 
                 extension WithEnumDefault: Equatable {
@@ -701,14 +670,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithNestedArrayEmpty: Codable {
+            struct WithNestedArrayEmpty {
                 var addresses: [Address] = []
             }
             """,
             expandedSource: """
-                struct WithNestedArrayEmpty: Codable {
+                struct WithNestedArrayEmpty {
                     var addresses: [Address] = []
+                }
 
+                extension WithNestedArrayEmpty: Embedded {
+                }
+
+                extension WithNestedArrayEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case addresses
                     }
@@ -722,8 +696,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.addresses = []
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -735,15 +707,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        addresses: [Address] = []
-                    ) {
-                        self.addresses = addresses
-                    }
                 }
 
-                extension WithNestedArrayEmpty: Embedded {
+                extension WithNestedArrayEmpty: Encodable {
                 }
 
                 extension WithNestedArrayEmpty: Equatable {
@@ -760,14 +726,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithNestedArrayNonEmpty: Codable {
+            struct WithNestedArrayNonEmpty {
                 var addresses: [Address] = [Address()]
             }
             """,
             expandedSource: """
-                struct WithNestedArrayNonEmpty: Codable {
+                struct WithNestedArrayNonEmpty {
                     var addresses: [Address] = [Address()]
+                }
 
+                extension WithNestedArrayNonEmpty: Embedded {
+                }
+
+                extension WithNestedArrayNonEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case addresses
                     }
@@ -781,8 +752,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.addresses = [Address()]
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -794,15 +763,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        addresses: [Address] = [Address()]
-                    ) {
-                        self.addresses = addresses
-                    }
                 }
 
-                extension WithNestedArrayNonEmpty: Embedded {
+                extension WithNestedArrayNonEmpty: Encodable {
                 }
 
                 extension WithNestedArrayNonEmpty: Equatable {
@@ -821,14 +784,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithNestedDictEmpty: Codable {
+            struct WithNestedDictEmpty {
                 var addressBook: [String: Address] = [:]
             }
             """,
             expandedSource: """
-                struct WithNestedDictEmpty: Codable {
+                struct WithNestedDictEmpty {
                     var addressBook: [String: Address] = [:]
+                }
 
+                extension WithNestedDictEmpty: Embedded {
+                }
+
+                extension WithNestedDictEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case addressBook
                     }
@@ -842,8 +810,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.addressBook = [:]
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -855,15 +821,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        addressBook: [String: Address] = [:]
-                    ) {
-                        self.addressBook = addressBook
-                    }
                 }
 
-                extension WithNestedDictEmpty: Embedded {
+                extension WithNestedDictEmpty: Encodable {
                 }
 
                 extension WithNestedDictEmpty: Equatable {
@@ -880,14 +840,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithNestedDictNonEmpty: Codable {
+            struct WithNestedDictNonEmpty {
                 var addressBook: [String: Address] = ["home": Address()]
             }
             """,
             expandedSource: """
-                struct WithNestedDictNonEmpty: Codable {
+                struct WithNestedDictNonEmpty {
                     var addressBook: [String: Address] = ["home": Address()]
+                }
 
+                extension WithNestedDictNonEmpty: Embedded {
+                }
+
+                extension WithNestedDictNonEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case addressBook
                     }
@@ -901,8 +866,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.addressBook = ["home": Address()]
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -914,15 +877,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        addressBook: [String: Address] = ["home": Address()]
-                    ) {
-                        self.addressBook = addressBook
-                    }
                 }
 
-                extension WithNestedDictNonEmpty: Embedded {
+                extension WithNestedDictNonEmpty: Encodable {
                 }
 
                 extension WithNestedDictNonEmpty: Equatable {
@@ -941,14 +898,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithEnumArrayEmpty: Codable {
+            struct WithEnumArrayEmpty {
                 var statuses: [Status] = []
             }
             """,
             expandedSource: """
-                struct WithEnumArrayEmpty: Codable {
+                struct WithEnumArrayEmpty {
                     var statuses: [Status] = []
+                }
 
+                extension WithEnumArrayEmpty: Embedded {
+                }
+
+                extension WithEnumArrayEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case statuses
                     }
@@ -962,8 +924,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.statuses = []
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -975,15 +935,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        statuses: [Status] = []
-                    ) {
-                        self.statuses = statuses
-                    }
                 }
 
-                extension WithEnumArrayEmpty: Embedded {
+                extension WithEnumArrayEmpty: Encodable {
                 }
 
                 extension WithEnumArrayEmpty: Equatable {
@@ -1000,14 +954,19 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithEnumArrayNonEmpty: Codable {
+            struct WithEnumArrayNonEmpty {
                 var statuses: [Status] = [.active, .pending]
             }
             """,
             expandedSource: """
-                struct WithEnumArrayNonEmpty: Codable {
+                struct WithEnumArrayNonEmpty {
                     var statuses: [Status] = [.active, .pending]
+                }
 
+                extension WithEnumArrayNonEmpty: Embedded {
+                }
+
+                extension WithEnumArrayNonEmpty: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case statuses
                     }
@@ -1021,8 +980,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.statuses = [.active, .pending]
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -1034,15 +991,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        statuses: [Status] = [.active, .pending]
-                    ) {
-                        self.statuses = statuses
-                    }
                 }
 
-                extension WithEnumArrayNonEmpty: Embedded {
+                extension WithEnumArrayNonEmpty: Encodable {
                 }
 
                 extension WithEnumArrayNonEmpty: Equatable {
@@ -1061,16 +1012,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithEnumDict: Codable {
+            struct WithEnumDict {
                 var statusMap: [String: Status] = [:]
                 var priorityMap: [String: Priority] = ["default": .medium]
             }
             """,
             expandedSource: """
-                struct WithEnumDict: Codable {
+                struct WithEnumDict {
                     var statusMap: [String: Status] = [:]
                     var priorityMap: [String: Priority] = ["default": .medium]
+                }
 
+                extension WithEnumDict: Embedded {
+                }
+
+                extension WithEnumDict: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case statusMap
                         case priorityMap
@@ -1091,8 +1047,6 @@ final class EmbeddedMacroTests: XCTestCase {
                             self.priorityMap = ["default": .medium]
                         }
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -1104,17 +1058,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        statusMap: [String: Status] = [:],
-                        priorityMap: [String: Priority] = ["default": .medium]
-                    ) {
-                        self.statusMap = statusMap
-                        self.priorityMap = priorityMap
-                    }
                 }
 
-                extension WithEnumDict: Embedded {
+                extension WithEnumDict: Encodable {
                 }
 
                 extension WithEnumDict: Equatable {
@@ -1133,16 +1079,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct WithOptionalCollections: Codable {
+            struct WithOptionalCollections {
                 var addresses: [Address]?
                 var itemMap: [String: Item]?
             }
             """,
             expandedSource: """
-                struct WithOptionalCollections: Codable {
+                struct WithOptionalCollections {
                     var addresses: [Address]?
                     var itemMap: [String: Item]?
+                }
 
+                extension WithOptionalCollections: Embedded {
+                }
+
+                extension WithOptionalCollections: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case addresses
                         case itemMap
@@ -1153,8 +1104,6 @@ final class EmbeddedMacroTests: XCTestCase {
                         self.addresses = try Self._decodeNestedIfPresent([Address].self, from: container, forKey: .addresses)
                         self.itemMap = try Self._decodeNestedIfPresent([String: Item].self, from: container, forKey: .itemMap)
                     }
-
-
                     /// Helper to decode nested types with Embedded constraint (compile-time validation)
                     @inline(__always)
                     private static func _decodeNested<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T {
@@ -1166,17 +1115,9 @@ final class EmbeddedMacroTests: XCTestCase {
                     private static func _decodeNestedIfPresent<T: Embedded & Decodable>(_ type: T.Type, from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> T? {
                         try container.decodeIfPresent(T.self, forKey: key)
                     }
-
-                    public init(
-                        addresses: [Address]?,
-                        itemMap: [String: Item]?
-                    ) {
-                        self.addresses = addresses
-                        self.itemMap = itemMap
-                    }
                 }
 
-                extension WithOptionalCollections: Embedded {
+                extension WithOptionalCollections: Encodable {
                 }
 
                 extension WithOptionalCollections: Equatable {
@@ -1195,16 +1136,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct IntegerTypes: Codable {
+            struct IntegerTypes {
                 var intValue: Int = 0
                 var int64Value: Int64 = 64
             }
             """,
             expandedSource: """
-                struct IntegerTypes: Codable {
+                struct IntegerTypes {
                     var intValue: Int = 0
                     var int64Value: Int64 = 64
+                }
 
+                extension IntegerTypes: Embedded {
+                }
+
+                extension IntegerTypes: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case intValue
                         case int64Value
@@ -1226,16 +1172,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        intValue: Int = 0,
-                        int64Value: Int64 = 64
-                    ) {
-                        self.intValue = intValue
-                        self.int64Value = int64Value
-                    }
                 }
 
-                extension IntegerTypes: Embedded {
+                extension IntegerTypes: Encodable {
                 }
 
                 extension IntegerTypes: Equatable {
@@ -1254,16 +1193,21 @@ final class EmbeddedMacroTests: XCTestCase {
         assertMacroExpansion(
             """
             @Embedded
-            struct FloatBoolTypes: Codable {
+            struct FloatBoolTypes {
                 var doubleValue: Double = 3.14
                 var boolTrue: Bool = true
             }
             """,
             expandedSource: """
-                struct FloatBoolTypes: Codable {
+                struct FloatBoolTypes {
                     var doubleValue: Double = 3.14
                     var boolTrue: Bool = true
+                }
 
+                extension FloatBoolTypes: Embedded {
+                }
+
+                extension FloatBoolTypes: Decodable {
                     private enum CodingKeys: String, CodingKey {
                         case doubleValue
                         case boolTrue
@@ -1285,16 +1229,9 @@ final class EmbeddedMacroTests: XCTestCase {
                         }
                     }
 
-                    public init(
-                        doubleValue: Double = 3.14,
-                        boolTrue: Bool = true
-                    ) {
-                        self.doubleValue = doubleValue
-                        self.boolTrue = boolTrue
-                    }
                 }
 
-                extension FloatBoolTypes: Embedded {
+                extension FloatBoolTypes: Encodable {
                 }
 
                 extension FloatBoolTypes: Equatable {

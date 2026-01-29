@@ -3,7 +3,7 @@ import SwiftStoreCore
 
 /// Change operation type
 @Embedded
-public enum ChangeOperation: String, Codable, Sendable {
+public enum ChangeOperation: String, Sendable {
     case insert
     case update
     case delete

@@ -6,33 +6,33 @@ import SwiftStoreServer
 
 @Entity
 struct User {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var name: String
     var email: String
     var age: Int?
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 @Entity
 struct Post {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var authorId: UUIDV7
     var title: String
     var content: String
     var status: String
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 @Entity
 struct Comment {
-    let id: UUIDV7
+    var id: UUIDV7 = UUIDV7()
     var postId: UUIDV7
     var authorId: UUIDV7
     var content: String
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 }
 
 // MARK: - Main

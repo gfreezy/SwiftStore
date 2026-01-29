@@ -19,7 +19,7 @@ struct MacroUser {
 
 /// Entity with nested Codable type (must use @Embedded for compile-time validation)
 @Embedded
-struct UserSettings: Codable, Sendable {
+struct UserSettings: Sendable {
     var theme: String = "light"
     var notifications: Bool = true
 }
@@ -37,7 +37,7 @@ struct MacroProfile {
 
 /// Enum for testing Codable enum storage (stored as JSON)
 @Embedded
-enum TaskStatus: String, Codable, Sendable {
+enum TaskStatus: String, Sendable {
     case pending
     case inProgress = "in_progress"
     case completed
@@ -54,7 +54,7 @@ struct MacroTask {
 
 /// Integer enum for testing Codable enum storage
 @Embedded
-enum Priority: Int, Codable, Sendable {
+enum Priority: Int, Sendable {
     case low = 0
     case medium = 1
     case high = 2
@@ -149,7 +149,7 @@ struct UserPosts {
 
 /// Simple Codable struct with all default values
 @Embedded
-struct DefaultSettings: Codable {
+struct DefaultSettings {
     var theme: String = "light"
     var fontSize: Int = 14
     var notifications: Bool = true
@@ -157,7 +157,7 @@ struct DefaultSettings: Codable {
 
 /// Codable struct with mixed required and default fields
 @Embedded
-struct DefaultUserPrefs: Codable {
+struct DefaultUserPrefs {
     var userId: String           // Required field (no default)
     var theme: String = "light"  // Has default
     var language: String = "en"  // Has default
@@ -165,7 +165,7 @@ struct DefaultUserPrefs: Codable {
 
 /// Codable struct with optional fields
 @Embedded
-struct DefaultConfig: Codable {
+struct DefaultConfig {
     var apiUrl: String = "https://api.example.com"
     var timeout: Int = 30
     var debugMode: Bool?  // Optional, no default needed
@@ -173,7 +173,7 @@ struct DefaultConfig: Codable {
 
 /// Comprehensive test struct covering all common types with defaults
 @Embedded
-struct AllTypesWithDefaults: Codable {
+struct AllTypesWithDefaults {
     // String types
     var stringEmpty: String = ""
     var stringValue: String = "hello"
@@ -208,7 +208,7 @@ struct AllTypesWithDefaults: Codable {
 
 /// Test struct with optional types (nil defaults)
 @Embedded
-struct AllOptionalTypes: Codable {
+struct AllOptionalTypes {
     var optString: String?
     var optInt: Int?
     var optDouble: Double?
@@ -219,7 +219,7 @@ struct AllOptionalTypes: Codable {
 
 /// Test struct with mixed optional and non-optional
 @Embedded
-struct MixedOptionalTypes: Codable {
+struct MixedOptionalTypes {
     var required: String                    // Required, throws if missing
     var withDefault: String = "default"    // Has default
     var optional: String?                   // Optional, nil if missing
@@ -228,7 +228,7 @@ struct MixedOptionalTypes: Codable {
 
 /// Nested struct for testing
 @Embedded
-struct NestedAddress: Codable {
+struct NestedAddress {
     var street: String = ""
     var city: String = ""
     var zip: String = ""
@@ -236,7 +236,7 @@ struct NestedAddress: Codable {
 
 /// Enum with @Embedded for nested usage
 @Embedded
-enum Status: String, Codable {
+enum Status: String {
     case active
     case inactive
     case pending
@@ -244,14 +244,14 @@ enum Status: String, Codable {
 
 /// Test struct with nested @Embedded type
 @Embedded
-struct PersonWithAddress: Codable {
+struct PersonWithAddress {
     var name: String = ""
     var address: NestedAddress = NestedAddress()
 }
 
 /// Comprehensive struct with nested types, collections, and enums
 @Embedded
-struct ComplexNestedTypes: Codable {
+struct ComplexNestedTypes {
     // Nested struct
     var address: NestedAddress = NestedAddress()
     var optionalAddress: NestedAddress?
