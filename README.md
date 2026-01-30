@@ -59,14 +59,19 @@ import SwiftStoreCore
 
 @Entity
 struct User {
-    let id: UUIDV7          // ✅ Primary key
+    @Default(UUIDV7())
+    let id: UUIDV7          // ✅ Primary key with default
     var name: String
     var email: String
     var age: Int?
-    let createdAt: Date     // ✅ Required
-    let updatedAt: Date     // ✅ Required
+    @Default(Date())
+    let createdAt: Date     // ✅ Required with default
+    @Default(Date())
+    let updatedAt: Date     // ✅ Required with default
 }
 ```
+
+> **💡 `@Default` Macro**: Use `@Default(value)` to specify default values for `let` properties. This allows memberwise initializers to work while providing sensible defaults for fields like `id`, `createdAt`, and `updatedAt`.
 
 **Option 2: Using `#SyncKey` (composite primary key)**
 
@@ -78,8 +83,10 @@ struct UserDevice {
     var userId: UUIDV7
     var deviceId: String
     var deviceName: String
-    let createdAt: Date     // ✅ Required
-    let updatedAt: Date     // ✅ Required
+    @Default(Date())
+    let createdAt: Date     // ✅ Required with default
+    @Default(Date())
+    let updatedAt: Date     // ✅ Required with default
 }
 ```
 
@@ -226,15 +233,18 @@ struct User {
     #Index<Self>(\.address.city)                     // Nested field index
     #Index<Self>(\.profile.settings.theme)           // Deep nested index
 
-    let id: UUIDV7                                   // ✅ Required
+    @Default(UUIDV7())
+    let id: UUIDV7                                   // ✅ Required with default
     var name: String
     var email: String
     var age: Int?
     var address: Address                             // Nested Codable type
     var profile: Profile                             // Deep nested type
     var tags: [String]                               // Array type
-    let createdAt: Date                              // ✅ Required
-    let updatedAt: Date                              // ✅ Required
+    @Default(Date())
+    let createdAt: Date                              // ✅ Required with default
+    @Default(Date())
+    let updatedAt: Date                              // ✅ Required with default
 }
 
 @Entity
@@ -242,12 +252,15 @@ struct Post {
     #Index<Self>(\.authorId)
     #Index<Self>(\.status, \.createdAt)              // Composite index
 
+    @Default(UUIDV7())
     let id: UUIDV7
     var authorId: UUIDV7
     var title: String
     var content: String
     var status: String
+    @Default(Date())
     let createdAt: Date
+    @Default(Date())
     let updatedAt: Date
 }
 
@@ -262,8 +275,10 @@ struct UserDevice {
     var deviceId: String                             // Part of SyncKey
     var deviceName: String
     var lastActiveAt: Date
-    let createdAt: Date                              // ✅ Required
-    let updatedAt: Date                              // ✅ Required
+    @Default(Date())
+    let createdAt: Date                              // ✅ Required with default
+    @Default(Date())
+    let updatedAt: Date                              // ✅ Required with default
 }
 
 @Entity
@@ -272,8 +287,10 @@ struct Favorite {
 
     var userId: UUIDV7
     var postId: UUIDV7
-    let createdAt: Date                              // ✅ Required
-    let updatedAt: Date                              // ✅ Required
+    @Default(Date())
+    let createdAt: Date                              // ✅ Required with default
+    @Default(Date())
+    let updatedAt: Date                              // ✅ Required with default
 }
 
 // MARK: - Readonly Entity (for local-only data, flexible id type)
@@ -583,7 +600,63 @@ print(profile.settings.theme)           // "light" (nested default)
 print(profile.settings.notifications)   // true (nested default)
 ```
 
-### 8. Decoding Behavior by Type
+### 8. @Default Marker Macro for `let` Properties
+
+The `@Default` macro allows specifying default values for `let` properties in `@Entity` and `@Embedded` structs. This is essential because `let` properties cannot have inline initializers while still allowing a memberwise init to be generated.
+
+```swift
+@Entity
+struct User {
+    @Default(UUIDV7())
+    let id: UUIDV7                      // Default: new UUIDV7
+
+    var name: String                     // No default, required in init
+
+    @Default(nil)
+    let nickname: String?                // Default: nil
+
+    @Default(Date())
+    let createdAt: Date                  // Default: current date
+
+    @Default(Date())
+    let updatedAt: Date                  // Default: current date
+}
+
+// Now you can create User with minimal parameters:
+let user = User(name: "Alice")  // id, createdAt, updatedAt auto-generated
+
+// Or provide custom values:
+let customUser = User(
+    id: specificId,
+    name: "Bob",
+    nickname: "Bobby",
+    createdAt: pastDate,
+    updatedAt: pastDate
+)
+```
+
+`@Default` also works with `@Embedded` types:
+
+```swift
+@Embedded
+struct Settings {
+    @Default("light")
+    let theme: String                    // Default: "light"
+
+    @Default(14)
+    let fontSize: Int                    // Default: 14
+
+    @Default(true)
+    let notifications: Bool              // Default: true
+
+    @Default(nil)
+    let customColor: String?             // Default: nil
+}
+```
+
+> **Note**: Use `@Default(nil)` for optional properties that should default to `nil`. The macro uses a special `OptionalNil` type to handle nil literals.
+
+### 9. Decoding Behavior by Type
 
 SwiftStore provides fault-tolerant decoding with different behaviors based on type and default value presence.
 
@@ -779,7 +852,7 @@ SwiftStoreServer (development only)
 | Package | Description |
 |---------|-------------|
 | [SwiftStoreProtocols](./SwiftStoreProtocols/) | Protocol definitions - EntityProtocol, SQLiteCodable, etc. |
-| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity(readonly:), #Index, #SyncKey, @Embedded |
+| [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity(readonly:), #Index, #SyncKey, @Embedded, @Default |
 | [SwiftStoreCore](./SwiftStoreCore/) | Core functionality - SQLite connection, query builder, migration |
 | [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
