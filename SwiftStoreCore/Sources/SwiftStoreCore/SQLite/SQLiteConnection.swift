@@ -449,13 +449,10 @@ public extension SQLiteConnection {
     }
 
     /// Update an existing entity (only available for entities with id field)
-    /// Timestamp (updated_at) is set automatically by trigger
+    /// If updated_at is unchanged, the trigger will set it automatically
     func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID: SQLiteValueComparable {
         var values = try encoder.encode(entity)
-        // Remove id, created_at, updated_at - trigger will set updated_at
         values.removeValue(forKey: "id")
-        values.removeValue(forKey: "created_at")
-        values.removeValue(forKey: "updated_at")
 
         let columns = values.keys.sorted()
         let setClause = columns.map { "\($0) = ?" }.joined(separator: ", ")
