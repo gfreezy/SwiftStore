@@ -524,6 +524,16 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 )
             }
 
+            // createdAt must have a default value
+            if createdAtProp.defaultValue == nil {
+                throw MacroError.missingDefaultValue(
+                    structName: structName,
+                    fieldName: "createdAt",
+                    expectedDefault: "Date()",
+                    isLet: createdAtProp.isLet
+                )
+            }
+
             // Check for updatedAt: Date
             guard let updatedAtProp = properties.first(where: { $0.name == "updatedAt" }) else {
                 throw MacroError.missingRequiredField(
@@ -547,6 +557,16 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 throw MacroError.fieldMustNotBeOptional(
                     structName: structName,
                     fieldName: "updatedAt"
+                )
+            }
+
+            // updatedAt must have a default value
+            if updatedAtProp.defaultValue == nil {
+                throw MacroError.missingDefaultValue(
+                    structName: structName,
+                    fieldName: "updatedAt",
+                    expectedDefault: "Date()",
+                    isLet: updatedAtProp.isLet
                 )
             }
         }
@@ -650,7 +670,7 @@ public enum MacroError: Error, CustomStringConvertible {
     case invalidKeyPath(keyPath: String)
     case syncKeyAndIdMutuallyExclusive(structName: String)
     case missingTypeAnnotation(structName: String, fieldName: String)
-    case missingDefaultValue(structName: String, fieldName: String, expectedDefault: String)
+    case missingDefaultValue(structName: String, fieldName: String, expectedDefault: String, isLet: Bool)
 
     public var description: String {
         switch self {
@@ -674,9 +694,14 @@ public enum MacroError: Error, CustomStringConvertible {
         case .missingTypeAnnotation(let structName, let fieldName):
             return
                 "@Entity requires '\(structName).\(fieldName)' to have an explicit type annotation. Use 'var \(fieldName): Type = value' instead of 'var \(fieldName) = value'."
-        case .missingDefaultValue(let structName, let fieldName, let expectedDefault):
-            return
-                "@Entity requires '\(structName).\(fieldName)' to have a default value. Use 'var \(fieldName): ... = \(expectedDefault)'"
+        case .missingDefaultValue(let structName, let fieldName, let expectedDefault, let isLet):
+            if isLet {
+                return
+                    "@Entity requires '\(structName).\(fieldName)' to have a default value. Use '@Default(\(expectedDefault)) let \(fieldName): ...'"
+            } else {
+                return
+                    "@Entity requires '\(structName).\(fieldName)' to have a default value. Use 'var \(fieldName): ... = \(expectedDefault)'"
+            }
         }
     }
 }

@@ -26,7 +26,9 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 var settings: UserSettings
                 var profile: Profile?
                 var metadata: Metadata = Metadata()
+                @Default(Date())
                 let createdAt: Date
+                @Default(Date())
                 let updatedAt: Date
             }
             """,
@@ -57,8 +59,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
                         ColumnDefinition(name: "profile", type: .text, nullable: true, isJSONEncoded: true),
                         ColumnDefinition(name: "metadata", type: .text, defaultValue: "'{}'", isJSONEncoded: true),
-                        ColumnDefinition(name: "created_at", type: .real),
-                        ColumnDefinition(name: "updated_at", type: .real)
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
                     ]
                 }
 
@@ -110,8 +112,20 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         SwiftStoreLogger.error("Failed to decode 'TestEntity.metadata': \\(error)")
                         _metadata = Metadata()
                     }
-                    let _createdAt = try Date(from: statement.columnValue(Int32(8), type: .real))
-                    let _updatedAt = try Date(from: statement.columnValue(Int32(9), type: .real))
+                    var _createdAt: Date
+                    do {
+                        _createdAt = try Date(from: statement.columnValue(Int32(8), type: .real))
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'TestEntity.createdAt': \\(error)")
+                        _createdAt = Date()
+                    }
+                    var _updatedAt: Date
+                    do {
+                        _updatedAt = try Date(from: statement.columnValue(Int32(9), type: .real))
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'TestEntity.updatedAt': \\(error)")
+                        _updatedAt = Date()
+                    }
                     return Self(id: _id, name: _name, count: _count, score: _score, tags: _tags, settings: _settings, profile: _profile, metadata: _metadata, createdAt: _createdAt, updatedAt: _updatedAt)
                 }
 
@@ -132,8 +146,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     settings: UserSettings,
                     profile: Profile?,
                     metadata: Metadata = Metadata(),
-                    createdAt: Date,
-                    updatedAt: Date
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
                 ) {
                     self.id = id
                     self.name = name
@@ -195,8 +209,18 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         SwiftStoreLogger.error("Failed to decode 'TestEntity.metadata': \\(error)")
                         self.metadata = Metadata()
                     }
-                    self.createdAt = try container.decode(Date.self, forKey: .createdAt)
-                    self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    do {
+                        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'TestEntity.createdAt': \\(error)")
+                        self.createdAt = Date()
+                    }
+                    do {
+                        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'TestEntity.updatedAt': \\(error)")
+                        self.updatedAt = Date()
+                    }
                 }
                 /// Helper to decode nested types with Embedded constraint (compile-time validation)
                 @inline(__always)
@@ -981,7 +1005,9 @@ final class EntityMacroComprehensiveTests: XCTestCase {
             struct StandardEntity {
                 var id: UUIDV7
                 var name: String
+                @Default(Date())
                 let createdAt: Date
+                @Default(Date())
                 let updatedAt: Date
             }
             """,
@@ -1000,8 +1026,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     [
                         ColumnDefinition(name: "id", type: .blob, primaryKey: true),
                         ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "created_at", type: .real),
-                        ColumnDefinition(name: "updated_at", type: .real)
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
                     ]
                 }
 
@@ -1017,8 +1043,20 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public static func sqliteDecode(from statement: any SQLiteStatementProtocol) throws -> Self {
                     let _id = try UUIDV7(from: statement.columnValue(Int32(0), type: .blob))
                     let _name = try String(from: statement.columnValue(Int32(1), type: .text))
-                    let _createdAt = try Date(from: statement.columnValue(Int32(2), type: .real))
-                    let _updatedAt = try Date(from: statement.columnValue(Int32(3), type: .real))
+                    var _createdAt: Date
+                    do {
+                        _createdAt = try Date(from: statement.columnValue(Int32(2), type: .real))
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'StandardEntity.createdAt': \\(error)")
+                        _createdAt = Date()
+                    }
+                    var _updatedAt: Date
+                    do {
+                        _updatedAt = try Date(from: statement.columnValue(Int32(3), type: .real))
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'StandardEntity.updatedAt': \\(error)")
+                        _updatedAt = Date()
+                    }
                     return Self(id: _id, name: _name, createdAt: _createdAt, updatedAt: _updatedAt)
                 }
 
@@ -1033,8 +1071,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                 public init(
                     id: UUIDV7,
                     name: String,
-                    createdAt: Date,
-                    updatedAt: Date
+                    createdAt: Date = Date(),
+                    updatedAt: Date = Date()
                 ) {
                     self.id = id
                     self.name = name
@@ -1058,8 +1096,18 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     let container = try decoder.container(keyedBy: CodingKeys.self)
                     self.id = try container.decode(UUIDV7.self, forKey: .id)
                     self.name = try container.decode(String.self, forKey: .name)
-                    self.createdAt = try container.decode(Date.self, forKey: .createdAt)
-                    self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    do {
+                        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'StandardEntity.createdAt': \\(error)")
+                        self.createdAt = Date()
+                    }
+                    do {
+                        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+                    } catch {
+                        SwiftStoreLogger.error("Failed to decode 'StandardEntity.updatedAt': \\(error)")
+                        self.updatedAt = Date()
+                    }
                 }
 
             }
