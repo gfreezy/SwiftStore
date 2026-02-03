@@ -409,12 +409,8 @@ public final class SQLiteConnection {
     // MARK: - Entity CRUD Operations
 
     /// Insert a new entity
-    /// Timestamps (created_at, updated_at) are set automatically by DEFAULT values
     public func insert<E: EntityProtocol>(_ entity: E) throws {
-        var values = try encoder.encode(entity)
-        // Remove timestamps - DEFAULT values will set them
-        values.removeValue(forKey: "created_at")
-        values.removeValue(forKey: "updated_at")
+        let values = try encoder.encode(entity)
 
         let columns = values.keys.sorted()
         let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
