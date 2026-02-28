@@ -175,6 +175,11 @@ let package = Package(
             path: "SwiftStoreSync/Tests/SwiftStoreSyncTests"
         ),
         .testTarget(
+            name: "SwiftStoreConnectionQueueTests",
+            dependencies: ["SwiftStoreConnectionQueue"],
+            path: "SwiftStoreConnectionQueue/Tests/SwiftStoreConnectionQueueTests"
+        ),
+        .testTarget(
             name: "SwiftStoreServerTests",
             dependencies: ["SwiftStoreServer"],
             path: "SwiftStoreServer/Tests/SwiftStoreServerTests"

@@ -165,7 +165,7 @@ public struct ConnectionOptions: Sendable {
 open class ConnectionManager: @unchecked Sendable {
     public let path: String
     public let options: ConnectionOptions
-    private let setupSignal = AsyncSignal()
+    private let setupSignal = AsyncSignal(timeout: .seconds(10))
     private let migrationStarted = Lock<Bool>(false)
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
