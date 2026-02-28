@@ -165,7 +165,8 @@ public struct ConnectionOptions: Sendable {
 open class ConnectionManager: @unchecked Sendable {
     public let path: String
     public let options: ConnectionOptions
-    private let setupTask: Lock<Task<Void, Error>?> = Lock(nil)
+    private let setupSignal = AsyncSignal()
+    private let migrationStarted = Lock<Bool>(false)
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
 
@@ -275,9 +276,15 @@ open class ConnectionManager: @unchecked Sendable {
             throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
         }
 
-        if setupTask.value() == nil {
-            let task = Task {
-                try await self.write { connection in
+        let shouldRun = migrationStarted.withLock { started -> Bool in
+            if started { return false }
+            started = true
+            return true
+        }
+
+        if shouldRun {
+            do {
+                try await _write { connection in
                     let migrator = Migrator(
                         connection: connection, trackDeletes: self.syncEnabled,
                         createUpdateTrigger: self.syncEnabled, dropUnusedColumns: dropUnusedColumns)
@@ -297,13 +304,14 @@ open class ConnectionManager: @unchecked Sendable {
                     }
                     SwiftStoreLogger.info("Migration Plan:\n\(plan)")
                 }
-                // Call additional setup after migration completes
                 try await self.performAdditionalSetup()
+                await setupSignal.signal()
+            } catch {
+                await setupSignal.signal(result: .failure(error))
+                throw error
             }
-            setupTask.setValue(task)
-        }
-        if let task = setupTask.value() {
-            try await task.value
+        } else {
+            try await setupSignal.wait()
         }
     }
 
@@ -313,10 +321,14 @@ open class ConnectionManager: @unchecked Sendable {
         // Default implementation is empty, subclasses can override
     }
 
-    /// Execute a block with the write connection.
-    /// Only one write operation can happen at a time.
-    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
-    public func write<T: Sendable>(
+    /// Wait for setup (migration) to complete before performing operations.
+    /// If migrate() hasn't been called yet, suspends until it is called and completes.
+    private func waitForSetup() async throws {
+        try await setupSignal.wait()
+    }
+
+    /// Internal write that bypasses waitForSetup (used by migrate to avoid deadlock)
+    private func _write<T: Sendable>(
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
         guard let writer else {
@@ -333,12 +345,23 @@ open class ConnectionManager: @unchecked Sendable {
         }
     }
 
+    /// Execute a block with the write connection.
+    /// Only one write operation can happen at a time.
+    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
+    public func write<T: Sendable>(
+        _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
+    ) async throws -> T {
+        try await waitForSetup()
+        return try await _write(block, transaction: transaction)
+    }
+
     /// Execute a block with one of the read connections.
     /// Multiple read operations can happen concurrently.
     /// Uses a pool pattern to find an available reader.
     public func read<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T) async throws
         -> T
     {
+        try await waitForSetup()
         // Try to find a reader that is not in use
         for reader in readers {
             let found = reader.isInUse.withLock { isInUse in
@@ -379,6 +402,7 @@ open class ConnectionManager: @unchecked Sendable {
     /// - Returns: Sync result with statistics
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func sync() async throws -> SyncResult {
+        try await waitForSetup()
         guard let writer else {
             throw ConnectionManagerError.readonlyMode("Cannot sync in readonly mode.")
         }
