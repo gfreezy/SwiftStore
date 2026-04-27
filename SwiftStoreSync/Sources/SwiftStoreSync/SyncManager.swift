@@ -5,15 +5,15 @@ import SwiftStoreChangeTracker
 
 // MARK: - Sync Types
 
-/// Sync state tracking
+/// Sync state tracking.
+///
+/// Only tracks the local push watermark. Remote watermark (if any) is
+/// owned by the `SyncTransport` implementation.
 public struct SyncState: Codable, Sendable {
-    /// Last synced server clock value
-    public var lastServerClock: Int64
-    /// Last synced local clock value
+    /// Last logical clock value of a local change that has been handed to the transport.
     public var lastLocalClock: Int64
 
-    public init(lastServerClock: Int64, lastLocalClock: Int64) {
-        self.lastServerClock = lastServerClock
+    public init(lastLocalClock: Int64) {
         self.lastLocalClock = lastLocalClock
     }
 }
@@ -72,8 +72,6 @@ public struct SyncConfig: Sendable {
     public let transport: any SyncTransport
     /// Sync configuration (batch size, etc.)
     public let syncConfiguration: SyncConfiguration
-    /// Initial sync state
-    public let initialState: SyncState
     /// Current schema version for migration compatibility
     /// Higher versions can process lower version data, lower versions ignore higher version data
     public let schemaVersion: Int
@@ -87,7 +85,6 @@ public struct SyncConfig: Sendable {
     ///   - registeredEntities: List of entity types to be synchronized
     ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
     ///   - transport: Sync transport layer responsible for communicating with the remote server
-    ///   - initialState: Initial sync state containing the last synced server and local clock values. Must be persisted to storage and restored on app restart
     ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     ///   - pendingDeletesTable: Table name for pending delete records, defaults to "__swiftstore_pending_deletes"
     ///   - syncConfiguration: Sync configuration including batch size settings
@@ -97,7 +94,6 @@ public struct SyncConfig: Sendable {
         deviceId: UUIDV7,
         registeredEntities: [any EntityProtocol.Type],
         transport: any SyncTransport,
-        initialState: SyncState,
         schemaVersion: Int,
         tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
         pendingDeletesTable: String = "__swiftstore_pending_deletes",
@@ -111,7 +107,6 @@ public struct SyncConfig: Sendable {
         self.tickClock = tickClock
         self.transport = transport
         self.syncConfiguration = syncConfiguration
-        self.initialState = initialState
         self.schemaVersion = schemaVersion
         self.ntpToleranceMs = ntpToleranceMs
     }
@@ -124,6 +119,7 @@ public final class SyncManager {
     private let connection: SQLiteConnection
     private let changeTracker: ChangeTracker
     private let changeLogReader: ChangeTrackerReader
+    private let statePersistence: SyncStatePersistence
     private let transport: any SyncTransport
     private let deviceId: UUIDV7
     private let changeLogDbPath: String
@@ -145,7 +141,6 @@ public final class SyncManager {
         self.configuration = config.syncConfiguration
         self.schemaVersion = config.schemaVersion
         self.ntpToleranceMs = config.ntpToleranceMs
-        self.state = config.initialState
 
         // Create ChangeTracker
         self.changeTracker = try ChangeTracker(
@@ -166,6 +161,11 @@ public final class SyncManager {
             changeLogDbPath: config.changeLogDbPath,
             deviceId: config.deviceId
         )
+
+        // Load persisted sync state (reusing the changelog DB's writable connection).
+        self.statePersistence = try SyncStatePersistence(
+            connection: self.changeTracker.connection)
+        self.state = try statePersistence.load()
     }
 
     // MARK: - Sync State
@@ -175,13 +175,34 @@ public final class SyncManager {
         state
     }
 
+    // MARK: - Transport Lifecycle
+
+    /// Activate the underlying transport. Idempotent; safe to call multiple times.
+    /// Typically invoked by the containing `WritableConnectionActor` before the first sync.
+    nonisolated(nonsending)
+    public func startTransport() async throws {
+        try await transport.start(deviceId: deviceId)
+    }
+
+    /// Deactivate the underlying transport.
+    nonisolated(nonsending)
+    public func stopTransport() async {
+        await transport.stop()
+    }
+
+    /// Stream of remote-activity signals from the transport. Consumers may
+    /// observe it to auto-trigger a sync when remote changes are detected.
+    public var remoteChanges: AsyncStream<Void> {
+        transport.remoteChanges
+    }
+
     // MARK: - Sync Operations
 
-    /// Perform a full sync (pull then push)
+    /// Perform a full sync cycle: enqueue local changes, run a fetch+send round
+    /// through the transport, and apply any pulled remote changes locally.
     /// - Returns: Sync result with statistics
     nonisolated(nonsending)
     public func sync() async throws -> SyncResult {
-        // 0. Verify time sync if NTP tolerance is configured
         if let tolerance = ntpToleranceMs {
             let result = try await NTPClient.verifyTime(toleranceMs: tolerance)
             if !result.isValid {
@@ -189,79 +210,55 @@ public final class SyncManager {
             }
         }
 
-        // 1. Pull changes from remote
-        let pullResult = try await pull()
+        let localChanges = try changeLogReader.changesSince(clock: state.lastLocalClock)
+        try Task.checkCancellation()
 
-        // 2. Push local changes to remote
-        let pushResult = try await push()
+        if !localChanges.isEmpty {
+            try await transport.enqueue(localChanges.map { SyncChange(from: $0) })
+        }
+
+        let cycle = try await transport.syncNow()
+
+        try Task.checkCancellation()
+
+        let remoteChanges = cycle.pulled.filter {
+            $0.deviceId != deviceId && $0.schemaVersion <= schemaVersion
+        }
+
+        var applied = 0
+        var applyConflicts = 0
+        if !remoteChanges.isEmpty {
+            let batches = remoteChanges.chunked(into: configuration.batchSize)
+            for batch in batches {
+                try Task.checkCancellation()
+                let result = try applyBatch(batch)
+                applied += result.applied
+                applyConflicts += result.conflicts
+                if configuration.yieldBetweenBatches {
+                    await Task.yield()
+                }
+            }
+        }
+
+        if let last = localChanges.last {
+            state.lastLocalClock = last.logicalClock
+            do {
+                try statePersistence.save(state)
+            } catch {
+                // Recoverable: next sync re-pushes, applier is idempotent on syncKey.
+                SwiftStoreLogger.error("Failed to persist sync state: \(error)")
+            }
+        }
 
         return SyncResult(
-            pulledCount: pullResult.pulledCount,
-            pushedCount: pushResult.pushedCount,
-            conflictCount: pullResult.conflictCount + pushResult.conflictCount,
+            pulledCount: applied,
+            pushedCount: cycle.pushed.count,
+            conflictCount: cycle.conflicts.count + applyConflicts,
             state: state
         )
     }
 
     // MARK: - Private Helpers
-
-    /// Pull changes from remote and apply locally
-    /// - Returns: Sync result for pull operation
-    nonisolated(nonsending)
-    private func pull() async throws -> SyncResult {
-        // Get changes from remote since last sync
-        let response = try await transport.pull(
-            sinceClock: state.lastServerClock,
-            deviceId: deviceId
-        )
-
-        try Task.checkCancellation()
-
-        // Filter out:
-        // 1. Changes from this device (they're already local)
-        // 2. Changes with higher schema version (incompatible with current version)
-        let remoteChanges = response.changes.filter {
-            $0.deviceId != deviceId && $0.schemaVersion <= schemaVersion
-        }
-
-        guard !remoteChanges.isEmpty else {
-            state.lastServerClock = response.serverClock
-            return SyncResult(
-                pulledCount: 0,
-                pushedCount: 0,
-                conflictCount: 0,
-                state: state
-            )
-        }
-
-        var appliedCount = 0
-        var conflictCount = 0
-
-        // Process changes in batches
-        let batches = remoteChanges.chunked(into: configuration.batchSize)
-
-        for batch in batches {
-            try Task.checkCancellation()
-            let result = try applyBatch(batch)
-            appliedCount += result.applied
-            conflictCount += result.conflicts
-
-            // Yield between batches (tracker is re-enabled, safe for other writes)
-            if configuration.yieldBetweenBatches {
-                await Task.yield()
-            }
-        }
-
-        // Update sync state
-        state.lastServerClock = response.serverClock
-
-        return SyncResult(
-            pulledCount: appliedCount,
-            pushedCount: 0,
-            conflictCount: conflictCount,
-            state: state
-        )
-    }
 
     /// Apply a batch of changes atomically (tracker stopped during apply)
     private func applyBatch(_ changes: [SyncChange]) throws -> (applied: Int, conflicts: Int) {
@@ -288,49 +285,6 @@ public final class SyncManager {
         }
 
         return (applied, conflicts)
-    }
-
-    /// Push local changes to remote
-    /// - Returns: Sync result for push operation
-    nonisolated(nonsending)
-    private func push() async throws -> SyncResult {
-        // Get local changes since last push
-        let localChanges = try changeLogReader.changesSince(clock: state.lastLocalClock)
-        
-        guard !localChanges.isEmpty else {
-            return SyncResult(
-                pulledCount: 0,
-                pushedCount: 0,
-                conflictCount: 0,
-                state: state
-            )
-        }
-
-        try Task.checkCancellation()
-
-        // Convert to SyncChange
-        let syncChanges = localChanges.map { SyncChange(from: $0) }
-
-        // Push to remote
-        let response = try await transport.push(
-            changes: syncChanges,
-            deviceId: deviceId
-        )
-
-        // Update local clock to latest pushed
-        if let lastChange = localChanges.last {
-            state.lastLocalClock = lastChange.logicalClock
-        }
-
-        // Update server clock if provided
-        state.lastServerClock = max(state.lastServerClock, response.serverClock)
-
-        return SyncResult(
-            pulledCount: 0,
-            pushedCount: localChanges.count - response.conflicts.count,
-            conflictCount: response.conflicts.count,
-            state: state
-        )
     }
 
     // MARK: - Change Log Reading

@@ -37,6 +37,10 @@ let package = Package(
             targets: ["SwiftStoreConnectionQueue"]
         ),
         .library(
+            name: "SwiftStoreSyncCloudTransport",
+            targets: ["SwiftStoreSyncCloudTransport"]
+        ),
+        .library(
             name: "SwiftStoreMacros",
             targets: ["SwiftStoreMacros"]
         ),
@@ -118,6 +122,15 @@ let package = Package(
             path: "SwiftStoreConnectionQueue/Sources/SwiftStoreConnectionQueue"
         ),
 
+        // MARK: - CloudKit Sync Transport
+        .target(
+            name: "SwiftStoreSyncCloudTransport",
+            dependencies: [
+                "SwiftStoreSync",
+            ],
+            path: "SwiftStoreSyncCloudTransport/Sources/SwiftStoreSyncCloudTransport"
+        ),
+
         // MARK: - Server Layer (Development HTTP Server)
         .target(
             name: "SwiftStoreServer",
@@ -178,6 +191,11 @@ let package = Package(
             name: "SwiftStoreConnectionQueueTests",
             dependencies: ["SwiftStoreConnectionQueue"],
             path: "SwiftStoreConnectionQueue/Tests/SwiftStoreConnectionQueueTests"
+        ),
+        .testTarget(
+            name: "SwiftStoreSyncCloudTransportTests",
+            dependencies: ["SwiftStoreSyncCloudTransport"],
+            path: "SwiftStoreSyncCloudTransport/Tests/SwiftStoreSyncCloudTransportTests"
         ),
         .testTarget(
             name: "SwiftStoreServerTests",

@@ -176,20 +176,23 @@ struct CacheEntry {
 // Create connection manager with sync
 let manager = try ConnectionManager(
     path: "database.sqlite",
-    syncConfig: SyncConfig(
-        changeLogDbPath: "changelog.sqlite",
+    entities: [User.self],
+    syncConfig: SyncOptions(
         deviceId: myDeviceId,
-        registeredEntities: [User.self],
-        tickClock: { clock.tick() },
-        transport: myTransport,
-        syncableEntities: [User.self]
+        transport: myTransport,          // e.g. CloudKitSyncTransport
+        schemaVersion: 1
     )
 )
 
-// Perform sync
+// Perform sync. The transport is lazily started on the first call;
+// subsequent remote-change notifications auto-trigger sync in the background.
 let result = try await manager.sync()
 print("Pulled: \(result.pulledCount), Pushed: \(result.pushedCount)")
 ```
+
+See [§6.1 CloudKit transport](#61-cloudkit-transport) for the ready-made
+CloudKit implementation, and [§6 Multi-device Sync](#6-multi-device-sync)
+for a full example including how to implement `SyncTransport` yourself.
 
 ## Complete Example
 
@@ -489,87 +492,188 @@ try await manager.read { conn in
 
 ### 6. Multi-device Sync
 
+`SyncTransport` is a lifecycle-aware, observer-style protocol. Implementations
+own their own remote-cursor state; `SyncManager` only tracks `lastLocalClock`
+locally. You implement four methods plus an `AsyncStream` for remote-activity
+signals:
+
 ```swift
-// Implement SyncTransport protocol
-struct MySyncTransport: SyncTransport {
-    let serverURL: URL
+public protocol SyncTransport: Sendable {
+    /// Signal-only stream: yields when the transport observes remote
+    /// activity (push notification, poll tick, etc.). WritableConnectionActor
+    /// consumes it to auto-trigger a sync.
+    var remoteChanges: AsyncStream<Void> { get }
 
-    func pull(sinceClock: Int64, deviceId: UUIDV7) async throws -> PullResponse {
-        // Pull changes from server
-        var request = URLRequest(url: serverURL.appendingPathComponent("pull"))
-        request.httpMethod = "POST"
-        request.httpBody = try JSONEncoder().encode([
-            "sinceClock": sinceClock,
-            "deviceId": deviceId.uuidString
-        ])
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return try JSONDecoder().decode(PullResponse.self, from: data)
-    }
+    /// Activate. Idempotent. Called lazily on the first sync.
+    func start(deviceId: UUIDV7) async throws
 
-    func push(changes: [SyncChange], deviceId: UUIDV7) async throws -> PushResponse {
-        // Push local changes to server
-        var request = URLRequest(url: serverURL.appendingPathComponent("push"))
-        request.httpMethod = "POST"
-        request.httpBody = try JSONEncoder().encode([
-            "changes": changes,
-            "deviceId": deviceId.uuidString
-        ])
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return try JSONDecoder().decode(PushResponse.self, from: data)
-    }
+    /// Deactivate. Finishes `remoteChanges`.
+    func stop() async
+
+    /// Stage local changes for the next cycle. No network I/O here.
+    func enqueue(_ changes: [SyncChange]) async throws
+
+    /// Run one fetch + send cycle and return the result.
+    func syncNow() async throws -> SyncCycleResult
 }
+```
 
-// Create hybrid logical clock
-let clock = HybridClock()
+#### Implementing SyncTransport for a REST backend
 
-// Configure sync
-let deviceId = UUIDV7()
-let syncConfig = SyncConfig(
-    changeLogDbPath: dbPath.replacingOccurrences(of: ".sqlite", with: "_changelog.sqlite"),
-    deviceId: deviceId,
-    pendingDeletesTable: "__pending_deletes",
-    registeredEntities: [User.self, Post.self, UserDevice.self, Favorite.self],
-    tickClock: { clock.tick() },
-    transport: MySyncTransport(serverURL: URL(string: "https://api.example.com/sync")!),
-    syncableEntities: [User.self, Post.self, UserDevice.self, Favorite.self],
-    syncConfiguration: SyncConfiguration(batchSize: 50, yieldBetweenBatches: true),
-    schemaVersion: 1,
-    ntpToleranceMs: 5000  // Time offset tolerance: 5 seconds
-)
+```swift
+import SwiftStoreSync
 
-// Create connection manager with sync
-let syncManager = try ConnectionManager(
-    path: dbPath,
-    syncConfig: syncConfig
-)
+actor RESTSyncTransport: SyncTransport {
+    private let serverURL: URL
+    private var cursor: String?      // opaque server cursor
+    private var pending: [SyncChange] = []
+    private var deviceId: UUIDV7?
 
-// Check sync status
-if await syncManager.hasSyncEnabled {
-    print("Sync is enabled")
+    private nonisolated let _stream: AsyncStream<Void>
+    private nonisolated let _continuation: AsyncStream<Void>.Continuation
+    nonisolated var remoteChanges: AsyncStream<Void> { _stream }
 
-    // Perform sync
-    do {
-        let result = try await syncManager.sync()
-        print("""
-        Sync completed:
-        - Pulled: \(result.pulledCount) changes
-        - Pushed: \(result.pushedCount) changes
-        - Conflicts: \(result.conflictCount)
-        - Server clock: \(result.state.lastServerClock)
-        """)
-    } catch let error as NTPError {
-        print("Time sync error: \(error)")
-    } catch let error as SyncError {
-        print("Sync error: \(error)")
+    init(serverURL: URL) {
+        self.serverURL = serverURL
+        let (s, c) = AsyncStream<Void>.makeStream()
+        self._stream = s
+        self._continuation = c
     }
 
-    // Get current sync state
-    if let state = await syncManager.syncState {
-        print("Last server clock: \(state.lastServerClock)")
-        print("Last local clock: \(state.lastLocalClock)")
+    func start(deviceId: UUIDV7) async throws { self.deviceId = deviceId }
+
+    func stop() async { _continuation.finish() }
+
+    func enqueue(_ changes: [SyncChange]) async throws {
+        pending.append(contentsOf: changes)
+    }
+
+    func syncNow() async throws -> SyncCycleResult {
+        guard let deviceId else { throw MySyncError.notStarted }
+
+        // 1. Pull
+        var pullReq = URLRequest(url: serverURL.appendingPathComponent("pull"))
+        pullReq.httpMethod = "POST"
+        pullReq.httpBody = try JSONEncoder().encode(
+            PullBody(cursor: cursor, deviceId: deviceId.description))
+        let (pullData, _) = try await URLSession.shared.data(for: pullReq)
+        let pullResp = try JSONDecoder().decode(PullResp.self, from: pullData)
+        cursor = pullResp.nextCursor
+
+        // 2. Push what was staged
+        let toPush = pending
+        pending.removeAll()
+        var pushReq = URLRequest(url: serverURL.appendingPathComponent("push"))
+        pushReq.httpMethod = "POST"
+        pushReq.httpBody = try JSONEncoder().encode(
+            PushBody(changes: toPush, deviceId: deviceId.description))
+        let (pushData, _) = try await URLSession.shared.data(for: pushReq)
+        let pushResp = try JSONDecoder().decode(PushResp.self, from: pushData)
+
+        return SyncCycleResult(
+            pulled: pullResp.changes,
+            pushed: toPush.map(\.id).filter { !pushResp.conflictIds.contains($0) },
+            conflicts: toPush.filter { pushResp.conflictIds.contains($0.id) }
+        )
     }
 }
 ```
+
+#### Wiring sync into ConnectionManager
+
+```swift
+let deviceId = loadOrGenerateDeviceId()      // persist across launches
+let transport = RESTSyncTransport(serverURL: URL(string: "https://api.example.com")!)
+
+let manager = try ConnectionManager(
+    path: dbPath,
+    entities: [User.self, Post.self, UserDevice.self, Favorite.self],
+    syncConfig: SyncOptions(
+        deviceId: deviceId,
+        transport: transport,
+        schemaVersion: 1,
+        ntpToleranceMs: 5000        // reject sync if clock drifts > 5s
+    )
+)
+
+// Trigger sync. First call lazily starts the transport and spawns a
+// background observer that re-triggers sync() whenever the transport
+// yields on `remoteChanges`. The `lastLocalClock` watermark is persisted
+// automatically in the changelog DB — no manual save/restore needed.
+do {
+    let result = try await manager.sync()
+    print("""
+    Sync completed:
+    - Pulled:    \(result.pulledCount)
+    - Pushed:    \(result.pushedCount)
+    - Conflicts: \(result.conflictCount)
+    """)
+
+    // Optional: inspect the current watermark for UI / telemetry.
+    if let state = await manager.syncState {
+        print("last local clock: \(state.lastLocalClock)")
+    }
+} catch let error as NTPError {
+    print("Time out of sync: \(error)")
+} catch let error as SyncError {
+    print("Sync error: \(error)")
+}
+```
+
+### 6.1 CloudKit transport
+
+For iCloud-backed sync, import `SwiftStoreSyncCloudTransport` — a
+ready-made `SyncTransport` built on top of `CKSyncEngine`. Deletes hit
+CloudKit as real record deletions (no tombstone accumulation); inserts and
+updates share a `CKRecord.ID` keyed by `<entityType>:<syncKey-hex>`.
+
+```swift
+import CloudKit
+import SwiftStoreConnectionQueue
+import SwiftStoreSyncCloudTransport
+
+// 1. Decide where to persist the engine's state blob, the pending-push queue,
+//    and bootstrap flags. The file-based default is enough for most apps.
+let stateDir = URL.documentsDirectory.appending(path: "sync-cloud-state")
+let stateStore = try FileCloudKitSyncStateStore(directory: stateDir)
+
+// 2. Build the transport.
+let cloudTransport = CloudKitSyncTransport(
+    config: CloudKitTransportConfig(
+        container: CKContainer(identifier: "iCloud.com.example.MyApp")
+        // zoneName, recordType, assetThreshold, subscriptionID all have defaults
+    ),
+    stateStore: stateStore
+)
+
+// 3. Wire it into ConnectionManager like any other transport.
+let manager = try ConnectionManager(
+    path: dbPath,
+    entities: [User.self, Post.self],
+    syncConfig: SyncOptions(
+        deviceId: loadOrGenerateDeviceId(),
+        transport: cloudTransport,
+        schemaVersion: 1
+    )
+)
+
+// 4. Sync whenever you want. CKSyncEngine will schedule additional syncs in
+//    the background when CloudKit delivers push notifications; those also
+//    flow back through `manager.sync()` via the remoteChanges observer.
+try await manager.sync()
+```
+
+**Project setup:** the app target needs the *iCloud* capability with
+*CloudKit* enabled and the container identifier you passed above. On first
+launch the transport creates a private-DB record zone named
+`SwiftStoreSyncChanges` and a `CKDatabaseSubscription` for push-driven
+change delivery; both are idempotent across launches thanks to the
+persisted setup flags.
+
+**Custom state storage:** if you'd rather reuse an existing persistence
+layer (your own SQLite DB, Keychain, etc.) implement the
+`CloudKitSyncStateStore` protocol and pass it instead of
+`FileCloudKitSyncStateStore`.
 
 ### 7. @Embedded Fault-tolerant Decoding
 

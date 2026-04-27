@@ -52,49 +52,50 @@ public struct SyncChange: Codable, Sendable {
     }
 }
 
-/// Response from pull operation
-public struct PullResponse: Sendable {
-    /// Changes from remote since the requested clock
-    public let changes: [SyncChange]
-    /// The latest server clock value
-    public let serverClock: Int64
-
-    public init(changes: [SyncChange], serverClock: Int64) {
-        self.changes = changes
-        self.serverClock = serverClock
-    }
-}
-
-/// Response from push operation
-public struct PushResponse: Sendable {
-    /// Whether the push was successful
-    public let success: Bool
-    /// The new server clock value after push
-    public let serverClock: Int64
-    /// Any conflicts that occurred (changes that couldn't be applied)
+/// Result of a single transport sync cycle.
+public struct SyncCycleResult: Sendable {
+    /// Changes pulled from remote in this cycle. Canonical delivery path.
+    public let pulled: [SyncChange]
+    /// Identifiers of local changes that were successfully committed to remote.
+    public let pushed: [UUIDV7]
+    /// Changes rejected by remote as conflicts (for CloudKit: serverRecordChanged only).
     public let conflicts: [SyncChange]
 
-    public init(success: Bool, serverClock: Int64, conflicts: [SyncChange] = []) {
-        self.success = success
-        self.serverClock = serverClock
+    public init(pulled: [SyncChange], pushed: [UUIDV7], conflicts: [SyncChange]) {
+        self.pulled = pulled
+        self.pushed = pushed
         self.conflicts = conflicts
     }
 }
 
-/// Protocol for remote sync transport
-/// Implement this protocol to connect to your sync server (REST API, WebSocket, etc.)
+/// Protocol for a sync transport connecting local change tracking to a remote backend.
+///
+/// Implementations may be event-driven (e.g., CloudKit's `CKSyncEngine`) or
+/// request-response (e.g., REST/WebSocket). The transport owns its own
+/// watermark state — callers do not pass a cursor.
 public protocol SyncTransport: Sendable {
-    /// Pull changes from remote since the given clock value
-    /// - Parameters:
-    ///   - sinceClock: The clock value to get changes after
-    ///   - deviceId: The local device ID (to exclude own changes if needed)
-    /// - Returns: Pull response with remote changes
-    func pull(sinceClock: Int64, deviceId: UUIDV7) async throws -> PullResponse
+    /// Signal-only stream that yields when the transport observes remote
+    /// activity (push notification, server event, poll tick). Consumers should
+    /// treat this as a trigger to call `syncNow()` via `SyncManager.sync()`.
+    /// Pulled changes are delivered via `SyncCycleResult.pulled`, not here.
+    /// Finishes after `stop()` returns.
+    var remoteChanges: AsyncStream<Void> { get }
 
-    /// Push local changes to remote
-    /// - Parameters:
-    ///   - changes: The changes to push
-    ///   - deviceId: The local device ID
-    /// - Returns: Push response with result
-    func push(changes: [SyncChange], deviceId: UUIDV7) async throws -> PushResponse
+    /// Activate the transport. Idempotent. Must be called before `enqueue`
+    /// or `syncNow`.
+    /// - Parameter deviceId: The local device ID; the transport may use it to
+    ///   annotate outgoing records or filter incoming ones.
+    func start(deviceId: UUIDV7) async throws
+
+    /// Deactivate the transport. Finishes the `remoteChanges` stream.
+    /// Idempotent.
+    func stop() async
+
+    /// Stage local changes for the next sync cycle. Must not perform network I/O.
+    /// Changes staged here are delivered on the next `syncNow()` call.
+    func enqueue(_ changes: [SyncChange]) async throws
+
+    /// Run a single fetch + send cycle. The transport is responsible for
+    /// tracking its own watermark between calls, so no cursor is required.
+    func syncNow() async throws -> SyncCycleResult
 }

@@ -34,8 +34,6 @@ public struct SyncOptions: Sendable {
     public let deviceId: UUIDV7
     /// Remote sync transport
     public let transport: any SyncTransport
-    /// Initial sync state (must be persisted to storage and restored on app restart)
-    public let initialState: SyncState
     /// Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     public let schemaVersion: Int
     /// Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
@@ -47,11 +45,15 @@ public struct SyncOptions: Sendable {
     /// NTP time offset tolerance in milliseconds, nil to disable NTP verification
     public let ntpToleranceMs: Int64?
 
-    /// Initialize sync configuration
+    /// Initialize sync configuration.
+    ///
+    /// Sync state (`lastLocalClock` watermark) is persisted automatically
+    /// inside the changelog database, so no initial state parameter is needed.
+    /// Inspect the current state via `ConnectionManager.syncState`.
+    ///
     /// - Parameters:
     ///   - deviceId: Unique device identifier to distinguish change sources from different devices
     ///   - transport: Sync transport layer responsible for communicating with the remote server
-    ///   - initialState: Initial sync state containing the last synced server and local clock values. Must be persisted to storage and restored on app restart
     ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     ///   - changeLogDbPath: Path to the change log database file, nil to auto-generate from main database path (e.g., db.sqlite -> db_changelog.sqlite)
     ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
@@ -61,7 +63,6 @@ public struct SyncOptions: Sendable {
     public init(
         deviceId: UUIDV7,
         transport: any SyncTransport,
-        initialState: SyncState,
         schemaVersion: Int,
         changeLogDbPath: String? = nil,
         tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
@@ -72,7 +73,6 @@ public struct SyncOptions: Sendable {
         self.changeLogDbPath = changeLogDbPath
         self.deviceId = deviceId
         self.transport = transport
-        self.initialState = initialState
         self.schemaVersion = schemaVersion
         self.tickClock = tickClock
         self.pendingDeletesTable = pendingDeletesTable
@@ -93,7 +93,6 @@ public struct SyncOptions: Sendable {
             deviceId: deviceId,
             registeredEntities: entities,
             transport: transport,
-            initialState: initialState,
             schemaVersion: schemaVersion,
             tickClock: tickClock,
             pendingDeletesTable: pendingDeletesTable,
@@ -435,6 +434,7 @@ public actor WritableConnectionActor {
     private let connection: SQLiteConnection
     private let syncManager: SyncManager?
     private var isSyncing: Bool = false
+    private var remoteObserver: Task<Void, Never>?
 
     init(connection: SQLiteConnection, syncConfig: SwiftStoreSync.SyncConfig? = nil) throws {
         self.connection = connection
@@ -443,6 +443,10 @@ public actor WritableConnectionActor {
         } else {
             self.syncManager = nil
         }
+    }
+
+    deinit {
+        remoteObserver?.cancel()
     }
 
     /// Execute a block with the connection
@@ -462,12 +466,40 @@ public actor WritableConnectionActor {
             throw SyncError.notConfigured(
                 "SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
         }
+
+        if remoteObserver == nil {
+            try await manager.startTransport()
+            let stream = manager.remoteChanges
+            remoteObserver = Task { [weak self] in
+                for await _ in stream {
+                    guard !Task.isCancelled else { return }
+                    do {
+                        _ = try await self?.sync()
+                    } catch SyncError.syncAlreadyInProgress {
+                        // Outer sync is already running — signal is coalesced into it.
+                    } catch {
+                        SwiftStoreLogger.error("Error syncing: \(error)")
+                    }
+                }
+            }
+        }
+
         guard !isSyncing else {
             throw SyncError.syncAlreadyInProgress("Sync is already in progress.")
         }
         isSyncing = true
         defer { isSyncing = false }
         return try await manager.sync()
+    }
+
+    /// Stop the sync transport and cancel the remote-signal observer. Idempotent.
+    public func stopSync() async {
+        guard remoteObserver != nil else { return }
+        remoteObserver?.cancel()
+        remoteObserver = nil
+        if let manager = syncManager {
+            await manager.stopTransport()
+        }
     }
 
     var syncState: SyncState? {
