@@ -328,6 +328,7 @@ open class ConnectionManager: @unchecked Sendable {
 
     /// Internal write that bypasses waitForSetup (used by migrate to avoid deadlock)
     private func _write<T: Sendable>(
+        isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
         guard let writer else {
@@ -348,6 +349,7 @@ open class ConnectionManager: @unchecked Sendable {
     /// Only one write operation can happen at a time.
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func write<T: Sendable>(
+        isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
         try await waitForSetup()
@@ -357,9 +359,10 @@ open class ConnectionManager: @unchecked Sendable {
     /// Execute a block with one of the read connections.
     /// Multiple read operations can happen concurrently.
     /// Uses a pool pattern to find an available reader.
-    public func read<T: Sendable>(_ block: @Sendable (SQLiteConnection) throws -> T) async throws
-        -> T
-    {
+    public func read<T: Sendable>(
+        isolation: isolated (any Actor)? = #isolation,
+        _ block: @Sendable (SQLiteConnection) throws -> T
+    ) async throws -> T {
         try await waitForSetup()
         // Try to find a reader that is not in use
         for reader in readers {
