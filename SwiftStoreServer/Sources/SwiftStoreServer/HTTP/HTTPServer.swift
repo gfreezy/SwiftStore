@@ -119,7 +119,7 @@ public actor HTTPServer {
     }
 
     /// Receive and process HTTP request
-    private func receiveRequest(_ connection: NWConnection, id: ObjectIdentifier) async {
+    private func receiveRequest(_ connection: NWConnection, id: ObjectIdentifier, bufferedData: Data = Data()) async {
         // Read request data
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self = self else { return }
@@ -130,23 +130,31 @@ public actor HTTPServer {
                 return
             }
 
-            guard let data = data, !data.isEmpty else {
-                if isComplete {
-                    connection.cancel()
-                }
-                return
+            var receivedData = bufferedData
+            if let data = data {
+                receivedData.append(data)
             }
-
+            let requestData = receivedData
             Task {
-                await self.handleRequestData(data, connection: connection, id: id)
+                await self.handleRequestData(requestData, isComplete: isComplete, connection: connection, id: id)
             }
         }
     }
 
     /// Handle received request data
-    private func handleRequestData(_ data: Data, connection: NWConnection, id: ObjectIdentifier) async {
+    private func handleRequestData(_ data: Data, isComplete: Bool, connection: NWConnection, id: ObjectIdentifier) async {
         do {
-            let request = try HTTPRequestParser.parse(data)
+            guard let request = try HTTPRequestParser.parseIfComplete(data) else {
+                if isComplete {
+                    if data.isEmpty {
+                        connection.cancel()
+                        return
+                    }
+                    throw HTTPError.badRequest("Incomplete request")
+                }
+                await receiveRequest(connection, id: id, bufferedData: data)
+                return
+            }
             let response = await router.handle(request)
             await sendResponse(response, connection: connection)
         } catch let error as HTTPError {

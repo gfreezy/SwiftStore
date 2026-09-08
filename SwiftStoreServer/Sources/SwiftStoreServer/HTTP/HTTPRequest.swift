@@ -181,19 +181,19 @@ public struct HTTPRequest: Sendable {
 public struct HTTPRequestParser {
     /// Parse raw HTTP request data
     public static func parse(_ data: Data) throws -> HTTPRequest {
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw HTTPError.badRequest("Invalid UTF-8 in request")
+        guard let request = try parseIfComplete(data) else {
+            throw HTTPError.badRequest("Incomplete request")
         }
+        return request
+    }
 
-        // Split headers and body
-        let parts = string.components(separatedBy: "\r\n\r\n")
-        let headerSection = parts[0]
-        let bodyData: Data?
-
-        if parts.count > 1 && !parts[1].isEmpty {
-            bodyData = parts[1].data(using: .utf8)
-        } else {
-            bodyData = nil
+    /// Returns nil until the headers and Content-Length bytes have arrived.
+    static func parseIfComplete(_ data: Data) throws -> HTTPRequest? {
+        guard let separator = data.range(of: Data("\r\n\r\n".utf8)) else {
+            return nil
+        }
+        guard let headerSection = String(data: data[..<separator.lowerBound], encoding: .utf8) else {
+            throw HTTPError.badRequest("Invalid UTF-8 in request headers")
         }
 
         let lines = headerSection.components(separatedBy: "\r\n")
@@ -224,8 +224,30 @@ public struct HTTPRequestParser {
             if let colonIndex = line.firstIndex(of: ":") {
                 let key = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces).lowercased()
                 let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                if key == "content-length", headers[key] != nil {
+                    throw HTTPError.badRequest("Duplicate Content-Length")
+                }
                 headers[key] = value
             }
+        }
+
+        // Body bytes may contain binary data or CRLF sequences; do not decode
+        // them as part of the headers or split them on the header separator.
+        guard headers["transfer-encoding"] == nil else {
+            throw HTTPError.badRequest("Transfer-Encoding is not supported")
+        }
+        let availableBody = data[separator.upperBound...]
+        let bodyData: Data?
+        if let value = headers["content-length"] {
+            guard !value.isEmpty,
+                  value.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+                  let length = Int(value) else {
+                throw HTTPError.badRequest("Invalid Content-Length")
+            }
+            guard availableBody.count >= length else { return nil }
+            bodyData = length > 0 ? Data(availableBody.prefix(length)) : nil
+        } else {
+            bodyData = availableBody.isEmpty ? nil : Data(availableBody)
         }
 
         return HTTPRequest(

@@ -191,6 +191,66 @@ struct SwiftStoreServerTests {
             }
         }
 
+        @Test("Wait for every byte of a fragmented query request")
+        func fragmentedQueryRequest() throws {
+            let body = Data(#"{"sql":"SELECT * FROM book","page":1,"pageSize":50}"#.utf8)
+            let headers = Data("POST /api/query HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 51\r\n\r\n".utf8)
+            let raw = headers + body
+            // Covers fragmented headers, the header/body boundary, and partial bodies.
+            for count in 0..<raw.count {
+                #expect(try HTTPRequestParser.parseIfComplete(Data(raw.prefix(count))) == nil)
+            }
+            let request = try #require(try HTTPRequestParser.parseIfComplete(raw))
+            let query = try request.decodeBody(QueryRequest.self)
+            #expect(query.sql == "SELECT * FROM book")
+            #expect(query.page == 1)
+            #expect(query.pageSize == 50)
+        }
+
+        @Test("Preserve binary bodies and embedded header separators")
+        func binaryBody() throws {
+            let body = Data([0xFF, 0x00]) + Data("\r\n\r\ntrailing content".utf8)
+            let headers = Data("POST /upload HTTP/1.1\r\nContent-Length: \(body.count)\r\n\r\n".utf8)
+            let request = try HTTPRequestParser.parse(headers + body)
+            #expect(request.body == body)
+        }
+
+        @Test("Content-Length counts UTF-8 bytes and excludes following data")
+        func utf8BodyLength() throws {
+            let body = Data(#"{"sql":"SELECT '中文'"}"#.utf8)
+            let headers = Data("POST /api/query HTTP/1.1\r\ncOnTeNt-LeNgTh: \(body.count)\r\n\r\n".utf8)
+            #expect(try HTTPRequestParser.parseIfComplete(headers + body.dropLast()) == nil)
+            let request = try HTTPRequestParser.parse(headers + body + Data("GET / HTTP/1.1\r\n\r\n".utf8))
+            #expect(request.body == body)
+        }
+
+        @Test("Reject invalid or ambiguous request lengths", arguments: [
+            "Content-Length: -1", "Content-Length: abc", "Content-Length: +1",
+            "Content-Length:", "Content-Length: 99999999999999999999999999999",
+            "Content-Length: 1\r\nContent-Length: 2", "Transfer-Encoding: chunked"
+        ])
+        func invalidBodyLength(header: String) {
+            let raw = Data("POST /api/query HTTP/1.1\r\n\(header)\r\n\r\n".utf8)
+            #expect(throws: HTTPError.self) {
+                try HTTPRequestParser.parseIfComplete(raw)
+            }
+        }
+
+        @Test("Zero-length body is complete without further reads")
+        func emptyBody() throws {
+            let raw = Data("POST /api/query HTTP/1.1\r\nContent-Length: 0\r\n\r\n".utf8)
+            let request = try #require(try HTTPRequestParser.parseIfComplete(raw))
+            #expect(request.body == nil)
+        }
+
+        @Test("Parsing a truncated complete request reports an error")
+        func truncatedRequest() {
+            let raw = Data("POST /api/query HTTP/1.1\r\nContent-Length: 51\r\n\r\n{}".utf8)
+            #expect(throws: HTTPError.self) {
+                try HTTPRequestParser.parse(raw)
+            }
+        }
+
         @Test("Parse URL with query parameters")
         func parseQueryParams() throws {
             let raw = "GET /api/search?q=test&page=2 HTTP/1.1\r\nHost: localhost\r\n\r\n"
