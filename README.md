@@ -22,7 +22,7 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/gfreezy/SwiftStore", from: "1.0.0")
+    .package(url: "https://github.com/gfreezy/SwiftStore", from: "2.0.1")
 ]
 ```
 
