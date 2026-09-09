@@ -32,12 +32,12 @@ func createTestConnection() throws -> SQLiteConnection {
     return try SQLiteConnection(path: tempPath)
 }
 
-func createAndMigrateTestDatabase(trackDeletes: Bool = true) throws -> (connection: SQLiteConnection, dbPath: String) {
+func createAndMigrateTestDatabase() throws -> (connection: SQLiteConnection, dbPath: String) {
     let tempPath = NSTemporaryDirectory() + "swiftstore_sync_test_\(UUID().uuidString).sqlite"
     let connection = try SQLiteConnection(path: tempPath)
 
     // Migrate TestEntity table (disable update trigger to avoid double-counting in tests)
-    let migrator = Migrator(connection: connection, trackDeletes: trackDeletes, createUpdateTrigger: false)
+    let migrator = Migrator(connection: connection, createUpdateTrigger: false)
     let plan = try migrator.plan(for: [TestEntity.self])
     try migrator.apply(plan)
 
@@ -58,7 +58,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -109,7 +108,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -142,9 +140,9 @@ struct ChangeTrackerTests {
         }
     }
 
-    @Test("ChangeTracker captures DELETE operation via pending_deletes trigger")
+    @Test("ChangeTracker captures DELETE")
     func testCaptureDelete() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase(trackDeletes: true)
+        let (connection, dbPath) = try createAndMigrateTestDatabase()
 
         // Insert entity before starting tracker
         let entity = TestEntity(
@@ -161,7 +159,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -187,14 +184,13 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker captures multiple operations in sequence")
     func testCaptureMultipleOperations() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase(trackDeletes: true)
+        let (connection, dbPath) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -264,7 +260,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self], // Only TestEntity registered
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -295,44 +290,6 @@ struct ChangeTrackerTests {
         #expect(changes[0].entityType == "test_entity")
     }
 
-    @Test("ChangeTracker clears pending_deletes on start")
-    func testClearsPendingDeletesOnStart() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase(trackDeletes: true)
-
-        // Manually insert stale pending delete using the new sync_key_json schema
-        let staleId = UUIDV7()
-        let syncKeyJson = "{\"id\": \"\(staleId.data.map { String(format: "%02X", $0) }.joined())\"}"
-        try connection.execute("""
-            INSERT INTO \(Migrator.pendingDeletesTableName) (table_name, sync_key_json)
-            VALUES ('test_entity', ?)
-        """, values: [.text(syncKeyJson)])
-
-        // Verify it exists
-        let countBefore = try connection.prepare("SELECT COUNT(*) FROM \(Migrator.pendingDeletesTableName)")
-        _ = try countBefore.step()
-        #expect(countBefore.columnInt64(0) == 1)
-
-        var clockValue: Int64 = 0
-        let changeTracker = try ChangeTracker(
-            connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
-            deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
-            registeredEntities: [TestEntity.self],
-            tickClock: { clockValue += 1; return clockValue }
-        )
-
-        // Start should clear the table
-        try changeTracker.start()
-
-        // Verify pending_deletes is cleared
-        let countAfter = try connection.prepare("SELECT COUNT(*) FROM \(Migrator.pendingDeletesTableName)")
-        _ = try countAfter.step()
-        #expect(countAfter.columnInt64(0) == 0)
-
-        changeTracker.stop()
-    }
-
     @Test("ChangeTracker payload contains correct entity data")
     func testPayloadContainsCorrectData() throws {
         let (connection, dbPath) = try createAndMigrateTestDatabase()
@@ -342,7 +299,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -389,7 +345,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )
@@ -435,7 +390,6 @@ struct ChangeTrackerTests {
             connection: connection,
             changeLogDbPath: dbPath + ".changelog",
             deviceId: testDeviceId,
-            pendingDeletesTable: Migrator.pendingDeletesTableName,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
         )

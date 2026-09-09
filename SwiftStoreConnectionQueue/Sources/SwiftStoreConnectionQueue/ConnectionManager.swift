@@ -38,12 +38,10 @@ public struct SyncOptions: Sendable {
     public let schemaVersion: Int
     /// Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
     public let tickClock: @Sendable () -> Int64
-    /// Table name for pending delete records
-    public let pendingDeletesTable: String
     /// Sync configuration including batch size settings
     public let syncConfiguration: SyncConfiguration
-    /// NTP time offset tolerance in milliseconds, nil to disable NTP verification
-    public let ntpToleranceMs: Int64?
+    /// NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
+    public let ntpToleranceMs: Int64
 
     /// Initialize sync configuration.
     ///
@@ -57,25 +55,22 @@ public struct SyncOptions: Sendable {
     ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     ///   - changeLogDbPath: Path to the change log database file, nil to auto-generate from main database path (e.g., db.sqlite -> db_changelog.sqlite)
     ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
-    ///   - pendingDeletesTable: Table name for pending delete records, defaults to "__swiftstore_pending_deletes"
     ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds, nil to disable NTP verification
+    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
     public init(
         deviceId: UUIDV7,
         transport: any SyncTransport,
         schemaVersion: Int,
         changeLogDbPath: String? = nil,
         tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-        pendingDeletesTable: String = "__swiftstore_pending_deletes",
         syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        ntpToleranceMs: Int64? = 5000
+        ntpToleranceMs: Int64 = 5000
     ) {
         self.changeLogDbPath = changeLogDbPath
         self.deviceId = deviceId
         self.transport = transport
         self.schemaVersion = schemaVersion
         self.tickClock = tickClock
-        self.pendingDeletesTable = pendingDeletesTable
         self.syncConfiguration = syncConfiguration
         self.ntpToleranceMs = ntpToleranceMs
     }
@@ -95,7 +90,6 @@ public struct SyncOptions: Sendable {
             transport: transport,
             schemaVersion: schemaVersion,
             tickClock: tickClock,
-            pendingDeletesTable: pendingDeletesTable,
             syncConfiguration: syncConfiguration,
             ntpToleranceMs: ntpToleranceMs
         )
@@ -285,7 +279,7 @@ open class ConnectionManager: @unchecked Sendable {
             do {
                 try await _write { connection in
                     let migrator = Migrator(
-                        connection: connection, trackDeletes: self.syncEnabled,
+                        connection: connection,
                         createUpdateTrigger: self.syncEnabled, dropUnusedColumns: dropUnusedColumns)
                     let plan: MigrationPlan = try migrator.plan(for: self.entities)
                     if !dryRun {
@@ -303,6 +297,7 @@ open class ConnectionManager: @unchecked Sendable {
                     }
                     SwiftStoreLogger.info("Migration Plan:\n\(plan)")
                 }
+                if !dryRun { try await writer?.startTracking() }
                 try await self.performAdditionalSetup()
                 await setupSignal.signal()
             } catch {
@@ -334,15 +329,7 @@ open class ConnectionManager: @unchecked Sendable {
         guard let writer else {
             throw ConnectionManagerError.readonlyMode("Cannot write in readonly mode.")
         }
-        return try await writer.run { conn in
-            if transaction {
-                try conn.transaction {
-                    try block(conn)
-                }
-            } else {
-                try block(conn)
-            }
-        }
+        return try await writer.run(block, transaction: transaction)
     }
 
     /// Execute a block with the write connection.
@@ -417,6 +404,11 @@ open class ConnectionManager: @unchecked Sendable {
             await writer?.syncState
         }
     }
+
+    /// Suspend automatic syncing while continuing to track local writes.
+    public func stopSync() async {
+        await writer?.stopSync()
+    }
 }
 
 /// Internal actor to serialize access to a single SQLite connection (read-only)
@@ -438,6 +430,8 @@ public actor WritableConnectionActor {
     private let syncManager: SyncManager?
     private var isSyncing: Bool = false
     private var remoteObserver: Task<Void, Never>?
+    private var resyncRequested = false
+    private var syncGeneration = UUID()
 
     init(connection: SQLiteConnection, syncConfig: SwiftStoreSync.SyncConfig? = nil) throws {
         self.connection = connection
@@ -454,11 +448,25 @@ public actor WritableConnectionActor {
 
     /// Execute a block with the connection
     /// To ensure connection is not used concurrently, block must not be async, it will be executed in sequence.
-    func run<T>(_ block: @Sendable (SQLiteConnection) throws -> T) throws -> T {
-        try block(connection)
+    func run<T>(_ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true) throws -> T {
+        let previousClock = try syncManager?.latestClock()
+        let result: T
+        if transaction {
+            // The connection coordinates changelog transactions, including nested rollback.
+            result = try connection.transaction { try block(connection) }
+        } else {
+            result = try block(connection)
+        }
+        if remoteObserver != nil, try syncManager?.latestClock() != previousClock {
+            let generation = syncGeneration
+            Task { [weak self] in await self?.syncAfterSignal(generation: generation) }
+        }
+        return result
     }
 
     // MARK: - Sync Operations
+
+    func startTracking() throws { try syncManager?.startTracking() }
 
     var hasSyncEnabled: Bool {
         syncManager != nil
@@ -469,40 +477,53 @@ public actor WritableConnectionActor {
             throw SyncError.notConfigured(
                 "SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
         }
-
-        if remoteObserver == nil {
-            try await manager.startTransport()
-            let stream = manager.remoteChanges
-            remoteObserver = Task { [weak self] in
-                for await _ in stream {
-                    guard !Task.isCancelled else { return }
-                    do {
-                        _ = try await self?.sync()
-                    } catch SyncError.syncAlreadyInProgress {
-                        // Outer sync is already running — signal is coalesced into it.
-                    } catch {
-                        SwiftStoreLogger.error("Error syncing: \(error)")
-                    }
-                }
-            }
-        }
-
         guard !isSyncing else {
             throw SyncError.syncAlreadyInProgress("Sync is already in progress.")
         }
         isSyncing = true
+        let generation = syncGeneration
         defer { isSyncing = false }
-        return try await manager.sync()
+        // Also retries account availability after a previous start failed.
+        try await manager.startTransport()
+        guard generation == syncGeneration else {
+            await manager.stopTransport()
+            throw CancellationError()
+        }
+        if remoteObserver == nil {
+            let stream = manager.remoteChanges
+            remoteObserver = Task { [weak self] in
+                for await _ in stream {
+                    guard !Task.isCancelled else { return }
+                    await self?.syncAfterSignal(generation: generation)
+                }
+            }
+        }
+        var result: SyncResult
+        repeat {
+            resyncRequested = false
+            result = try await manager.sync()
+        } while resyncRequested && generation == syncGeneration
+        return result
     }
 
-    /// Stop the sync transport and cancel the remote-signal observer. Idempotent.
+    private func syncAfterSignal(generation: UUID) async {
+        guard generation == syncGeneration, remoteObserver != nil else { return }
+        if isSyncing {
+            // A signal during local application belongs to the *next* round.
+            resyncRequested = true
+            return
+        }
+        do { _ = try await sync() }
+        catch { SwiftStoreLogger.error("Error syncing: \(error)") }
+    }
+
+    /// Stop synchronization. Local changes continue to accumulate in the changelog.
     public func stopSync() async {
-        guard remoteObserver != nil else { return }
+        syncGeneration = UUID()
+        resyncRequested = false
         remoteObserver?.cancel()
         remoteObserver = nil
-        if let manager = syncManager {
-            await manager.stopTransport()
-        }
+        if let manager = syncManager { await manager.stopTransport() }
     }
 
     var syncState: SyncState? {

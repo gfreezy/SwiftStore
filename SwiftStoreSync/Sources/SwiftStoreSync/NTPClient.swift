@@ -18,6 +18,7 @@ public struct NTPVerificationResult: Sendable {
 
 /// NTP time verification error
 public enum NTPError: Error, LocalizedError {
+    case invalidTolerance
     case timeout
     case invalidResponse
     case networkError(Error)
@@ -26,6 +27,8 @@ public enum NTPError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .invalidTolerance:
+            return "Sync time tolerance must be positive; time verification cannot be disabled."
         case .timeout:
             return "NTP request timed out"
         case .invalidResponse:
@@ -43,6 +46,24 @@ public enum NTPError: Error, LocalizedError {
 /// Simple NTP client for time verification
 /// Uses SNTP (Simple Network Time Protocol) for basic time synchronization
 public final class NTPClient {
+    // Internal, task-scoped network substitution for deterministic tests. The
+    // public configuration has no bypass, and the real bounds check still runs.
+    @TaskLocal static var testTimeQuery: (@Sendable () async throws -> NTPVerificationResult)?
+
+    /// Required gate shared by manual sync and CloudKit background callbacks.
+    public static func requireAccurateTime(toleranceMs: Int64 = 5000) async throws {
+        guard toleranceMs > 0 else { throw NTPError.invalidTolerance }
+        try Task.checkCancellation()
+        let result: NTPVerificationResult
+        if let testTimeQuery { result = try await testTimeQuery() }
+        else { result = try await verifyTime(toleranceMs: toleranceMs) }
+        // Compare signed bounds without abs(Int64.min) overflow.
+        guard result.offsetMs >= -toleranceMs, result.offsetMs <= toleranceMs else {
+            throw NTPError.timeOutOfSync(offsetMs: result.offsetMs, toleranceMs: toleranceMs)
+        }
+        try Task.checkCancellation()
+    }
+
 
     /// Default NTP servers
     public static let defaultServers = [
@@ -132,6 +153,7 @@ public final class NTPClient {
         servers: [String] = defaultServers,
         timeout: TimeInterval = 3.0
     ) async throws -> NTPVerificationResult {
+        guard toleranceMs > 0 else { throw NTPError.invalidTolerance }
         var lastError: Error = NTPError.allServersFailed
 
         for server in servers {

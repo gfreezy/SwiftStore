@@ -31,7 +31,10 @@ public struct DatabaseSchemaReader {
         let indexes = try readIndexes(for: tableName)
         let triggers = try readTriggers(for: tableName)
 
-        return TableSchema(name: tableName, columns: columns, indexes: indexes, triggers: triggers)
+        let sql: String = try connection.queryScalar(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            values: [.text(tableName)]) ?? ""
+        return TableSchema(name: tableName, columns: columns, indexes: indexes, triggers: triggers, sql: sql)
     }
 
     /// Read all table names in database (excluding sqlite system tables)

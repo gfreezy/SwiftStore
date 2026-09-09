@@ -1,4 +1,5 @@
 import Foundation
+import SwiftStoreProtocols
 
 // MARK: - Table Schema Diff (Internal)
 
@@ -20,6 +21,17 @@ struct SchemaDiff: Sendable {
 
     var needsCreate: Bool {
         current == nil
+    }
+
+    /// Upgrade the old generated Date default without changing historical values.
+    var timestampDefaultsToUpgrade: [ColumnSchema] {
+        guard let current else { return [] }
+        return target.columns.filter { column in
+            guard column.defaultValue == SQLiteTimestampSQL.now,
+                  let old = current.columns.first(where: { $0.name == column.name }),
+                  let value = old.defaultValue else { return false }
+            return TimestampDefaultMigration.isLegacyDefault(value)
+        }
     }
 
     var columnsToAdd: [ColumnSchema] {
@@ -88,8 +100,30 @@ struct SchemaDiff: Sendable {
         return target.triggers.filter { !current.triggerNames.contains($0.name) }
     }
 
+    /// Replace changed definitions belonging to the target schema. Unrelated
+    /// triggers in the database are left untouched.
+    var triggersToReplace: [TriggerSchema] {
+        guard let current else { return [] }
+        return target.triggers.filter { trigger in
+            guard let existing = current.triggers.first(where: { $0.name == trigger.name }) else {
+                return false
+            }
+            return comparableTriggerSQL(existing.sql) != comparableTriggerSQL(trigger.sql)
+        }
+    }
+
+    private func comparableTriggerSQL(_ sql: String) -> String {
+        // sqlite_master omits IF NOT EXISTS from stored CREATE statements.
+        // Preserve the body verbatim: normalizing case/whitespace in SQL string
+        // literals could hide a real change to a trigger's behavior.
+        sql.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ";")))
+            .replacingOccurrences(
+                of: #"(?i)^CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?"#,
+                with: "CREATE TRIGGER ", options: .regularExpression)
+    }
+
     var hasChanges: Bool {
-        needsCreate || !columnsToAdd.isEmpty || !columnsToDrop.isEmpty || !indexesToDrop.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty
+        needsCreate || !columnsToAdd.isEmpty || !columnsToDrop.isEmpty || !indexesToDrop.isEmpty || !indexesToAdd.isEmpty || !triggersToAdd.isEmpty || !triggersToReplace.isEmpty || !timestampDefaultsToUpgrade.isEmpty
     }
 }
 
@@ -136,5 +170,10 @@ public struct DatabaseDiff: Sendable {
     /// Number of triggers that need to be added
     public var triggersToAddCount: Int {
         tableDiffs.reduce(0) { $0 + $1.triggersToAdd.count }
+    }
+
+    /// Number of existing triggers whose definitions need replacement
+    public var triggersToReplaceCount: Int {
+        tableDiffs.reduce(0) { $0 + $1.triggersToReplace.count }
     }
 }

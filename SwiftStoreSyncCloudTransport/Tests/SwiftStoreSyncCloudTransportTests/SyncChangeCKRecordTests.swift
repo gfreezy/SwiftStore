@@ -3,119 +3,97 @@ import Foundation
 import CloudKit
 @testable import SwiftStoreSyncCloudTransport
 import SwiftStoreCore
-import SwiftStoreChangeTracker
 import SwiftStoreSync
 
-@Suite("SyncChange <-> CKRecord mapping")
+@Suite("Opaque CloudKit record mapping")
 struct SyncChangeCKRecordTests {
     let zoneID = CKRecordZone.ID(zoneName: "test", ownerName: CKCurrentUserDefaultName)
     let recordType: CKRecord.RecordType = "SwiftStoreSyncChange"
 
-    @Test("insert with small payload round-trips")
-    func insertRoundTrip() throws {
-        let original = SyncChange(
-            id: UUIDV7(),
-            entityType: "user",
-            syncKey: Data([0x01, 0x02, 0x03]),
-            operation: .insert,
-            payload: #"{"name":"Alice"}"#,
-            deviceId: UUIDV7(),
-            logicalClock: 42,
-            schemaVersion: 1,
-            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
-        )
+    private func change(payload: String? = #"{"updatedAt":810000000.125,"name":"Alice"}"#,
+                        deletion: Bool = false) -> SyncChange {
+        SyncChange(id: UUIDV7(), entityType: "user", syncKey: Data([1, 2, 3]),
+            operation: deletion ? .delete : .update, payload: deletion ? nil : payload,
+            deviceId: UUIDV7(), logicalClock: 42, schemaVersion: 3,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000.25))
+    }
 
-        let record = try original.makeCKRecord(
-            zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+    @Test("CloudKit exposes only an opaque record key, Unix milliseconds and full Base64 payload")
+    func inlineEnvelope() throws {
+        let original = change()
+        let envelope = try SyncRecordEnvelope(change: original)
+        let record = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+        #expect(Set(record.allKeys()) == ["updatedAt", "payload"])
+        #expect(record.recordID.recordName == envelope.key)
+        #expect(record.recordID.recordName.count == 64)
+        #expect(record["updatedAt"] as? Int64 == 1788307200125)
+        let payload = try #require(record["payload"] as? String)
+        #expect(Data(base64Encoded: payload) == envelope.payload)
         let decoded = try #require(SyncChange(ckRecord: record))
-
         #expect(decoded.id == original.id)
-        #expect(decoded.entityType == original.entityType)
-        #expect(decoded.syncKey == original.syncKey)
-        #expect(decoded.operation == original.operation)
-        #expect(decoded.payload == original.payload)
-        #expect(decoded.deviceId == original.deviceId)
-        #expect(decoded.logicalClock == original.logicalClock)
-        #expect(decoded.schemaVersion == original.schemaVersion)
-        #expect(decoded.createdAt.timeIntervalSince1970 == original.createdAt.timeIntervalSince1970)
+        #expect(decoded.entityType == original.entityType && decoded.syncKey == original.syncKey)
+        #expect(decoded.operation == original.operation && decoded.payload == original.payload)
+        #expect(decoded.deviceId == original.deviceId && decoded.logicalClock == original.logicalClock)
+        #expect(decoded.schemaVersion == original.schemaVersion && decoded.createdAt == original.createdAt)
     }
 
-    @Test("record name round-trips entityType and syncKey")
-    func recordNameRoundTrip() {
-        let entityType = "user_profile"
-        let syncKey = Data([0x01, 0x02, 0x03, 0xFF, 0xAB])
-        let name = SyncChange.recordName(entityType: entityType, syncKey: syncKey)
-        let parsed = try? #require(SyncChange.parseRecordName(name))
-        #expect(parsed?.entityType == entityType)
-        #expect(parsed?.syncKey == syncKey)
+    @Test("Opaque keys are stable across edits and bounded even for long composite identities")
+    func opaqueIdentity() throws {
+        let first = change(), second = change()
+        #expect(try SyncRecordEnvelope(change: first).key == SyncRecordEnvelope(change: second).key)
+        let long = SyncChange.recordName(entityType: String(repeating: "实体:", count: 300),
+            syncKey: Data(repeating: 255, count: 1000))
+        #expect(long.count == 64)
+        #expect(long.allSatisfy { "0123456789abcdef".contains($0) })
+        #expect(SyncChange.recordName(entityType: "ab", syncKey: Data("c".utf8))
+            != SyncChange.recordName(entityType: "a", syncKey: Data("bc".utf8)))
     }
 
-    @Test("malformed record name returns nil")
-    func malformedRecordName() {
-        #expect(SyncChange.parseRecordName("no-colon-here") == nil)
-        #expect(SyncChange.parseRecordName("user:not-hex-!") == nil)
+    @Test("Large opaque payload uses an asset and clears inline content")
+    func assetRoundTrip() throws {
+        let original = change(payload: String(repeating: "x", count: 1000))
+        let record = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 500)
+        let url = try #require((record["payloadAsset"] as? CKAsset)?.fileURL)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(Set(record.allKeys()) == ["updatedAt", "payloadAsset"])
+        #expect(try Data(contentsOf: url) == SyncRecordEnvelope(change: original).payload)
+        #expect(SyncChange(ckRecord: record)?.payload == original.payload)
+        let small = try change().makeCKRecord(zoneID: zoneID, recordType: recordType,
+            assetThreshold: 1_000_000, systemFields: record.syncSystemFields())
+        #expect(small.recordID == record.recordID)
+        #expect(Set(small.allKeys()) == ["updatedAt", "payload"])
     }
 
-    @Test("synthetic delete from CKRecord.ID")
-    func syntheticDelete() {
-        let syncKey = Data([0xDE, 0xAD, 0xBE, 0xEF])
-        let name = SyncChange.recordName(entityType: "user", syncKey: syncKey)
-        let recordID = CKRecord.ID(recordName: name, zoneID: zoneID)
-        let change = try? #require(SyncChange.syntheticDelete(from: recordID))
-        #expect(change?.operation == .delete)
-        #expect(change?.entityType == "user")
-        #expect(change?.syncKey == syncKey)
-        #expect(change?.payload == nil)
-    }
-
-    @Test("insert CKRecord uses (entityType, syncKey) as recordName")
-    func recordNameFromInsert() throws {
-        let syncKey = Data([0xAA, 0xBB])
-        let change = SyncChange(
-            id: UUIDV7(),
-            entityType: "user",
-            syncKey: syncKey,
-            operation: .insert,
-            payload: "{}",
-            deviceId: UUIDV7(),
-            logicalClock: 1,
-            schemaVersion: 1,
-            createdAt: Date()
-        )
-        let record = try change.makeCKRecord(
-            zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
-        let expected = SyncChange.recordName(entityType: "user", syncKey: syncKey)
-        #expect(record.recordID.recordName == expected)
-    }
-
-    @Test("large payload is written as CKAsset and round-trips")
-    func largePayloadAsset() throws {
-        let payload = String(repeating: "x", count: 1_000)  // 1 KB
-        let original = SyncChange(
-            id: UUIDV7(),
-            entityType: "user",
-            syncKey: Data([0x01]),
-            operation: .update,
-            payload: payload,
-            deviceId: UUIDV7(),
-            logicalClock: 1,
-            schemaVersion: 1,
-            createdAt: Date()
-        )
-
-        let record = try original.makeCKRecord(
-            zoneID: zoneID, recordType: recordType, assetThreshold: 500)
-        #expect(record[SyncChange.RecordField.payloadAsset] as? CKAsset != nil)
-        #expect(record[SyncChange.RecordField.payload] as? String == nil)
-
+    @Test("Tombstones carry complete client metadata in the same opaque payload")
+    func opaqueTombstone() throws {
+        let original = change(deletion: true)
+        let record = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+        #expect(Set(record.allKeys()) == ["updatedAt", "payload"])
+        #expect(record["updatedAt"] as? Int64 == 1_700_000_000_250)
         let decoded = try #require(SyncChange(ckRecord: record))
-        #expect(decoded.payload == payload)
+        #expect(decoded.id == original.id && decoded.operation == .delete && decoded.payload == nil)
+        record["payload"] = nil
+        #expect(SyncChange(ckRecord: record) == nil)
     }
 
-    @Test("malformed record returns nil")
-    func malformedRecord() {
-        let recordID = CKRecord.ID(recordName: "not-a-uuid", zoneID: zoneID)
-        let record = CKRecord(recordType: recordType, recordID: recordID)
+    @Test("Payload, timestamp, key and system-field mismatches are rejected")
+    func tamperedEnvelope() throws {
+        let original = change()
+        let record = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+        record["updatedAt"] = NSNumber(value: 1)
         #expect(SyncChange(ckRecord: record) == nil)
+        let valid = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+        let wrongKey = CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: "wrong", zoneID: zoneID))
+        for field in valid.allKeys() { wrongKey[field] = valid[field] }
+        #expect(SyncChange(ckRecord: wrongKey) == nil)
+        #expect(throws: CloudKitTransportError.self) {
+            try original.makeCKRecord(zoneID: zoneID, recordType: recordType,
+                assetThreshold: 1000, systemFields: wrongKey.syncSystemFields())
+        }
+        valid["payload"] = "not-base64" as NSString
+        #expect(SyncChange(ckRecord: valid) == nil)
+        let missingBusinessPayload = try change(payload: nil).makeCKRecord(
+            zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
+        #expect(SyncChange(ckRecord: missingBusinessPayload) == nil)
     }
 }

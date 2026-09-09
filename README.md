@@ -15,7 +15,7 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 
 - Swift 6.0+
 - Xcode 16+
-- macOS 14+ / iOS 17+ / tvOS 17+ / watchOS 10+
+- macOS 14+ / iOS 16+ / tvOS 17+ / watchOS 10+
 
 ## Installation
 
@@ -513,7 +513,7 @@ public protocol SyncTransport: Sendable {
     /// Stage local changes for the next cycle. No network I/O here.
     func enqueue(_ changes: [SyncChange]) async throws
 
-    /// Run one fetch + send cycle and return the result.
+    /// Run upload arbitration, then pull and reconcile rejected keys.
     func syncNow() async throws -> SyncCycleResult
 }
 ```
@@ -620,21 +620,43 @@ do {
 }
 ```
 
+Both built-in transports share the same conflict policy: newer `updatedAt` in
+Unix milliseconds wins; equal timestamps keep the committed remote version.
+`SyncTransport` resolves uploads first, then uses normal pull to reconcile
+`rejectedKeys`. Missing versions use carried CloudKit content or an HTTP key lookup.
+`SyncCycleResult` retains corrections until applied; `SyncManager` does not resolve conflicts again.
+CloudKit implements this behind the adapter with conditional change-tag saves;
+HTTP delegates it to the server. See the [shared backend contract](docs/sync-backend-contract.md)
+for interfaces, durability requirements, and custom-transport migration.
+
+Local changes are captured as owned row snapshots through SQLite's pre-update
+hook. Remote writes are excluded at capture time, and timestamp-trigger events
+are coalesced before logging. Deletes are captured directly without delete-tracking
+triggers or intermediate tables. See [change tracking internals](docs/preupdate-change-tracking.md)
+for transaction behavior and platform requirements.
+
 ### 6.1 CloudKit transport
 
 For iCloud-backed sync, import `SwiftStoreSyncCloudTransport` — a
-ready-made `SyncTransport` built on top of `CKSyncEngine`. Deletes hit
-CloudKit as real record deletions (no tombstone accumulation); inserts and
-updates share a `CKRecord.ID` keyed by `<entityType>:<syncKey-hex>`.
+ready-made `SyncTransport` using `CKSyncEngine` on iOS 17+ and CloudKit zone
+operations on iOS 16. Both share the same durable journal and conflict rules.
+For iOS 16 background push integration, see [iOS 16 support](docs/ios16-compatibility.md). Inserts, updates,
+and deletion tombstones share a `CKRecord.ID` using the same opaque SHA-256 key
+as HTTP. Both transports use `SyncRecordEnvelope`: Unix-millisecond `updatedAt`
+and a complete opaque payload. CloudKit stores the payload as a Base64 string or
+`CKAsset`; entity metadata and modification IDs are only inside that payload.
+Only strictly newer timestamps replace committed versions. Equal-time retries
+also retain the cloud version and enter rejection reconciliation, without an
+ID-based success shortcut. Logical clocks only track the local upload watermark.
 
 ```swift
 import CloudKit
 import SwiftStoreConnectionQueue
 import SwiftStoreSyncCloudTransport
 
-// 1. Decide where to persist the engine's state blob, the pending-push queue,
-//    and bootstrap flags. The file-based default is enough for most apps.
-let stateDir = URL.documentsDirectory.appending(path: "sync-cloud-state")
+// 1. Keep device-local state outside iCloud Drive. Use a separate directory
+//    for each database/account/container. Never share this directory across devices.
+let stateDir = URL.applicationSupportDirectory.appending(path: "sync-cloud-state")
 let stateStore = try FileCloudKitSyncStateStore(directory: stateDir)
 
 // 2. Build the transport.
@@ -657,23 +679,76 @@ let manager = try ConnectionManager(
     )
 )
 
-// 4. Sync whenever you want. CKSyncEngine will schedule additional syncs in
-//    the background when CloudKit delivers push notifications; those also
-//    flow back through `manager.sync()` via the remoteChanges observer.
+// 4. Migrate first: this activates tracking and captures preexisting rows.
+try await manager.migrate(dryRun: false)
+
+// Start sync at launch, and request another round on foreground/manual refresh.
+// Subsequent local writes and CloudKit background activity trigger sync automatically.
 try await manager.sync()
+
+// Optional: pause networking while continuing to track local edits.
+// await manager.stopSync()
+// try await manager.sync() // resumes using persisted queues
 ```
 
-**Project setup:** the app target needs the *iCloud* capability with
-*CloudKit* enabled and the container identifier you passed above. On first
-launch the transport creates a private-DB record zone named
-`SwiftStoreSyncChanges` and a `CKDatabaseSubscription` for push-driven
-change delivery; both are idempotent across launches thanks to the
-persisted setup flags.
+**Project setup:** enable *iCloud / CloudKit* with the configured container,
+*Push Notifications*, and (on iOS) *Background Modes / Remote notifications*.
+Register for remote notifications in the host app. The transport ensures its
+private-DB subscription exists, assigns it to `CKSyncEngine`, and creates
+`SwiftStoreSyncChanges` on first sync. Background scheduling and retry timing
+are controlled by the system; manual `manager.sync()` remains available.
+See [Apple's CKSyncEngine sample](https://github.com/apple/sample-cloudkit-sync-engine)
+for host-app capabilities and notification registration.
 
-**Custom state storage:** if you'd rather reuse an existing persistence
-layer (your own SQLite DB, Keychain, etc.) implement the
-`CloudKitSyncStateStore` protocol and pass it instead of
-`FileCloudKitSyncStateStore`.
+**Durability:** the engine cursor, pending uploads, downloaded changes,
+acknowledgements, and record system fields are saved together in `journal.plist`.
+Downloaded changes remain there until their local application is acknowledged.
+Time verification is mandatory: `SyncOptions.ntpToleranceMs` defaults to 5000
+(±5 seconds), must be positive, and no longer accepts `nil`. The same tolerance
+is passed to CloudKit for automatic uploads and fetches. If verification fails
+or the clock is outside the range, uploads/local application are blocked and
+queued data is retained. Direct transport users configure the required tolerance
+on `CloudKitTransportConfig`.
+Invalid payloads and future-schema changes remain pending for repair or app upgrade.
+`await cloudTransport.lastError` exposes callback failures, including background failures.
+
+**Deletion:** deletions are retained as timestamped tombstone records. Physical
+CloudKit record deletions lack a timestamp and are reported as errors.
+
+**Custom state storage:** implementations of `CloudKitSyncStateStore` must
+implement `loadJournal()` and `saveJournal(_:)` with atomic persistence.
+
+**Account and reset handling:** state is bound to one account/container/zone.
+Account switches and remote zone deletion stop synchronization with an explicit
+error and preserve local data. Use a separate local database, changelog, and state
+directory for a different account. Do not reuse a cursor with a different database,
+and do not clear only `journal.plist` to repair a reset.
+
+See [implementation and verification notes](SwiftStoreSyncCloudTransport/README.md)
+for the complete data flow, upgrade details, and device verification steps.
+
+### 6.2 Custom HTTP sync server
+
+`SwiftStoreSyncHTTPTransport` provides a durable HTTP transport for an existing
+backend. Implement `POST /sync/v1/push`, `GET /sync/v1/pull`, and
+`POST /sync/v1/records` according to the
+[server API specification](docs/http-sync-server-api.md). It includes authentication,
+wire examples, timestamp encoding, server-owned conflict decisions, opaque payloads,
+idempotent retries, pagination, and a cross-device acceptance checklist.
+
+Configure `HTTPSyncTransport` with the server URL, namespace, Bearer Token and a
+dedicated state file, then pass it to `SyncOptions.transport`. Pending uploads,
+unapplied downloads and cursor checkpoints survive restarts. Polling signals
+`SyncManager` every 30 seconds by default; clock validation remains mandatory.
+Each cycle freezes its upload list, confirms all batches, then pulls every page
+and looks up unresolved rejected keys. New edits wait for the next cycle.
+The HTTP envelope contains only `key`, `updatedAt`, and `payload`; rejection entries
+contain `key` and `sequence`. The server needs no modification IDs or receipt table:
+strictly increasing timestamps make retries safe without appending duplicate deltas.
+The server compares only `updatedAt` (Unix milliseconds) for an opaque record key;
+equal timestamps retain the existing server version. Entity type, business fields,
+schema version and deletion details stay inside the payload. The HTTP client applies
+server decisions directly, using server sequence numbers only to discard stale delivery.
 
 ### 7. @Embedded Fault-tolerant Decoding
 
@@ -958,7 +1033,7 @@ SwiftStoreServer (development only)
 | [SwiftStoreProtocols](./SwiftStoreProtocols/) | Protocol definitions - EntityProtocol, SQLiteCodable, etc. |
 | [SwiftStoreMacros](./SwiftStoreMacros/) | Macro definitions - @Entity(readonly:), #Index, #SyncKey, @Embedded, @Default |
 | [SwiftStoreCore](./SwiftStoreCore/) | Core functionality - SQLite connection, query builder, migration |
-| [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - SQLite update hook to record changes |
+| [SwiftStoreChangeTracker](./SwiftStoreChangeTracker/) | Change tracking - pre-update row snapshots, trigger coalescing, and durable change logs |
 | [SwiftStoreSync](./SwiftStoreSync/) | Data sync - Bidirectional sync, conflict resolution, NTP validation |
 | [SwiftStoreConnectionQueue](./SwiftStoreConnectionQueue/) | Connection management - Single-writer multiple-reader pool, readonly mode |
 | [SwiftStoreServer](./SwiftStoreServer/) | Development HTTP server with Web admin UI for database inspection |

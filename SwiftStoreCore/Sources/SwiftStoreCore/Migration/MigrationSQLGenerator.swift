@@ -16,7 +16,7 @@ public struct MigrationSQLGenerator {
 
     // MARK: - Private
 
-    private func generateStatements(for diff: SchemaDiff) -> [String] {
+    func generateStatements(for diff: SchemaDiff) -> [String] {
         var statements: [String] = []
 
         if diff.needsCreate {
@@ -28,6 +28,12 @@ public struct MigrationSQLGenerator {
                 statements.append(index.toSQL(tableName: diff.tableName))
             }
         } else {
+            // Remove outdated triggers before altering columns they may reference.
+            for trigger in diff.triggersToReplace {
+                let name = trigger.name.replacingOccurrences(of: "\"", with: "\"\"")
+                statements.append("DROP TRIGGER \"\(name)\"")
+            }
+
             // Add new columns
             for column in diff.columnsToAdd {
                 statements.append(contentsOf: generateAlterTableSQL(tableName: diff.tableName, column: column))
@@ -50,7 +56,7 @@ public struct MigrationSQLGenerator {
         }
 
         // Add triggers from diff
-        for trigger in diff.triggersToAdd {
+        for trigger in diff.triggersToAdd + diff.triggersToReplace {
             statements.append(trigger.sql)
         }
 

@@ -20,6 +20,8 @@ public protocol EntityApplier: Sendable {
     ///   - connection: The database connection
     /// - Throws: If the change cannot be applied
     func apply(change: SyncChange, to connection: SQLiteConnection) throws
+    /// Snapshot of the current business row for timestamp/content comparison.
+    func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange?
 }
 
 /// Default entity applier that uses JSON payload to decode and apply changes
@@ -39,6 +41,12 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
             let decoder = JSONDecoder()
             let entity = try decoder.decode(T.self, from: data)
 
+            let encoded = try entity.sqliteEncode()
+            let payloadKey = SyncKeyEncoder.encode(T.syncKeyColumns.map { encoded[$0] ?? .null })
+            guard payloadKey == change.syncKey else {
+                throw SyncError.invalidPayload("Payload sync key does not match change identity")
+            }
+
             // Find existing record by sync key
             let syncKeyCols = T.syncKeyColumns
             let syncKeyValues = SyncKeyEncoder.decode(change.syncKey)
@@ -56,6 +64,15 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
             let syncKeyValues = SyncKeyEncoder.decode(change.syncKey)
             try deleteBySyncKey(syncKeyCols: syncKeyCols, syncKeyValues: syncKeyValues, connection: connection)
         }
+    }
+
+    public func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
+        guard let entity = try findBySyncKey(syncKeyCols: T.syncKeyColumns,
+            syncKeyValues: SyncKeyEncoder.decode(change.syncKey), connection: connection) else { return nil }
+        return SyncChange(id: change.id, entityType: change.entityType, syncKey: change.syncKey,
+            operation: .update, payload: String(decoding: try JSONEncoder().encode(entity), as: UTF8.self),
+            deviceId: change.deviceId, logicalClock: 0, schemaVersion: change.schemaVersion,
+            createdAt: change.createdAt)
     }
 
     /// Find entity by sync key
@@ -114,8 +131,9 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
 
         // Get all columns except sync key columns (for SET clause) and timestamps
         let allColumns = T.columns.map { $0.name }
-        let excludedFromSet = Set(syncKeyCols + ["created_at", "updated_at"])
+        let excludedFromSet = Set(syncKeyCols)
         let setColumns = allColumns.filter { !excludedFromSet.contains($0) }
+        guard !setColumns.isEmpty else { return }
 
         // Encode entity to get values
         let values = try entity.sqliteEncode()
@@ -189,6 +207,13 @@ public final class EntityApplierRegistry: Sendable {
     /// Get applier for entity type
     private func applier(for entityType: String) -> (any EntityApplier)? {
         return appliers[entityType]
+    }
+
+    public func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
+        guard let applier = applier(for: change.entityType) else {
+            throw SyncError.unknownEntityType(change.entityType)
+        }
+        return try applier.currentChange(for: change, in: connection)
     }
 
     /// Apply a change using the appropriate applier

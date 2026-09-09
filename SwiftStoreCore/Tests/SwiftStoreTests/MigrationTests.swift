@@ -35,8 +35,8 @@ struct MigrationDryRunTests {
                 email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
                 address TEXT NOT NULL DEFAULT '{}',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(createSQL == expectedCreateSQL)
@@ -129,7 +129,7 @@ struct MigrationDryRunTests {
         // SQLite ALTER TABLE ADD COLUMN doesn't allow expressions as defaults
         // So we should see: ALTER TABLE with literal default + UPDATE to set the expression value
         let alterStatements = plan.statements.filter { $0.uppercased().contains("ALTER TABLE") }
-        let updateStatements = plan.statements.filter { $0.uppercased().hasPrefix("UPDATE") }
+        let updateStatements = plan.statements.filter { $0.uppercased().hasPrefix("UPDATE TEST_TAG ") }
 
         // Should have 2 ALTER TABLE statements (created_at and updated_at)
         #expect(alterStatements.count == 2)
@@ -186,8 +186,8 @@ struct MigrationDryRunTests {
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(createSQL == expectedSQL)
@@ -221,8 +221,8 @@ struct MigrationDryRunTests {
                 email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
                 address TEXT NOT NULL DEFAULT '{}',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(testUserCreate!) == expectedUserSQL)
@@ -231,8 +231,8 @@ struct MigrationDryRunTests {
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(testTagCreate!) == expectedTagSQL)
@@ -256,8 +256,8 @@ struct MigrationDryRunTests {
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(sql == expectedSQL)
@@ -334,8 +334,8 @@ struct MigrationDryRunTests {
                 id BLOB NOT NULL PRIMARY KEY,
                 bio TEXT NOT NULL,
                 settings TEXT NOT NULL,
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
                 settings__theme TEXT GENERATED ALWAYS AS (json_extract(settings, '$.theme')) VIRTUAL,
                 settings__notifications TEXT GENERATED ALWAYS AS (json_extract(settings, '$.notifications')) VIRTUAL
             )
@@ -603,8 +603,8 @@ struct MigratorPlanSQLTests {
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(createStatements[0]) == expectedSQL)
@@ -627,8 +627,8 @@ struct MigratorPlanSQLTests {
                 email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
                 address TEXT NOT NULL DEFAULT '{}',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(createStatements[0]) == expectedSQL)
@@ -739,50 +739,7 @@ struct MigratorPlanSQLTests {
         #expect(sql.contains("after update on test_tag"))
         #expect(sql.contains("for each row"))
         #expect(sql.contains("when new.updated_at = old.updated_at"))
-        #expect(sql.contains("update test_tag set updated_at = strftime('%s', 'now')"))
-    }
-
-    @Test("Plan creates delete trigger when trackDeletes enabled")
-    func testPlanCreateDeleteTrigger() throws {
-        let store = try createTestStore()
-        let migrator = Migrator(connection: store.connection, trackDeletes: true)
-
-        let plan = try migrator.plan(for: [TestTag.self])
-
-        let triggerStatements = plan.statements.filter { $0.uppercased().contains("CREATE TRIGGER") }
-        #expect(triggerStatements.count == 2) // update + delete triggers
-
-        let deleteTrigger = triggerStatements.first { normalizeSQL($0).contains("__swiftstore_delete_") }
-        #expect(deleteTrigger != nil)
-
-        let sql = normalizeSQL(deleteTrigger!)
-        #expect(sql.contains("before delete on test_tag"))
-        #expect(sql.contains("insert into __swiftstore_pending_deletes"))
-    }
-
-    // MARK: - Track Deletes Tests
-
-    @Test("Plan creates pending deletes table when trackDeletes enabled")
-    func testPlanCreatesPendingDeletesTable() throws {
-        let store = try createTestStore()
-        let migrator = Migrator(connection: store.connection, trackDeletes: true)
-
-        let plan = try migrator.plan(for: [TestTag.self])
-
-        let createStatements = plan.statements.filter { $0.uppercased().contains("CREATE TABLE") }
-        #expect(createStatements.count == 2) // test_tag + __swiftstore_pending_deletes
-
-        let deletesTable = createStatements.first { normalizeSQL($0).contains("__swiftstore_pending_deletes") }
-        #expect(deletesTable != nil)
-
-        let expectedSQL = normalizeSQL("""
-            CREATE TABLE __swiftstore_pending_deletes (
-                id INTEGER NOT NULL PRIMARY KEY,
-                table_name TEXT NOT NULL,
-                sync_key_json TEXT NOT NULL
-            )
-        """)
-        #expect(normalizeSQL(deletesTable!) == expectedSQL)
+        #expect(sql.contains("update test_tag set updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))".lowercased()))
     }
 
     // MARK: - ALTER TABLE Tests
@@ -928,8 +885,8 @@ struct MigratorPlanSQLTests {
                 email TEXT NOT NULL DEFAULT '',
                 age INTEGER,
                 address TEXT NOT NULL DEFAULT '{}',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(userSQL!) == expectedUserSQL)
@@ -938,8 +895,8 @@ struct MigratorPlanSQLTests {
             CREATE TABLE test_tag (
                 id BLOB NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
-                created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+                created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL))),
+                updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))
             )
         """)
         #expect(normalizeSQL(tagSQL!) == expectedTagSQL)
@@ -1021,7 +978,7 @@ struct MigratorPlanSQLTests {
     @Test("Plan creates complete correct SQL for entity with all features")
     func testPlanCompleteSQL() throws {
         let store = try createTestStore()
-        let migrator = Migrator(connection: store.connection, trackDeletes: true)
+        let migrator = Migrator(connection: store.connection)
 
         let plan = try migrator.plan(for: [TestUserTags.self])
 
@@ -1030,14 +987,14 @@ struct MigratorPlanSQLTests {
         let indexStatements = plan.statements.filter { $0.uppercased().contains("CREATE") && $0.uppercased().contains("INDEX") && !$0.uppercased().contains("TABLE") }
         let triggerStatements = plan.statements.filter { $0.uppercased().contains("CREATE TRIGGER") }
 
-        // 2 tables: test_user_tags + __swiftstore_pending_deletes
-        #expect(createTableStatements.count == 2)
+        // Entity table
+        #expect(createTableStatements.count == 1)
 
         // 1 composite unique index
         #expect(indexStatements.count == 1)
 
-        // 2 triggers: update + delete
-        #expect(triggerStatements.count == 2)
+        // Update trigger
+        #expect(triggerStatements.count == 1)
 
         // Verify exact CREATE TABLE SQL
         let userTagsTable = createTableStatements.first { normalizeSQL($0).contains("test_user_tags") }!

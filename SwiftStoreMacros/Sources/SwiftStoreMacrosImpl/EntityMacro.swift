@@ -1,4 +1,5 @@
 import SwiftSyntax
+import SwiftStoreProtocols
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
@@ -602,7 +603,7 @@ private func convertToSQLDefault(prop: PropertyInfo) -> String? {
 
     // Handle Date type - use SQL function for current timestamp
     if baseType == "Date" {
-        return "(strftime('%s', 'now'))"
+        return SQLiteTimestampSQL.now
     }
 
     // Handle Bool type

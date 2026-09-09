@@ -14,12 +14,12 @@ struct TestStore {
     // Track registered entities for planMigrations
     private var registeredEntities: [any EntityProtocol.Type] = []
 
-    init(path: String, trackDeletes: Bool = false) throws {
+    init(path: String) throws {
         self.dbPath = path
         var options = SQLiteConnection.Options()
         options.walMode = true
         self.connection = try SQLiteConnection(path: path, options: options)
-        self.migrator = Migrator(connection: connection, trackDeletes: trackDeletes)
+        self.migrator = Migrator(connection: connection)
     }
 
     mutating func register<E: EntityProtocol>(_ type: E.Type) throws {

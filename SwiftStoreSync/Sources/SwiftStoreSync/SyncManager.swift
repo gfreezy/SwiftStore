@@ -60,8 +60,6 @@ public struct SyncConfig: Sendable {
     public let changeLogDbPath: String
     /// Device ID for identifying the source of changes
     public let deviceId: UUIDV7
-    /// Name of the pending deletes table
-    public let pendingDeletesTable: String
     /// Entity types to track changes for
     public let registeredEntities: [any EntityProtocol.Type]
     /// Function to tick the logical clock
@@ -75,8 +73,8 @@ public struct SyncConfig: Sendable {
     /// Current schema version for migration compatibility
     /// Higher versions can process lower version data, lower versions ignore higher version data
     public let schemaVersion: Int
-    /// Maximum acceptable time offset in milliseconds for NTP verification (nil to disable)
-    public let ntpToleranceMs: Int64?
+    /// Maximum acceptable time offset in milliseconds for NTP verification (required)
+    public let ntpToleranceMs: Int64
 
     /// Initialize sync manager configuration
     /// - Parameters:
@@ -86,9 +84,8 @@ public struct SyncConfig: Sendable {
     ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
     ///   - transport: Sync transport layer responsible for communicating with the remote server
     ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
-    ///   - pendingDeletesTable: Table name for pending delete records, defaults to "__swiftstore_pending_deletes"
     ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds, nil to disable NTP verification
+    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
     public init(
         changeLogDbPath: String,
         deviceId: UUIDV7,
@@ -96,13 +93,11 @@ public struct SyncConfig: Sendable {
         transport: any SyncTransport,
         schemaVersion: Int,
         tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-        pendingDeletesTable: String = "__swiftstore_pending_deletes",
         syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        ntpToleranceMs: Int64? = 5000
+        ntpToleranceMs: Int64 = 5000
     ) {
         self.changeLogDbPath = changeLogDbPath
         self.deviceId = deviceId
-        self.pendingDeletesTable = pendingDeletesTable
         self.registeredEntities = registeredEntities
         self.tickClock = tickClock
         self.transport = transport
@@ -126,8 +121,9 @@ public final class SyncManager {
     private let applierRegistry: EntityApplierRegistry
     private let configuration: SyncConfiguration
     private let schemaVersion: Int
-    private let ntpToleranceMs: Int64?
+    private let ntpToleranceMs: Int64
     private var state: SyncState
+    private let tombstones: SyncTombstoneStore
 
     /// Initialize with database connection and sync configuration
     /// - Parameters:
@@ -142,12 +138,13 @@ public final class SyncManager {
         self.schemaVersion = config.schemaVersion
         self.ntpToleranceMs = config.ntpToleranceMs
 
+        self.tombstones = try SyncTombstoneStore(connection: connection)
+
         // Create ChangeTracker
         self.changeTracker = try ChangeTracker(
             connection: connection,
             changeLogDbPath: config.changeLogDbPath,
             deviceId: config.deviceId,
-            pendingDeletesTable: config.pendingDeletesTable,
             registeredEntities: config.registeredEntities,
             tickClock: config.tickClock,
             schemaVersion: config.schemaVersion
@@ -168,6 +165,17 @@ public final class SyncManager {
         self.state = try statePersistence.load()
     }
 
+    /// Roll back captured log rows when a local write transaction fails.
+    public func withChangeLogTransaction<T>(_ block: () throws -> T) throws -> T {
+        try changeTracker.connection.transaction(block)
+    }
+
+    /// Call after schema migration, before exposing the writable connection.
+    public func startTracking() throws {
+        try changeTracker.captureExistingRows()
+        try changeTracker.start()
+    }
+
     // MARK: - Sync State
 
     /// Get current sync state
@@ -181,6 +189,8 @@ public final class SyncManager {
     /// Typically invoked by the containing `WritableConnectionActor` before the first sync.
     nonisolated(nonsending)
     public func startTransport() async throws {
+        try await transport.configureTimeValidation(toleranceMs: ntpToleranceMs)
+        try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
         try await transport.start(deviceId: deviceId)
     }
 
@@ -203,52 +213,42 @@ public final class SyncManager {
     /// - Returns: Sync result with statistics
     nonisolated(nonsending)
     public func sync() async throws -> SyncResult {
-        if let tolerance = ntpToleranceMs {
-            let result = try await NTPClient.verifyTime(toleranceMs: tolerance)
-            if !result.isValid {
-                throw NTPError.timeOutOfSync(offsetMs: result.offsetMs, toleranceMs: tolerance)
-            }
-        }
+        try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
 
         let localChanges = try changeLogReader.changesSince(clock: state.lastLocalClock)
         try Task.checkCancellation()
 
         if !localChanges.isEmpty {
             try await transport.enqueue(localChanges.map { SyncChange(from: $0) })
+            let nextState = SyncState(lastLocalClock: localChanges.last!.logicalClock)
+            try statePersistence.save(nextState)
+            state = nextState
         }
 
         let cycle = try await transport.syncNow()
 
         try Task.checkCancellation()
 
+        // Future-schema changes stay in the transport inbox for a newer app.
         let remoteChanges = cycle.pulled.filter {
-            $0.deviceId != deviceId && $0.schemaVersion <= schemaVersion
+            $0.schemaVersion <= schemaVersion
         }
-
+        var acknowledged: [SyncChange] = []
         var applied = 0
         var applyConflicts = 0
-        if !remoteChanges.isEmpty {
-            let batches = remoteChanges.chunked(into: configuration.batchSize)
-            for batch in batches {
-                try Task.checkCancellation()
-                let result = try applyBatch(batch)
-                applied += result.applied
-                applyConflicts += result.conflicts
-                if configuration.yieldBetweenBatches {
-                    await Task.yield()
-                }
-            }
+        for batch in remoteChanges.chunked(into: configuration.batchSize) {
+            try Task.checkCancellation()
+            try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
+            let result = try applyBatch(batch, pendingChanges: cycle.pendingChanges)
+            applied += result.applied
+            applyConflicts += result.conflicts
+            acknowledged.append(contentsOf: result.acknowledged)
+            if configuration.yieldBetweenBatches { await Task.yield() }
         }
-
-        if let last = localChanges.last {
-            state.lastLocalClock = last.logicalClock
-            do {
-                try statePersistence.save(state)
-            } catch {
-                // Recoverable: next sync re-pushes, applier is idempotent on syncKey.
-                SwiftStoreLogger.error("Failed to persist sync state: \(error)")
-            }
-        }
+        try await transport.acknowledge(SyncCycleResult(
+            pulled: acknowledged, pushed: cycle.pushed, conflicts: cycle.conflicts,
+            rejectedKeys: cycle.rejectedKeys
+        ))
 
         return SyncResult(
             pulledCount: applied,
@@ -260,31 +260,49 @@ public final class SyncManager {
 
     // MARK: - Private Helpers
 
-    /// Apply a batch of changes atomically (tracker stopped during apply)
-    private func applyBatch(_ changes: [SyncChange]) throws -> (applied: Int, conflicts: Int) {
+    /// Apply backend decisions with any deletion marker atomically, without resolving again.
+    private func applyBatch(_ changes: [SyncChange], pendingChanges: [SyncChange]) throws -> (applied: Int, conflicts: Int, acknowledged: [SyncChange]) {
         var applied = 0
         var conflicts = 0
-
-        changeTracker.stop()
-        defer {
-            do {
-                try changeTracker.start()
-            } catch {
-                SwiftStoreLogger.error("Failed to restart change tracking: \(error)")
-            }
-        }
-
+        var acknowledged: [SyncChange] = []
+        let unsubmitted = try changeLogReader.changesSince(clock: state.lastLocalClock).map(SyncChange.init(from:))
+        let protectedKeys = Set((pendingChanges + unsubmitted).map(SyncTombstoneStore.key))
         for change in changes {
             do {
-                try applierRegistry.apply(change: change, to: connection)
+                let key = SyncTombstoneStore.key(change)
+                // This is write protection, not conflict resolution: the server
+                // must first receive these edits. Leave the download unacknowledged.
+                if protectedKeys.contains(key) { continue }
+                let row = try applierRegistry.currentChange(for: change, in: connection)
+                try connection.withWriteSource(.remote) {
+                    try connection.transaction {
+                        // An equal-time tie must preserve the incoming timestamp. The
+                        // library's automatic timestamp trigger cannot distinguish it
+                        // from a local UPDATE that omitted updated_at. Suspend only
+                        // that trigger, transactionally, for this rare tie case.
+                        let triggerName = "__swiftstore_update_" + change.entityType
+                        let equalTime = row.map { ($0.updatedAt.timeIntervalSince1970 * 1000).rounded() == (change.updatedAt.timeIntervalSince1970 * 1000).rounded() } ?? false
+                        let triggerSQL: String? = equalTime
+                            ? try connection.queryScalar("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+                                values: [.text(triggerName)]) : nil
+                        if triggerSQL != nil {
+                            let quoted = triggerName.replacingOccurrences(of: "\"", with: "\"\"")
+                            try connection.execute("DROP TRIGGER \"\(quoted)\"")
+                        }
+                        try applierRegistry.apply(change: change, to: connection)
+                        if let triggerSQL { try connection.execute(triggerSQL) }
+                        try tombstones.save(change)
+                    }
+                }
+                acknowledged.append(change)
                 applied += 1
             } catch {
+                // Leave this change unacknowledged so it can be retried after repair.
                 SwiftStoreLogger.error("Failed to apply change \(change.id): \(error)")
                 conflicts += 1
             }
         }
-
-        return (applied, conflicts)
+        return (applied, conflicts, acknowledged)
     }
 
     // MARK: - Change Log Reading

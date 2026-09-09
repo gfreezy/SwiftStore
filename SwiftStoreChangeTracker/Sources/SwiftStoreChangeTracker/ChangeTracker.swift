@@ -2,22 +2,22 @@ import Foundation
 import SwiftStoreCore
 import os.log
 
-/// Handles SQLite update hooks and writes changes directly to a separate changelog database
+/// Captures pre-update row snapshots and persists completed statement changes.
 public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let mainConnection: SQLiteConnection
     private let changeLogConnection: SQLiteConnection
     private let registeredEntities: [String: any EntityProtocol.Type]
     private let deviceId: UUIDV7
-    private let pendingDeletesTable: String
+    private var columnOffsets: [String: [Int]] = [:]
     private let tickClock: () -> Int64
     private let schemaVersion: Int
+    private var lastClock: Int64 = 0
 
     /// Initialize the change tracker
     /// - Parameters:
     ///   - connection: The main database connection
     ///   - changeLogDbPath: The path to the changelog database
     ///   - deviceId: The device ID
-    ///   - pendingDeletesTable: The name of the pending deletes table
     ///   - registeredEntities: The registered entity types to track changes for
     ///   - tickClock: A function to tick the clock
     ///   - schemaVersion: The schema version for migration compatibility
@@ -26,14 +26,15 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         connection: SQLiteConnection,
         changeLogDbPath: String,
         deviceId: UUIDV7,
-        pendingDeletesTable: String,
         registeredEntities: [any EntityProtocol.Type],
         tickClock: @escaping () -> Int64,
         schemaVersion: Int = 1
     ) throws {
+        guard SQLiteConnection.supportsPreUpdateHook else {
+            throw StoreError.queryFailed("Change tracking requires SQLite with SQLITE_ENABLE_PREUPDATE_HOOK")
+        }
         self.mainConnection = connection
         self.deviceId = deviceId
-        self.pendingDeletesTable = pendingDeletesTable
         // Build lookup dictionary from table name to entity type
         self.registeredEntities = Dictionary(
             uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
@@ -45,29 +46,43 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
 
         // Create changelog table using Migrator
         try migrateChangeLogTable()
+        lastClock = try ChangeLog.filter(\.deviceId == deviceId).max(\.logicalClock, changeLogConnection) ?? 0
     }
 
     private func migrateChangeLogTable() throws {
         let migrator = Migrator(
-            connection: changeLogConnection, trackDeletes: false, createUpdateTrigger: false)
+            connection: changeLogConnection, createUpdateTrigger: false)
         let plan = try migrator.plan(for: [ChangeLog.self])
         try migrator.apply(plan)
     }
 
     // MARK: - Lifecycle
 
-    /// Start tracking changes by registering update hook
+    /// Call after migration. Resolve physical columns once; migrations may have
+    /// appended columns in an order different from the current Swift declaration.
     public func start() throws {
-        // Clear pending deletes table (stale from previous runs)
-        let clearSQL: SQL = "DELETE FROM \(raw: pendingDeletesTable)"
-        try mainConnection.execute(clearSQL)
-
-        mainConnection.setUpdateHook(self)
+        var offsets: [String: [Int]] = [:]
+        for entity in registeredEntities.values {
+            let name = entity.tableName.replacingOccurrences(of: "\"", with: "\"\"")
+            let stmt = try mainConnection.prepare("PRAGMA table_xinfo(\"\(name)\")")
+            var columns: [String: Int] = [:]
+            while try stmt.step() {
+                if let name = stmt.columnString(1) { columns[name] = Int(stmt.columnInt64(0)) }
+            }
+            offsets[entity.tableName] = try entity.columns.map { column in
+                guard let index = columns[column.name] else {
+                    throw StoreError.invalidPayload("Missing tracked column \(entity.tableName).\(column.name)")
+                }
+                return index
+            }
+        }
+        columnOffsets = offsets
+        try mainConnection.setPreUpdateHook(self)
     }
 
-    /// Stop tracking changes by removing update hook
     public func stop() {
-        mainConnection.setUpdateHook(nil)
+        // Removing a hook does not require optional API support when none exists.
+        try? mainConnection.setPreUpdateHook(nil)
     }
 
     // MARK: - Public Access
@@ -77,42 +92,86 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
 
     // MARK: - SQLiteUpdateHookHandler
 
+    /// Compatibility entry point. Connection delivery uses the throwing batch API.
     public func handleUpdate(_ info: SQLiteUpdateInfo) {
-        // Skip DELETE operations (we handle deletes via INSERT on pending_deletes)
-        guard info.operation != .delete else { return }
+        do { try handleUpdates([info]) }
+        catch { SwiftStoreLogger.error("Failed to record change: \(error)") }
+    }
 
-        let clockValue = tickClock()
+    public func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T {
+        try changeLogConnection.transaction(block)
+    }
 
-        // Handle INSERT on pending_deletes as a DELETE operation
-        if info.tableName == pendingDeletesTable {
-            handlePendingDeleteInsert(rowId: info.rowId, clockValue: clockValue)
-            return
+    public func tracksTable(_ tableName: String) -> Bool { registeredEntities[tableName] != nil }
+
+    private struct Identity: Hashable {
+        let table: String
+        let key: Data
+    }
+    private struct CapturedChange {
+        let identity: Identity
+        let operation: ChangeOperation
+        let row: SQLiteRowSnapshot?
+        let occurredAt: Date
+    }
+
+    /// Runs at SQLITE_DONE. Only decodes owned snapshots: never re-queries a
+    /// business row that a later trigger may have deleted or replaced.
+    public func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws {
+        var changes: [CapturedChange] = []
+        var positions: [Identity: Int] = [:]
+        func record(_ change: CapturedChange) {
+            if let index = positions[change.identity] {
+                let previous = changes[index]
+                // An AFTER UPDATE timestamp trigger extends the original insert.
+                let operation: ChangeOperation = previous.operation == .insert && change.operation == .update
+                    ? .insert : change.operation
+                changes[index] = CapturedChange(identity: change.identity, operation: operation,
+                    row: change.row, occurredAt: change.occurredAt)
+            } else {
+                positions[change.identity] = changes.count
+                changes.append(change)
+            }
         }
-
-        // Skip if not a registered entity
-        guard let entityType = registeredEntities[info.tableName] else { return }
-
-        // Get entity data from the row
-        do {
-            let stmt = try mainConnection.prepareRowById(info.tableName, rowId: info.rowId)
-            guard try stmt.step() else { return }
-
-            // Extract sync key values and encode to binary
-            let syncKeyData = try extractSyncKeyData(stmt: stmt, entityType: entityType)
-
-            // Serialize entity to JSON payload
-            let payload = try serializeEntity(stmt: stmt, entityType: entityType)
-
-            let operation: ChangeOperation = info.operation == .insert ? .insert : .update
-            try insertChangeLog(
-                entityType: info.tableName,
-                syncKey: syncKeyData,
-                operation: operation,
-                payload: payload,
-                clockValue: clockValue
-            )
-        } catch {
-            SwiftStoreLogger.error("Failed to record change: \(error)")
+        for info in updates where info.source == .local {
+            guard let entity = registeredEntities[info.tableName],
+                  let offsets = columnOffsets[info.tableName] else { continue }
+            func row(_ values: [SQLiteValue]?) throws -> SQLiteRowSnapshot? {
+                guard let values else { return nil }
+                let mapped = try offsets.map { index -> SQLiteValue in
+                    guard values.indices.contains(index) else {
+                        throw StoreError.invalidPayload("Tracked schema changed; restart tracking after migration")
+                    }
+                    return values[index]
+                }
+                return SQLiteRowSnapshot(values: mapped)
+            }
+            let old = try row(info.oldValues), new = try row(info.newValues)
+            func identity(_ row: SQLiteRowSnapshot) throws -> Identity {
+                let values = try entity.syncKeyColumns.map { name -> SQLiteValue in
+                    guard let index = entity.columns.firstIndex(where: { $0.name == name }) else {
+                        throw StoreError.invalidPayload("Unknown sync key column \(name)")
+                    }
+                    return row.columnValue(Int32(index), type: entity.columns[index].type)
+                }
+                return Identity(table: info.tableName, key: SyncKeyEncoder.encode(values))
+            }
+            let oldID = try old.map(identity), newID = try new.map(identity)
+            // Updating a sync key removes the old identity and creates the new one.
+            if let oldID, info.operation == .delete || oldID != newID {
+                record(CapturedChange(identity: oldID, operation: .delete, row: nil, occurredAt: info.occurredAt))
+            }
+            if let newID, let new {
+                record(CapturedChange(identity: newID, operation: info.operation == .insert ? .insert : .update,
+                    row: new, occurredAt: info.occurredAt))
+            }
+        }
+        for change in changes {
+            guard let entity = registeredEntities[change.identity.table] else { continue }
+            lastClock = max(tickClock(), lastClock + 1)
+            let payload = try change.row.map { try serializeEntity(stmt: $0, entityType: entity) }
+            try insertChangeLog(entityType: change.identity.table, syncKey: change.identity.key,
+                operation: change.operation, payload: payload, clockValue: lastClock, occurredAt: change.occurredAt)
         }
     }
 
@@ -125,12 +184,11 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
 
         for colName in syncKeyCols {
             // Find the column index by name
-            guard let colIndex = entityType.columns.firstIndex(where: { $0.name == colName }) else {
+            guard let column = entityType.columns.first(where: { $0.name == colName }),
+                  let columnIndex = (0..<stmt.columnCount).first(where: { stmt.columnName($0) == colName }) else {
                 throw StoreError.invalidPayload("Sync key column '\(colName)' not found in entity")
             }
 
-            let column = entityType.columns[colIndex]
-            let columnIndex = Int32(colIndex)
 
             switch column.type {
             case .text:
@@ -156,150 +214,41 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
     }
 
     /// Serialize entity row to JSON string
-    private func serializeEntity(stmt: SQLiteStatementImpl, entityType: any EntityProtocol.Type)
+    private func serializeEntity(stmt: any SQLiteStatementProtocol, entityType: any EntityProtocol.Type)
         throws -> String
     {
-        var dict: [String: Any] = [:]
-
-        for (index, column) in entityType.columns.enumerated() {
-            let columnIndex = Int32(index)
-            let propertyName = column.name.snakeCaseToCamelCase()
-
-            switch column.type {
-            case .text:
-                if let value = stmt.columnString(columnIndex) {
-                    dict[propertyName] = value
-                }
-            case .integer:
-                dict[propertyName] = stmt.columnInt64(columnIndex)
-            case .real:
-                dict[propertyName] = stmt.columnDouble(columnIndex)
-            case .blob:
-                if let data = stmt.columnData(columnIndex) {
-                    // Convert UUIDV7 blob to string
-                    if let uuid = UUIDV7(data: data) {
-                        dict[propertyName] = uuid.uuidString
-                    } else {
-                        dict[propertyName] = data.base64EncodedString()
-                    }
-                }
-            }
-        }
-
-        let jsonData = try JSONSerialization.data(withJSONObject: dict)
-        return String(data: jsonData, encoding: .utf8) ?? "{}"
+        let entity = try entityType.sqliteDecode(from: stmt)
+        return String(decoding: try JSONEncoder().encode(entity), as: UTF8.self)
     }
 
-    /// Handle INSERT on pending_deletes table - this signals a delete operation
-    private func handlePendingDeleteInsert(rowId: Int64, clockValue: Int64) {
-        let stmt: SQLiteStatementImpl
-        do {
-            // Fetch the pending delete row to get table_name and sync_key_json
-            stmt = try mainConnection.prepareRowById(pendingDeletesTable, rowId: rowId)
-            guard try stmt.step() else { return }
-        } catch {
-            SwiftStoreLogger.error("Failed to prepare pending delete row, table: \(pendingDeletesTable), id: \(rowId), error: \(error)")
-            return
-        }
-
-        // Columns: id (0), table_name (1), sync_key_json (2)
-        guard let tableName = stmt.columnString(1),
-            let syncKeyJson = stmt.columnString(2)
-        else { return }
-
-        // Parse JSON and encode to binary
-        guard let entityType = registeredEntities[tableName] else { return }
-        let syncKeyData: Data
-        do {
-            syncKeyData = try parseSyncKeyJson(syncKeyJson, entityType: entityType)
-        } catch {
-            SwiftStoreLogger.error("Failed to parse sync key JSON for table: \(tableName), row id: \(rowId), error: \(error)")
-            return
-        }
-
-        do {
-            // Delete operations don't need payload
-            try insertChangeLog(
-                entityType: tableName,
-                syncKey: syncKeyData,
-                operation: .delete,
-                payload: nil,
-                clockValue: clockValue
-            )
-        } catch {
-            SwiftStoreLogger.error("Failed to insert change log, table: \(tableName), id: \(rowId), error: \(error)")
-            return
-        }
-
-    }
-
-    /// Parse sync key JSON and encode to binary
-    private func parseSyncKeyJson(_ json: String, entityType: any EntityProtocol.Type) throws
-        -> Data
-    {
-        guard let jsonData = json.data(using: .utf8),
-            let dict = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
-        else {
-            throw StoreError.decodingFailed("Invalid sync key JSON")
-        }
-
-        let syncKeyCols = entityType.syncKeyColumns
-        var values: [SQLiteValue] = []
-
-        for colName in syncKeyCols {
-            // Find column definition to determine type
-            guard let column = entityType.columns.first(where: { $0.name == colName }) else {
-                throw StoreError.invalidPayload("Sync key column '\(colName)' not found in entity")
-            }
-
-            guard let value = dict[colName] else {
-                values.append(.null)
-                continue
-            }
-
-            switch column.type {
-            case .text:
-                if let str = value as? String {
-                    values.append(.text(str))
-                } else {
-                    values.append(.null)
+    /// Capture rows that existed before synchronization was enabled. Remote
+    /// rows are protected by a per-entity bootstrap marker on subsequent launches.
+    public func captureExistingRows() throws {
+        try changeLogConnection.execute("CREATE TABLE IF NOT EXISTS __swiftstore_sync_bootstrap (entity_type TEXT PRIMARY KEY)")
+        for entity in registeredEntities.values {
+            let captured: Int64 = try changeLogConnection.queryScalar(
+                "SELECT COUNT(*) FROM __swiftstore_sync_bootstrap WHERE entity_type = ?",
+                values: [.text(entity.tableName)]) ?? 0
+            if captured > 0 { continue }
+            try changeLogConnection.transaction {
+                let table = entity.tableName.replacingOccurrences(of: "\"", with: "\"\"")
+                let columns = entity.columns.map { "\"" + $0.name.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }.joined(separator: ", ")
+                let stmt = try mainConnection.prepare("SELECT \(columns) FROM \"\(table)\"")
+                while try stmt.step() {
+                    let key = try extractSyncKeyData(stmt: stmt, entityType: entity)
+                    let tracked: Int64 = try changeLogConnection.queryScalar(
+                        "SELECT COUNT(*) FROM change_log WHERE entity_type = ? AND sync_key = ?",
+                        values: [.text(entity.tableName), .blob(key)]) ?? 0
+                    if tracked > 0 { continue }
+                    lastClock = max(tickClock(), lastClock + 1)
+                    try insertChangeLog(entityType: entity.tableName, syncKey: key,
+                        operation: .insert, payload: try serializeEntity(stmt: stmt, entityType: entity),
+                        clockValue: lastClock)
                 }
-            case .integer:
-                if let num = value as? Int64 {
-                    values.append(.integer(num))
-                } else if let num = value as? Int {
-                    values.append(.integer(Int64(num)))
-                } else {
-                    values.append(.null)
-                }
-            case .real:
-                if let num = value as? Double {
-                    values.append(.real(num))
-                } else {
-                    values.append(.null)
-                }
-            case .blob:
-                // For blob (UUIDV7), the JSON trigger stores as hex string using hex() function
-                if let str = value as? String {
-                    // Try to parse as hex string first (from SQLite hex() function)
-                    if let data = Data(hexString: str) {
-                        values.append(.blob(data))
-                    } else if let uuid = UUIDV7(uuidString: str) {
-                        // Try to parse as UUID string
-                        values.append(.blob(uuid.data))
-                    } else if let data = Data(base64Encoded: str) {
-                        // Try base64 as fallback
-                        values.append(.blob(data))
-                    } else {
-                        values.append(.null)
-                    }
-                } else {
-                    values.append(.null)
-                }
+                try changeLogConnection.execute("INSERT INTO __swiftstore_sync_bootstrap (entity_type) VALUES (?)",
+                    values: [.text(entity.tableName)])
             }
         }
-
-        return SyncKeyEncoder.encode(values)
     }
 
     /// Insert a change log entry into the changelog database
@@ -308,7 +257,8 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         syncKey: Data,
         operation: ChangeOperation,
         payload: String?,
-        clockValue: Int64
+        clockValue: Int64,
+        occurredAt: Date = Date()
     ) throws {
         let log = ChangeLog(
             entityType: entityType,
@@ -317,30 +267,10 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
             payload: payload,
             deviceId: deviceId,
             logicalClock: clockValue,
-            schemaVersion: schemaVersion
+            schemaVersion: schemaVersion,
+            createdAt: occurredAt,
+            updatedAt: occurredAt
         )
         try changeLogConnection.insert(log)
-    }
-}
-
-// MARK: - Data Hex String Extension
-
-extension Data {
-    /// Initialize Data from a hex string (e.g., "48656C6C6F" -> "Hello")
-    init?(hexString: String) {
-        let len = hexString.count / 2
-        var data = Data(capacity: len)
-        var index = hexString.startIndex
-
-        for _ in 0..<len {
-            let nextIndex = hexString.index(index, offsetBy: 2)
-            guard let byte = UInt8(hexString[index..<nextIndex], radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-            index = nextIndex
-        }
-
-        self = data
     }
 }

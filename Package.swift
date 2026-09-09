@@ -17,11 +17,12 @@ let package = Package(
     name: "SwiftStore",
     platforms: [
         .macOS(.v14),
-        .iOS(.v17),
+        .iOS(.v16),
         .tvOS(.v17),
         .watchOS(.v10)
     ],
     products: [
+        .library(name: "SwiftStoreSyncHTTPTransport", targets: ["SwiftStoreSyncHTTPTransport"]),
         // Main umbrella library - includes everything
         .library(
             name: "SwiftStore",
@@ -68,6 +69,7 @@ let package = Package(
         .macro(
             name: "SwiftStoreMacrosImpl",
             dependencies: [
+                "SwiftStoreProtocols",
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
             ],
@@ -84,8 +86,14 @@ let package = Package(
 
         // MARK: - Core Layer
         .target(
+            name: "SwiftStoreSQLiteSupport",
+            path: "SwiftStoreSQLiteSupport",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "SwiftStoreCore",
             dependencies: [
+                "SwiftStoreSQLiteSupport",
                 "SwiftStoreMacros",
                 "SwiftStoreProtocols",
             ],
@@ -131,6 +139,12 @@ let package = Package(
             path: "SwiftStoreSyncCloudTransport/Sources/SwiftStoreSyncCloudTransport"
         ),
 
+        // MARK: - HTTP Sync Transport
+        .target(
+            name: "SwiftStoreSyncHTTPTransport",
+            dependencies: ["SwiftStoreSync"],
+            path: "SwiftStoreSyncHTTPTransport/Sources/SwiftStoreSyncHTTPTransport"
+        ),
         // MARK: - Server Layer (Development HTTP Server)
         .target(
             name: "SwiftStoreServer",
@@ -163,6 +177,11 @@ let package = Package(
         ),
 
         // MARK: - Tests
+        .testTarget(
+            name: "SwiftStoreSyncHTTPTransportTests",
+            dependencies: ["SwiftStoreSyncHTTPTransport"],
+            path: "SwiftStoreSyncHTTPTransport/Tests/SwiftStoreSyncHTTPTransportTests"
+        ),
         .testTarget(
             name: "SwiftStoreMacroTests",
             dependencies: [

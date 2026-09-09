@@ -21,34 +21,11 @@ struct DatabaseSchemaBuilderTests {
         #expect(schema.triggers.count == 1) // update trigger only
     }
 
-    @Test("Build schema with trackDeletes enabled")
-    func testBuildSchemaWithTrackDeletes() {
-        let builder = DatabaseSchemaBuilder(
-            options: DatabaseSchemaBuildOptions(
-                createUpdateTrigger: true,
-                trackDeletes: true
-            )
-        )
-        let schemas = builder.buildSchemas(from: [TestUser.self])
-
-        // Should have entity schema + delete tracking table
-        #expect(schemas.count == 2)
-
-        let userSchema = schemas.first { $0.name == "test_user" }
-        #expect(userSchema != nil)
-        #expect(userSchema?.triggers.count == 2) // update + delete triggers
-
-        let deleteTableSchema = schemas.first { $0.name == "__swiftstore_pending_deletes" }
-        #expect(deleteTableSchema != nil)
-        #expect(deleteTableSchema?.columns.count == 3)
-    }
-
     @Test("Build schema without update trigger")
     func testBuildSchemaWithoutUpdateTrigger() {
         let builder = DatabaseSchemaBuilder(
             options: DatabaseSchemaBuildOptions(
-                createUpdateTrigger: false,
-                trackDeletes: false
+                createUpdateTrigger: false
             )
         )
         let schemas = builder.buildSchemas(from: [TestUser.self])
@@ -67,8 +44,8 @@ struct DatabaseSchemaBuilderTests {
         let updatedAt = schema.columns.first { $0.name == "updated_at" }
 
         // Default values come from the entity's ColumnDefinition
-        #expect(createdAt?.defaultValue == "(strftime('%s', 'now'))")
-        #expect(updatedAt?.defaultValue == "(strftime('%s', 'now'))")
+        #expect(createdAt?.defaultValue == "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
+        #expect(updatedAt?.defaultValue == "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
     }
 
     @Test("Build schema with all column types")
@@ -156,22 +133,6 @@ struct DatabaseSchemaBuilderTests {
         #expect(updateTrigger?.timing == .after)
         #expect(updateTrigger?.condition == "NEW.updated_at = OLD.updated_at")
         #expect(updateTrigger?.sql.contains("CREATE TRIGGER") == true)
-    }
-
-    @Test("Delete trigger SQL is correct")
-    func testDeleteTriggerSQL() {
-        let builder = DatabaseSchemaBuilder(
-            options: DatabaseSchemaBuildOptions(trackDeletes: true)
-        )
-        let schemas = builder.buildSchemas(from: [TestUser.self])
-
-        let schema = schemas.first { $0.name == "test_user" }
-        let deleteTrigger = schema?.triggers.first { $0.name.contains("delete") }
-
-        #expect(deleteTrigger != nil)
-        #expect(deleteTrigger?.event == .delete)
-        #expect(deleteTrigger?.timing == .before)
-        #expect(deleteTrigger?.sql.contains("__swiftstore_pending_deletes") == true)
     }
 }
 

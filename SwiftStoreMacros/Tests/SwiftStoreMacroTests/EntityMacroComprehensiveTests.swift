@@ -59,8 +59,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
                         ColumnDefinition(name: "profile", type: .text, nullable: true, isJSONEncoded: true),
                         ColumnDefinition(name: "metadata", type: .text, defaultValue: "'{}'", isJSONEncoded: true),
-                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
-                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
                 }
 
@@ -284,8 +284,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     [
                         ColumnDefinition(name: "email", type: .text, primaryKey: true),
                         ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
-                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
                 }
 
@@ -432,8 +432,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "id", type: .blob, primaryKey: true),
                         ColumnDefinition(name: "sku", type: .text),
                         ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
-                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
                 }
 
@@ -1026,8 +1026,8 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     [
                         ColumnDefinition(name: "id", type: .blob, primaryKey: true),
                         ColumnDefinition(name: "name", type: .text),
-                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(strftime('%s', 'now'))"),
-                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(strftime('%s', 'now'))")
+                        ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
+                        ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
                 }
 

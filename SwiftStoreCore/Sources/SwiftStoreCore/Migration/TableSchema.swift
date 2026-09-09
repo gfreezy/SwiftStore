@@ -9,19 +9,23 @@ public struct TableSchema: Sendable, Equatable {
     public let indexes: [IndexSchema]
     public let triggers: [TriggerSchema]
     public let foreignKeys: [ForeignKeySchema]
+    /// Original CREATE TABLE statement when read from a database.
+    public let sql: String
 
     public init(
         name: String,
         columns: [ColumnSchema],
         indexes: [IndexSchema] = [],
         triggers: [TriggerSchema] = [],
-        foreignKeys: [ForeignKeySchema] = []
+        foreignKeys: [ForeignKeySchema] = [],
+        sql: String = ""
     ) {
         self.name = name
         self.columns = columns
         self.indexes = indexes
         self.triggers = triggers
         self.foreignKeys = foreignKeys
+        self.sql = sql
     }
 
     public var columnNames: Set<String> {

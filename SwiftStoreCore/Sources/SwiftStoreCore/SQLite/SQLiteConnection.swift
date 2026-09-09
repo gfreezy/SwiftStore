@@ -1,9 +1,10 @@
 import Foundation
 import SQLite3
+import SwiftStoreSQLiteSupport
 import OSLog
 import SwiftStoreProtocols
 
-/// Update operation type from sqlite3_update_hook
+/// Row operation reported by SQLite hooks
 public enum SQLiteUpdateOperation: Int32, Sendable {
     case insert = 18  // SQLITE_INSERT
     case update = 23  // SQLITE_UPDATE
@@ -15,11 +16,35 @@ public struct SQLiteUpdateInfo: Sendable {
     public let operation: SQLiteUpdateOperation
     public let tableName: String
     public let rowId: Int64
+    /// Owned copies of SQLite values, in physical table column order.
+    public let oldValues: [SQLiteValue]?
+    public let newValues: [SQLiteValue]?
+    public let source: SQLiteWriteSource
+    public let occurredAt: Date
 }
 
-/// Protocol for handling SQLite update hooks
+public enum SQLiteWriteSource: Sendable {
+    case local
+    case remote
+}
+
+/// Receives changes after the originating statement finishes, outside SQLite's hook.
 public protocol SQLiteUpdateHookHandler: AnyObject {
+    /// Called inside SQLite's hook. Must not execute SQL or change this connection.
+    func tracksTable(_ tableName: String) -> Bool
     func handleUpdate(_ info: SQLiteUpdateInfo)
+    func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws
+    func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T
+}
+
+public extension SQLiteUpdateHookHandler {
+    func tracksTable(_ tableName: String) -> Bool { true }
+    func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws {
+        for update in updates { handleUpdate(update) }
+    }
+    func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T {
+        try block()
+    }
 }
 
 /// SQLite database connection wrapper
@@ -30,6 +55,19 @@ public final class SQLiteConnection {
     // Update hook support
     private weak var updateHookHandler: SQLiteUpdateHookHandler?
     private var updateHookContext: UnsafeMutableRawPointer?
+    private var steppingStatement: SQLiteStatementImpl?
+    private weak var activeWriteStatement: SQLiteStatementImpl?
+    public private(set) var writeSource: SQLiteWriteSource = .local
+
+    /// Default origin for statements starting in this synchronous scope. Each
+    /// statement snapshots it on first step, including all triggers/RETURNING rows.
+    /// Never share this NOMUTEX connection concurrently.
+    public func withWriteSource<T>(_ source: SQLiteWriteSource, _ block: () throws -> T) rethrows -> T {
+        let previous = writeSource
+        writeSource = source
+        defer { writeSource = previous }
+        return try block()
+    }
 
     // Transaction nesting support
     private var transactionDepth: Int = 0
@@ -109,7 +147,7 @@ public final class SQLiteConnection {
     deinit {
         // Remove update hook before closing
         if updateHookContext != nil {
-            sqlite3_update_hook(db, nil, nil)
+            _ = swiftstore_preupdate_register(db, nil, nil)
             updateHookContext?.deallocate()
         }
         sqlite3_close(db)
@@ -117,48 +155,118 @@ public final class SQLiteConnection {
 
     // MARK: - Update Hook
 
-    /// Set update hook handler for tracking changes
-    public func setUpdateHook(_ handler: SQLiteUpdateHookHandler?) {
-        // Remove existing hook
+    /// SQLite's documented DEFAULT-only schema migration needs defensive mode
+    /// disabled temporarily. Restore the caller's setting even if migration fails.
+    func withSchemaEditing<T>(_ block: () throws -> T) throws -> T {
+        var original: Int32 = 0
+        guard swiftstore_sqlite_defensive(db, -1, &original) == SQLITE_OK,
+              swiftstore_sqlite_defensive(db, 0, nil) == SQLITE_OK else {
+            throw StoreError.queryFailed("Cannot enable schema editing for migration")
+        }
+        defer { swiftstore_sqlite_defensive(db, original, nil) }
+        return try block()
+    }
+
+    public static var supportsPreUpdateHook: Bool { swiftstore_preupdate_available() != 0 }
+
+    /// The connection owns the pre-update slot. Do not attach SQLite Session
+    /// objects to the same handle. Capture failures abort the originating write.
+    public func setPreUpdateHook(_ handler: SQLiteUpdateHookHandler?) throws {
+        if handler != nil && !Self.supportsPreUpdateHook {
+            throw StoreError.queryFailed("Change tracking requires SQLite with SQLITE_ENABLE_PREUPDATE_HOOK")
+        }
+        activeWriteStatement?.reset()
         if updateHookContext != nil {
-            sqlite3_update_hook(db, nil, nil)
+            _ = swiftstore_preupdate_register(db, nil, nil)
             updateHookContext?.deallocate()
             updateHookContext = nil
         }
-
         updateHookHandler = handler
-
         guard handler != nil else { return }
-
-        // Create context that holds a reference to self
         let context = UnsafeMutablePointer<Unmanaged<SQLiteConnection>>.allocate(capacity: 1)
         context.initialize(to: Unmanaged.passUnretained(self))
         updateHookContext = UnsafeMutableRawPointer(context)
-
-        // Set up the C callback
-        sqlite3_update_hook(db, { (contextPtr, operation, dbName, tableName, rowId) in
-            guard let contextPtr = contextPtr,
-                  let tableName = tableName else { return }
-
-            let context = contextPtr.assumingMemoryBound(to: Unmanaged<SQLiteConnection>.self)
-            let connection = context.pointee.takeUnretainedValue()
-
-            guard let handler = connection.updateHookHandler,
-                  let op = SQLiteUpdateOperation(rawValue: operation) else { return }
-
-            let info = SQLiteUpdateInfo(
-                operation: op,
-                tableName: String(cString: tableName),
-                rowId: rowId
-            )
-
-            handler.handleUpdate(info)
+        _ = swiftstore_preupdate_register(db, { contextPtr, db, operation, dbName, tableName, oldRowId, newRowId in
+            guard let contextPtr, let tableName else { return }
+            let connection = contextPtr.assumingMemoryBound(to: Unmanaged<SQLiteConnection>.self).pointee.takeUnretainedValue()
+            guard let statement = connection.steppingStatement,
+                  let source = statement.executionSource, source == .local,
+                  dbName.map({ String(cString: $0) }) == "main",
+                  let op = SQLiteUpdateOperation(rawValue: operation),
+                  statement.captureError == nil else { return }
+            let table = String(cString: tableName)
+            guard statement.trackingHandler?.tracksTable(table) == true else { return }
+            do {
+                guard swiftstore_preupdate_blobwrite(db) < 0 else {
+                    throw StoreError.queryFailed("Incremental BLOB writes are unsupported by change tracking")
+                }
+                let count = swiftstore_preupdate_count(db)
+                func copyRow(old: Bool) throws -> [SQLiteValue] {
+                    try (0..<count).map { column in
+                        var value: OpaquePointer?
+                        let result = old ? swiftstore_preupdate_old(db, column, &value)
+                            : swiftstore_preupdate_new(db, column, &value)
+                        guard result == SQLITE_OK, let value else {
+                            throw StoreError.queryFailed("Cannot capture column \(column) of \(table): SQLite \(result)")
+                        }
+                        switch sqlite3_value_type(value) {
+                        case SQLITE_INTEGER: return .integer(sqlite3_value_int64(value))
+                        case SQLITE_FLOAT: return .real(sqlite3_value_double(value))
+                        case SQLITE_TEXT:
+                            guard let bytes = sqlite3_value_text(value) else {
+                                throw StoreError.queryFailed("Cannot copy SQLite text value")
+                            }
+                            return .text(String(decoding: UnsafeBufferPointer(start: bytes,
+                                count: Int(sqlite3_value_bytes(value))), as: UTF8.self))
+                        case SQLITE_BLOB:
+                            let size = Int(sqlite3_value_bytes(value))
+                            if size == 0 { return .blob(Data()) }
+                            guard let bytes = sqlite3_value_blob(value) else {
+                                throw StoreError.queryFailed("Cannot copy SQLite blob value")
+                            }
+                            return .blob(Data(bytes: bytes, count: size))
+                        default: return .null
+                        }
+                    }
+                }
+                statement.pendingUpdates.append(SQLiteUpdateInfo(operation: op, tableName: table,
+                    rowId: op == .delete ? oldRowId : newRowId,
+                    oldValues: op == .insert ? nil : try copyRow(old: true),
+                    newValues: op == .delete ? nil : try copyRow(old: false),
+                    source: source, occurredAt: Date()))
+            } catch {
+                // A C hook cannot throw. Fail and roll back as soon as step returns.
+                statement.captureError = error
+            }
         }, updateHookContext)
     }
 
     /// Execute a SQL statement without returning results
     @discardableResult
     public func execute(_ sql: String) throws -> Int {
+        // Prepare each statement separately so snapshots are captured between
+        // statements, including scripts that later delete or replace the same row.
+        try sql.withCString { start in
+            var cursor: UnsafePointer<CChar>? = start
+            while let current = cursor, current.pointee != 0 {
+                var raw: OpaquePointer?
+                var tail: UnsafePointer<CChar>?
+                let result = sqlite3_prepare_v2(db, current, -1, &raw, &tail)
+                guard result == SQLITE_OK else {
+                    throw StoreError.queryFailed("Failed to prepare SQL: \(String(cString: sqlite3_errmsg(db)))")
+                }
+                cursor = tail
+                if let raw {
+                    let statement = SQLiteStatementImpl(statement: raw, connection: self)
+                    while try statement.step() {}
+                }
+            }
+        }
+        return Int(sqlite3_changes(db))
+    }
+
+    /// Internal transaction control; these statements cannot produce row hooks.
+    private func executeControl(_ sql: String) throws {
         var errorMessage: UnsafeMutablePointer<CChar>?
         let result = sqlite3_exec(db, sql, nil, nil, &errorMessage)
 
@@ -168,7 +276,76 @@ public final class SQLiteConnection {
             throw StoreError.queryFailed("SQL execution failed: \(message)\nSQL: \(sql)")
         }
 
-        return Int(sqlite3_changes(db))
+    }
+
+    func step(_ statement: SQLiteStatementImpl, pointer: OpaquePointer) throws -> Bool {
+        let command = statement.command
+        if let active = activeWriteStatement, active !== statement,
+           sqlite3_stmt_readonly(pointer) == 0 || ["BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE"].contains(command) {
+            throw StoreError.queryFailed("Finish or reset the active RETURNING statement before another write")
+        }
+        if statement.trackingSavepoint == nil, let handler = updateHookHandler,
+           sqlite3_stmt_readonly(pointer) == 0,
+           ["INSERT", "UPDATE", "DELETE", "REPLACE", "WITH"].contains(command) {
+            savepointCounter += 1
+            let name = "swiftstore_statement_\(savepointCounter)"
+            try executeControl("SAVEPOINT \(name)")
+            statement.trackingSavepoint = name
+            statement.trackingHandler = handler
+            activeWriteStatement = statement
+        }
+        if statement.executionSource == nil { statement.executionSource = writeSource }
+        steppingStatement = statement
+        let result = sqlite3_step(pointer)
+        steppingStatement = nil
+        if let error = statement.captureError {
+            statement.reset()
+            throw error
+        }
+        if result == SQLITE_ROW { return true }
+        guard result == SQLITE_DONE else {
+            let message = String(cString: sqlite3_errmsg(db))
+            statement.reset()
+            throw StoreError.queryFailed("Step failed: \(message)")
+        }
+        do {
+            if let name = statement.trackingSavepoint, let handler = statement.trackingHandler {
+                if statement.pendingUpdates.isEmpty {
+                    try executeControl("RELEASE SAVEPOINT \(name)")
+                } else {
+                    try handler.withTrackingTransaction {
+                        try handler.handleUpdates(statement.pendingUpdates)
+                        try executeControl("RELEASE SAVEPOINT \(name)")
+                    }
+                }
+            }
+            statement.pendingUpdates.removeAll()
+            statement.executionSource = nil
+            statement.trackingSavepoint = nil
+            statement.trackingHandler = nil
+            if activeWriteStatement === statement { activeWriteStatement = nil }
+            return false
+        } catch {
+            statement.reset()
+            throw error
+        }
+    }
+
+    func cancelTracking(_ statement: SQLiteStatementImpl) {
+        if let name = statement.trackingSavepoint {
+            do {
+                try executeControl("ROLLBACK TO SAVEPOINT \(name)")
+                try executeControl("RELEASE SAVEPOINT \(name)")
+            } catch {
+                SwiftStoreLogger.error("Failed to cancel pending write: \(error)")
+            }
+        }
+        statement.trackingSavepoint = nil
+        statement.trackingHandler = nil
+        statement.executionSource = nil
+        statement.captureError = nil
+        statement.pendingUpdates.removeAll()
+        if activeWriteStatement === statement { activeWriteStatement = nil }
     }
 
     /// Prepare a SQL statement
@@ -181,7 +358,7 @@ public final class SQLiteConnection {
             throw StoreError.queryFailed("Failed to prepare statement: \(message)\nSQL: \(sql)")
         }
 
-        return SQLiteStatementImpl(statement: statement)
+        return SQLiteStatementImpl(statement: statement, connection: self)
     }
 
     /// Get the last insert row id
@@ -206,25 +383,34 @@ public final class SQLiteConnection {
 
     /// Rollback a transaction
     public func rollback() throws {
+        activeWriteStatement?.reset()
         try execute("ROLLBACK")
     }
 
     /// Execute a block within a transaction
     /// Uses SAVEPOINT for nested transactions
     public func transaction<T>(_ block: () throws -> T) throws -> T {
+        if let handler = updateHookHandler {
+            return try handler.withTrackingTransaction { try databaseTransaction(block) }
+        }
+        return try databaseTransaction(block)
+    }
+
+    private func databaseTransaction<T>(_ block: () throws -> T) throws -> T {
         if transactionDepth > 0 {
             // Already in a transaction, use SAVEPOINT
             return try savepoint(block)
         }
 
-        transactionDepth += 1
         try beginTransaction()
+        transactionDepth += 1
         do {
             let result = try block()
             try commit()
             transactionDepth -= 1
             return result
         } catch {
+            activeWriteStatement?.reset()
             do {
                 try rollback()
             } catch {
@@ -239,15 +425,15 @@ public final class SQLiteConnection {
     private func savepoint<T>(_ block: () throws -> T) throws -> T {
         savepointCounter += 1
         let savepointName = "sp_\(savepointCounter)"
-        transactionDepth += 1
-
         try execute("SAVEPOINT \(savepointName)")
+        transactionDepth += 1
         do {
             let result = try block()
             try execute("RELEASE SAVEPOINT \(savepointName)")
             transactionDepth -= 1
             return result
         } catch {
+            activeWriteStatement?.reset()
             do {
                 _ = try execute("ROLLBACK TO SAVEPOINT \(savepointName)")
             } catch {
@@ -258,6 +444,7 @@ public final class SQLiteConnection {
             } catch {
                 SwiftStoreLogger.error("Failed to release savepoint: \(error.localizedDescription)")
             }
+            transactionDepth -= 1
             throw error
         }
     }

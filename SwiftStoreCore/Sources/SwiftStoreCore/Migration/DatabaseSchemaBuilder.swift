@@ -6,15 +6,10 @@ public struct DatabaseSchemaBuildOptions: Sendable {
     /// Add update trigger to schema
     public var createUpdateTrigger: Bool
 
-    /// Add delete trigger to schema
-    public var trackDeletes: Bool
-
     public init(
         createUpdateTrigger: Bool = true,
-        trackDeletes: Bool = false,
     ) {
         self.createUpdateTrigger = createUpdateTrigger
-        self.trackDeletes = trackDeletes
     }
 
     public static let `default` = DatabaseSchemaBuildOptions()
@@ -22,7 +17,6 @@ public struct DatabaseSchemaBuildOptions: Sendable {
 
 /// Builds TableSchema from EntityProtocol definitions
 public struct DatabaseSchemaBuilder {
-    public static let pendingDeletesTableName = "__swiftstore_pending_deletes"
     public let options: DatabaseSchemaBuildOptions
 
     public init(options: DatabaseSchemaBuildOptions = .default) {
@@ -31,14 +25,7 @@ public struct DatabaseSchemaBuilder {
 
     /// Build TableSchema for multiple entities
     public func buildSchemas(from entities: [any EntityProtocol.Type]) -> [TableSchema] {
-        var schemas = entities.map { buildSchema(from: $0) }
-
-        // Add delete tracking table if needed
-        if options.trackDeletes {
-            schemas.append(buildDeleteTrackingTable())
-        }
-
-        return schemas
+        entities.map { buildSchema(from: $0) }
     }
 
     // MARK: - Private
@@ -89,17 +76,13 @@ public struct DatabaseSchemaBuilder {
             triggers.append(buildUpdateTrigger(for: entity.tableName))
         }
 
-        if options.trackDeletes {
-            triggers.append(buildDeleteTrigger(for: entity))
-        }
-
         return triggers
     }
 
     private func buildUpdateTrigger(for tableName: String) -> TriggerSchema {
         let name = "__swiftstore_update_\(tableName)"
         let body = """
-            UPDATE \(tableName) SET updated_at = strftime('%s', 'now')
+            UPDATE \(tableName) SET updated_at = \(SQLiteTimestampSQL.now)
             WHERE rowid = NEW.rowid;
         """
         let sql = """
@@ -121,56 +104,4 @@ public struct DatabaseSchemaBuilder {
             sql: sql
         )
     }
-
-    private func buildDeleteTrigger(for entity: any EntityProtocol.Type) -> TriggerSchema {
-        let tableName = entity.tableName
-        let name = "__swiftstore_delete_\(tableName)"
-
-        // Build json_object arguments from sync key columns
-        // For BLOB columns (like UUIDV7), we use hex() to convert to string
-        // since json_object cannot handle BLOB values directly
-        let syncKeyCols = entity.syncKeyColumns
-        let jsonArgs = syncKeyCols.map { col -> String in
-            // Check if column is blob type to apply hex() conversion
-            if let colDef = entity.columns.first(where: { $0.name == col }), colDef.type == .blob {
-                return "'\(col)', hex(OLD.\(col))"
-            } else {
-                return "'\(col)', OLD.\(col)"
-            }
-        }.joined(separator: ", ")
-
-        let body = """
-            INSERT INTO \(Self.pendingDeletesTableName) (table_name, sync_key_json)
-            VALUES ('\(tableName)', json_object(\(jsonArgs)));
-        """
-        let sql = """
-            CREATE TRIGGER IF NOT EXISTS \(name)
-            BEFORE DELETE ON \(tableName)
-            FOR EACH ROW
-            BEGIN
-                \(body)
-            END
-            """
-
-        return TriggerSchema(
-            name: name,
-            event: .delete,
-            timing: .before,
-            condition: nil,
-            body: body,
-            sql: sql
-        )
-    }
-
-    private func buildDeleteTrackingTable() -> TableSchema {
-        TableSchema(
-            name: Self.pendingDeletesTableName,
-            columns: [
-                ColumnSchema(name: "id", type: "INTEGER", isPrimaryKey: true),
-                ColumnSchema(name: "table_name", type: "TEXT"),
-                ColumnSchema(name: "sync_key_json", type: "TEXT")
-            ]
-        )
-    }
 }
-

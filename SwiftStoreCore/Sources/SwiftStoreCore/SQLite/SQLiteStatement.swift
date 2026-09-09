@@ -5,35 +5,41 @@ import SwiftStoreProtocols
 /// SQLite prepared statement wrapper - concrete implementation
 public final class SQLiteStatementImpl: SQLiteStatementProtocol {
     private var statement: OpaquePointer?
+    private let connection: SQLiteConnection
+    var pendingUpdates: [SQLiteUpdateInfo] = []
+    var executionSource: SQLiteWriteSource?
+    var captureError: (any Error)?
+    var trackingSavepoint: String?
+    var trackingHandler: (any SQLiteUpdateHookHandler)?
+    let command: String
 
-    init(statement: OpaquePointer) {
+    init(statement: OpaquePointer, connection: SQLiteConnection) {
         self.statement = statement
+        self.connection = connection
+        let sql = String(cString: sqlite3_sql(statement))
+        self.command = sql.replacingOccurrences(of: #"(?s)^(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*"#,
+            with: "", options: .regularExpression).prefix { $0.isLetter }.uppercased()
     }
 
     deinit {
+        sqlite3_reset(statement)
+        connection.cancelTracking(self)
         sqlite3_finalize(statement)
     }
 
-    /// Reset the statement for reuse
+    /// Reset the statement for reuse. With change tracking enabled, resetting an
+    /// unfinished write (including RETURNING) rolls back that statement.
     public func reset() {
         sqlite3_reset(statement)
+        connection.cancelTracking(self)
         sqlite3_clear_bindings(statement)
     }
 
-    /// Step through the statement
+    /// Step through the statement. Consume RETURNING rows until this returns false
+    /// to finish a tracked write and persist its change log.
     @discardableResult
     public func step() throws -> Bool {
-        let result = sqlite3_step(statement)
-
-        switch result {
-        case SQLITE_ROW:
-            return true
-        case SQLITE_DONE:
-            return false
-        default:
-            let message = String(cString: sqlite3_errmsg(sqlite3_db_handle(statement)))
-            throw StoreError.queryFailed("Step failed: \(message)")
-        }
+        try connection.step(self, pointer: statement!)
     }
 
     // MARK: - Binding

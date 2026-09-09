@@ -115,8 +115,8 @@ struct SwiftStoreServerDemo {
             print("Sample data inserted: 3 users, 3 posts, 3 comments")
         }
 
-        // Get user home directory for file browsing demo
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        // User home on macOS, app container on iOS.
+        let homeDir = NSHomeDirectory()
 
         // Start server
         let server = try await SwiftStoreServer(
