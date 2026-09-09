@@ -56,7 +56,7 @@ jobs:
           mkdir -p dist "$RUNNER_TEMP/swiftstore-package"
           cp .build/release/swiftstore "$RUNNER_TEMP/swiftstore-package/swiftstore"
           chmod +x "$RUNNER_TEMP/swiftstore-package/swiftstore"
-          lipo -verify_arch arm64 "$RUNNER_TEMP/swiftstore-package/swiftstore"
+          lipo "$RUNNER_TEMP/swiftstore-package/swiftstore" -verify_arch arm64
           "$RUNNER_TEMP/swiftstore-package/swiftstore" --help
           (
             cd Examples/VersionedMigrations
