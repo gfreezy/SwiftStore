@@ -40,8 +40,7 @@ public struct SchemaDelta: Codable, Sendable, Equatable {
         }
         for table in tables { merged[table.name] = table }
         let result = SchemaSnapshot(tables: Array(merged.values))
-        try result.validate()
-        return result
+        return try result.canonicalized()
     }
 }
 
@@ -73,7 +72,7 @@ public enum MigrationTool {
     /// Only changed table definitions are written. A data-only step has no JSON file.
     public static func generate(id: String, target: SchemaSnapshot, directory: URL) throws {
         let number = try migrationNumber(id)
-        try target.validate()
+        let target = try target.canonicalized()
         let history = try readHistory(directory: directory)
         if history.contains(where: { (try? migrationNumber($0.id)) == number }) {
             throw failure("Duplicate migration number: \(number)")
@@ -135,9 +134,10 @@ public enum MigrationTool {
 
     /// Checks the reconstructed full schema and returns catalog source for the current compilation.
     public static func check(target: SchemaSnapshot, directory: URL) throws -> Data {
+        let target = try target.canonicalized()
         let history = try readHistory(directory: directory)
         guard let latest = history.last else { throw failure("No migrations. Run swiftstore migration add 001_initial --target <target-directory>, or add a migration manually.") }
-        guard latest.target == target else {
+        guard try latest.target.isEquivalent(to: target) else {
             let delta = SchemaDelta.between(latest.target, target)
             throw failure("Entity schema changed. Add a migration. Changed tables: \(delta.tables.map(\.name)); removed tables: \(delta.droppedTables)")
         }

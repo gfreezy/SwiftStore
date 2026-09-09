@@ -45,7 +45,7 @@ public enum EntitySourceSchema {
                 for member in members {
                     guard let property = member.as(VariableDeclSyntax.self),
                           let name = property.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-                          ["tableName", "columns", "indexes"].contains(name) else { continue }
+                          ["tableName", "columns", "indexes", "fullTextIndexes"].contains(name) else { continue }
                     if name == "tableName" {
                         let strings = StringVisitor()
                         strings.walk(property)
@@ -56,7 +56,7 @@ public enum EntitySourceSchema {
                 if let error = metadata.error { throw error }
                 let triggers = metadata.columns.contains(where: { $0.name == "updated_at" })
                     ? [DatabaseSchemaBuilder.updateTrigger(for: name)] : []
-                tables.append(TableSchema(name: name, columns: metadata.columns, indexes: metadata.indexes, triggers: triggers))
+                tables.append(TableSchema(name: name, columns: metadata.columns, indexes: metadata.indexes, triggers: triggers, fullTextIndexes: metadata.fullTextIndexes))
             }
         }
         let result = SchemaSnapshot(tables: tables)
@@ -100,11 +100,12 @@ private final class MetadataVisitor: SyntaxVisitor {
     var tableName: String?
     var columns: [ColumnSchema] = []
     var indexes: [IndexSchema] = []
+    var fullTextIndexes: [FullTextIndexDefinition] = []
     var error: Error?
     init() { super.init(viewMode: .sourceAccurate) }
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         let function = node.calledExpression.trimmedDescription
-        guard function == "ColumnDefinition" || function == "IndexDefinition" else { return .visitChildren }
+        guard ["ColumnDefinition", "IndexDefinition", "FullTextIndexDefinition"].contains(function) else { return .visitChildren }
         let arguments = Dictionary(uniqueKeysWithValues: node.arguments.compactMap { argument in
             argument.label.map { ($0.text, argument.expression) }
         })
@@ -114,7 +115,25 @@ private final class MetadataVisitor: SyntaxVisitor {
             error = VersionedMigrationError.invalidHistory("Invalid generated metadata: \(node)")
             return .skipChildren
         }
-        if function == "ColumnDefinition" {
+        if function == "FullTextIndexDefinition" {
+            let fields = arguments["columns"]?.as(ArrayExprSyntax.self)?.elements.compactMap { element -> FullTextColumn? in
+                guard let call = element.expression.as(FunctionCallExprSyntax.self) else { return nil }
+                let args = Dictionary(uniqueKeysWithValues: call.arguments.compactMap { arg in
+                    arg.label.map { ($0.text, arg.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue) }
+                })
+                guard let fieldName = args["name"] ?? nil, let column = args["column"] ?? nil else { return nil }
+                return FullTextColumn(name: fieldName, column: column, jsonPath: args["jsonPath"] ?? nil)
+            } ?? []
+            let keys = arguments["keyColumns"]?.as(ArrayExprSyntax.self)?.elements.compactMap {
+                $0.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue
+            } ?? []
+            guard let tokenizerName = arguments["tokenizer"]?.as(MemberAccessExprSyntax.self)?.declName.baseName.text,
+                  let tokenizer = FullTextTokenizer(rawValue: tokenizerName) else {
+                error = VersionedMigrationError.invalidHistory("Invalid FTS tokenizer metadata")
+                return .skipChildren
+            }
+            fullTextIndexes.append(FullTextIndexDefinition(name: name, columns: fields, keyColumns: keys, tokenizer: tokenizer))
+        } else if function == "ColumnDefinition" {
             guard let type = arguments["type"]?.as(MemberAccessExprSyntax.self)?.declName.baseName.text,
                   ["text", "integer", "real", "blob"].contains(type) else {
                 error = VersionedMigrationError.invalidHistory("Unsupported generated column type: \(node)")

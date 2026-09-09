@@ -22,7 +22,8 @@ public struct DatabaseSchemaBuilder {
             name: entity.tableName,
             columns: columns,
             indexes: indexes,
-            triggers: triggers
+            triggers: triggers,
+            fullTextIndexes: entity.fullTextIndexes
         )
     }
 

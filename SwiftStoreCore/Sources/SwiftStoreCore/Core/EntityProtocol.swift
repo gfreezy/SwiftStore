@@ -122,6 +122,17 @@ public extension EntityProtocol {
 // MARK: - Query Extensions for EntityProtocol
 
 public extension EntityProtocol {
+    /// Search indexed text as a literal phrase, returning a composable query.
+    /// With multiple full-text indexes, specify the declared index name.
+    static func search(_ text: String, index name: String? = nil) throws -> Query<Self> {
+        try Query(Self.self).search(text, index: name)
+    }
+
+    /// Search using explicit FTS5 syntax (operators, prefixes and column filters).
+    static func matching(_ expression: String, index name: String? = nil) throws -> Query<Self> {
+        try Query(Self.self).matching(expression, index: name)
+    }
+
     /// Create a new Query for this entity type
     static func filter() -> Query<Self> {
         Query(Self.self)

@@ -14,7 +14,7 @@
 /// - Use `@Default` or inline initializers for default values on `let` and `var` properties
 /// - For #SyncKey entities: generates `id` computed property and `SyncKeyID` struct for Identifiable
 /// - Note: Readonly entities can only be used with ConnectionManager in readonly mode
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly), named(init))
+@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(fullTextIndexes), named(__swiftstore_validateFullTextColumns), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly), named(init))
 @attached(extension, conformances: EntityProtocol, Encodable, Decodable, Identifiable, Sendable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Entity(tableName: String? = nil, readonly: Bool = false) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 
@@ -142,3 +142,10 @@ public macro Default<T>(_ value: T) = #externalMacro(module: "SwiftStoreMacrosIm
 /// Overload for @Default(nil) to support optional properties with nil default.
 @attached(peer)
 public macro Default(_ value: OptionalNil) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "DefaultMacro")
+
+
+/// Index String/String? fields, including nested Embedded properties, with local FTS5 storage.
+/// Additional indexes on the same Entity need explicit names. Default tokenizer: unicode61.
+@freestanding(declaration)
+public macro FullTextIndex<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., name: String? = nil,
+    tokenizer: FullTextTokenizer = .unicode61) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "FullTextIndexMacro")

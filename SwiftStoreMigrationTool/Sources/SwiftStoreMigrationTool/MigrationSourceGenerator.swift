@@ -5,18 +5,24 @@ import SwiftStoreCore
 /// a compiler error at the point where a developer must supply a data-preserving transformation.
 public enum MigrationSourceGenerator {
     public static func source(symbol: String, from old: SchemaSnapshot, to new: SchemaSnapshot) throws -> String {
-        try old.validate()
-        try new.validate()
+        let old = try old.canonicalized()
+        let new = try new.canonicalized()
         var lines = ["import SwiftStoreCore", "", "// Review before publishing. Published migrations must never be edited.",
                      "enum \(symbol) {", "    static func up(_ db: SQLiteConnection) throws {"]
         func emit(_ sql: String) { lines.append("        try db.execute(\(String(reflecting: sql)))") }
         func manual(_ message: String) { lines.append("        #error(\(String(reflecting: message)))") }
         let oldTables = Dictionary(uniqueKeysWithValues: old.tables.map { ($0.name, $0) })
+        let newTables = Dictionary(uniqueKeysWithValues: new.tables.map { ($0.name, $0) })
+        // Drop derived views before any underlying table is rebuilt or an index name is reused.
+        for previous in old.tables where newTables[previous.name] != previous {
+            for sql in FullTextSchema(table: previous).dropStatements { emit(sql) }
+        }
         for table in new.tables {
             guard let previous = oldTables[table.name] else {
                 for sql in SchemaSnapshot(tables: [table]).creationStatements { emit(sql) }
                 continue
             }
+            let refreshFullText = previous != table
             let previousColumns = Dictionary(uniqueKeysWithValues: previous.columns.map { ($0.name, $0) })
             let additions = table.columns.filter { previousColumns[$0.name] == nil }
             let changedExisting = previous.columns.contains { !table.columns.contains($0) }
@@ -45,6 +51,9 @@ public enum MigrationSourceGenerator {
             for column in additions { emit("ALTER TABLE \(quote(table.name)) ADD COLUMN \(column.toSQL())") }
             for index in table.indexes where !previous.indexes.contains(index) { emit(index.toSQL(tableName: table.name)) }
             for trigger in table.triggers where !previous.triggers.contains(trigger) { emit(trigger.sql) }
+            if refreshFullText {
+                for sql in FullTextSchema(table: table).creationStatements { emit(sql) }
+            }
         }
         for table in old.tables where !new.tables.contains(where: { $0.name == table.name }) {
             manual("Table \(table.name) removed: explicitly migrate its data and DROP TABLE, or implement a rename.")

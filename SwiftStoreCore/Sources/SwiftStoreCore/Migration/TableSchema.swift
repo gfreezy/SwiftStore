@@ -1,4 +1,5 @@
 import Foundation
+import SwiftStoreProtocols
 
 // MARK: - Table Schema
 
@@ -8,6 +9,7 @@ public struct TableSchema: Sendable, Equatable, Codable {
     public let columns: [ColumnSchema]
     public let indexes: [IndexSchema]
     public let triggers: [TriggerSchema]
+    public let fullTextIndexes: [FullTextIndexDefinition]
     public let foreignKeys: [ForeignKeySchema]
     /// Original CREATE TABLE statement when read from a database.
     public let sql: String
@@ -18,7 +20,8 @@ public struct TableSchema: Sendable, Equatable, Codable {
         indexes: [IndexSchema] = [],
         triggers: [TriggerSchema] = [],
         foreignKeys: [ForeignKeySchema] = [],
-        sql: String = ""
+        sql: String = "",
+        fullTextIndexes: [FullTextIndexDefinition] = []
     ) {
         self.name = name
         self.columns = columns
@@ -26,16 +29,18 @@ public struct TableSchema: Sendable, Equatable, Codable {
         self.triggers = triggers
         self.foreignKeys = foreignKeys
         self.sql = sql
+        self.fullTextIndexes = fullTextIndexes
     }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         name = try values.decode(String.self, forKey: .name)
-        columns = try values.decode([ColumnSchema].self, forKey: .columns)
+        columns = try values.decodeIfPresent([ColumnSchema].self, forKey: .columns) ?? []
         indexes = try values.decodeIfPresent([IndexSchema].self, forKey: .indexes) ?? []
         triggers = try values.decodeIfPresent([TriggerSchema].self, forKey: .triggers) ?? []
         foreignKeys = try values.decodeIfPresent([ForeignKeySchema].self, forKey: .foreignKeys) ?? []
         sql = try values.decodeIfPresent(String.self, forKey: .sql) ?? ""
+        fullTextIndexes = try values.decodeIfPresent([FullTextIndexDefinition].self, forKey: .fullTextIndexes) ?? []
     }
 
     public var columnNames: Set<String> {
@@ -82,8 +87,8 @@ public struct ColumnSchema: Sendable, Equatable, Hashable, Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         name = try values.decode(String.self, forKey: .name)
         type = try values.decode(String.self, forKey: .type)
-        isNullable = try values.decodeIfPresent(Bool.self, forKey: .isNullable) ?? false
-        isPrimaryKey = try values.decodeIfPresent(Bool.self, forKey: .isPrimaryKey) ?? false
+        isNullable = try values.contains(.isNullable) ? values.decode(Bool.self, forKey: .isNullable) : false
+        isPrimaryKey = try values.contains(.isPrimaryKey) ? values.decode(Bool.self, forKey: .isPrimaryKey) : false
         defaultValue = try values.decodeIfPresent(String.self, forKey: .defaultValue)
         generatedAs = try values.decodeIfPresent(String.self, forKey: .generatedAs)
     }
@@ -131,8 +136,8 @@ public struct IndexSchema: Sendable, Equatable, Hashable, Codable {
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         name = try values.decode(String.self, forKey: .name)
-        columns = try values.decode([String].self, forKey: .columns)
-        isUnique = try values.decodeIfPresent(Bool.self, forKey: .isUnique) ?? false
+        columns = try values.decodeIfPresent([String].self, forKey: .columns) ?? []
+        isUnique = try values.contains(.isUnique) ? values.decode(Bool.self, forKey: .isUnique) : false
         sql = try values.decodeIfPresent(String.self, forKey: .sql) ?? ""
     }
 
@@ -206,6 +211,15 @@ public struct ForeignKeySchema: Sendable, Equatable, Hashable, Codable {
         self.referencesColumn = referencesColumn
         self.onDelete = onDelete
         self.onUpdate = onUpdate
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        column = try values.decode(String.self, forKey: .column)
+        referencesTable = try values.decode(String.self, forKey: .referencesTable)
+        referencesColumn = try values.decode(String.self, forKey: .referencesColumn)
+        onDelete = try values.contains(.onDelete) ? values.decode(ForeignKeyAction.self, forKey: .onDelete) : .noAction
+        onUpdate = try values.contains(.onUpdate) ? values.decode(ForeignKeyAction.self, forKey: .onUpdate) : .noAction
     }
 
     public enum ForeignKeyAction: String, Sendable, Equatable, Hashable, Codable {

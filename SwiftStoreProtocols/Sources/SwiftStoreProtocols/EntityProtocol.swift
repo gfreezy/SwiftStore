@@ -30,6 +30,7 @@ public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
     static var tableName: String { get }
     static var columns: [ColumnDefinition] { get }
     static var indexes: [IndexDefinition] { get }
+    static var fullTextIndexes: [FullTextIndexDefinition] { get }
     static var syncKeyColumns: [String] { get }
     static var isReadonly: Bool { get }
 }
@@ -37,5 +38,6 @@ public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
 /// Default implementations
 public extension EntityProtocol {
     static var indexes: [IndexDefinition] { [] }
+    static var fullTextIndexes: [FullTextIndexDefinition] { [] }
     static var isReadonly: Bool { false }
 }

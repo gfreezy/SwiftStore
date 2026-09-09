@@ -51,3 +51,11 @@ public struct DefaultMacro: PeerMacro {
         try SwiftStoreMacroSupport.DefaultMacro.expansion(of: node, providingPeersOf: declaration, in: context)
     }
 }
+
+
+public struct FullTextIndexMacro: DeclarationMacro {
+    public static func expansion(of node: some FreestandingMacroExpansionSyntax,
+        in context: some MacroExpansionContext) throws -> [DeclSyntax] {
+        try SwiftStoreMacroSupport.FullTextIndexMacro.expansion(of: node, in: context)
+    }
+}

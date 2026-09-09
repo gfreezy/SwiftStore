@@ -143,6 +143,80 @@ struct User {
 
 > **JSON Field Indexing**: SwiftStore supports indexing nested fields within JSON columns using keypath syntax (e.g., `\.address.city`). The index is created on the extracted JSON value using SQLite's `json_extract()` function.
 
+### Full-text search (FTS5)
+
+Declare a full-text index inside an Entity. String and optional String leaves are supported,
+including nested `@Embedded` properties stored as JSON:
+
+```swift
+@Embedded
+struct ArticleContent {
+    var body: String?
+}
+
+@Entity
+struct Article {
+    #FullTextIndex<Self>(\.title, \.content.body)
+
+    var id: UUIDV7 = UUIDV7()
+    var title: String
+    var content: ArticleContent
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
+// Literal phrase: quotes and operators in user input are treated as text.
+let articles = try Article.search("database indexing")
+    .limit(20)
+    .all(connection)
+
+// Explicit FTS5 query syntax, including the nested field's generated column name.
+let matches = try Article.matching("title: swift OR content__body: index*")
+    .all(connection)
+```
+
+Generate and apply a new versioned migration after adding or changing the declaration, using
+[the existing migration workflow](docs/versioned-migrations.md). The generated SQL creates a
+local UUID/identity-to-integer mapping table, an external-content view, the FTS5 virtual table,
+and maintenance triggers. Existing records are mapped and indexed during the migration.
+The original Entity primary key and columns are preserved. JSON fields are extracted in the
+view; no generated columns are needed solely for full-text search.
+
+The default index name is `<table_name>_fts`. For multiple indexes on one Entity, give each
+additional index an explicit `name` and pass `index: "name"` to `search` or `matching`.
+All indexes on the Entity share one local mapping table. Composite `#SyncKey` identities
+are supported too.
+
+```swift
+#FullTextIndex<Self>(\.title, \.content.body, name: "article_words", tokenizer: .unicode61)
+#FullTextIndex<Self>(\.title, name: "article_substrings", tokenizer: .trigram)
+```
+
+Available tokenizers are `.unicode61` (default), `.porter` (English stemming), and `.trigram`
+(substring matching). Trigram MATCH needs at least three Unicode characters; `unicode61`
+does not segment Chinese words. Custom tokenizers, array/subscript paths and optional-chained
+paths are not currently supported. The leaf itself may be optional.
+
+`search` treats its input as a single literal phrase and returns no rows for empty/whitespace
+input. `matching` accepts FTS5 syntax and reports syntax errors at execution. Both bind input as
+SQL parameters and compose with the existing filters, ordering, counts and pagination.
+Results use the normal Query ordering, not automatic relevance ordering. For ranking or
+highlights, use the existing parameterized SQL interface with FTS5's `rank`/`highlight` functions.
+
+Mapping tables and FTS indexes are local derived data: register only the original Entities for
+sync. Incoming remote inserts, updates and deletes fire the same maintenance triggers without
+syncing internal IDs or index contents. IDs may differ between devices. A mapping rebuild must
+be accompanied by an FTS rebuild; migrations regenerate them together when the table schema
+changes. Disabling full-text search drops these local objects and preserves the Entity data.
+
+Maintenance runs in SQLite triggers, including for raw SQL and bulk writes. Prefer UPDATE or
+`INSERT ... ON CONFLICT ... DO UPDATE` for existing records. If using SQLite `REPLACE`, every
+writing connection must enable `PRAGMA recursive_triggers = ON` so implicit deletions run the
+cleanup trigger. This framework does not enable recursive triggers globally. The SQLite library
+on each deployment target must provide FTS5 and the chosen tokenizer; an unavailable module or
+tokenizer causes the migration to fail and roll back.
+
+
 ### Readonly Entities (readonly: true)
 
 For entities that don't need synchronization (local cache, settings, imported data, etc.):

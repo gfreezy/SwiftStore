@@ -14,32 +14,71 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
 
     public static let empty = SchemaSnapshot(tables: [])
 
+    /// Canonical typed representation used before comparing or hashing schemas.
+    /// Decoders resolve field-specific defaults (including absent/null/empty collections).
+    /// Only table order is normalized; column/index-column order and SQL expressions are semantic.
+    public func canonicalized() throws -> SchemaSnapshot {
+        let snapshot = SchemaSnapshot(tables: tables)
+        try snapshot.validate()
+        return snapshot
+    }
+
+    public func isEquivalent(to other: SchemaSnapshot) throws -> Bool {
+        try canonicalized() == other.canonicalized()
+    }
+
     public func json() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-        return try encoder.encode(self)
+        // Hash and comparison inputs share one representation, including explicit empty arrays.
+        return try encoder.encode(canonicalized())
     }
 
     public static func decode(_ data: Data) throws -> SchemaSnapshot {
         let snapshot = try JSONDecoder().decode(Self.self, from: data)
-        try snapshot.validate()
-        return snapshot
+        return try snapshot.canonicalized()
     }
 
     public func validate() throws {
         guard Set(tables.map { $0.name.lowercased() }).count == tables.count else {
             throw VersionedMigrationError.invalidHistory("Duplicate table names")
         }
-        let objectNames = tables.flatMap { [$0.name] + $0.indexes.map(\.name) }.map { $0.lowercased() }
-        let triggerNames = tables.flatMap { $0.triggers.map(\.name) }.map { $0.lowercased() }
+        let objectNames = tables.flatMap { table in
+            [table.name] + table.indexes.map(\.name) + FullTextSchema(table: table).objectNames +
+                FullTextSchema(table: table).shadowTableNames
+        }.map { $0.lowercased() }
+        let triggerNames = tables.flatMap { table in
+            table.triggers.map(\.name) + (table.fullTextIndexes.isEmpty ? [] : FullTextSchema(table: table).triggerNames)
+        }.map { $0.lowercased() }
         guard Set(objectNames).count == objectNames.count, Set(triggerNames).count == triggerNames.count else {
             throw VersionedMigrationError.invalidHistory("Duplicate table, index or trigger names")
         }
         for table in tables {
+            try FullTextSchema(table: table).validate()
             guard !table.name.lowercased().hasPrefix("__swiftstore_"), !table.name.lowercased().hasPrefix("sqlite_"),
                   !table.name.isEmpty, !table.columns.isEmpty,
                   Set(table.columns.map { $0.name.lowercased() }).count == table.columns.count else {
                 throw VersionedMigrationError.invalidHistory("Invalid or reserved table: \(table.name)")
+            }
+            for column in table.columns {
+                guard !column.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !column.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      column.generatedAs.map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true,
+                      column.defaultValue.map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true else {
+                    throw VersionedMigrationError.invalidHistory("Invalid column or empty SQL expression: \(table.name).\(column.name)")
+                }
+            }
+            for index in table.indexes {
+                guard !index.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !index.columns.isEmpty,
+                      index.columns.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                    throw VersionedMigrationError.invalidHistory("Invalid index: \(index.name)")
+                }
+            }
+            for key in table.foreignKeys {
+                guard [key.column, key.referencesTable, key.referencesColumn].allSatisfy({
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }) else { throw VersionedMigrationError.invalidHistory("Invalid foreign key on \(table.name)") }
             }
         }
     }
@@ -49,7 +88,8 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
         tables.flatMap { table in
             let definitions = table.columns.map { $0.toSQL() } + table.foreignKeys.map { $0.toSQL() }
             let create = "CREATE TABLE \(table.name) (\n    \(definitions.joined(separator: ",\n    "))\n)"
-            return [create] + table.indexes.map { $0.toSQL(tableName: table.name) } + table.triggers.map(\.sql)
+            return [create] + table.indexes.map { $0.toSQL(tableName: table.name) } + table.triggers.map(\.sql) +
+                FullTextSchema(table: table).creationStatements
         }
     }
 
@@ -61,13 +101,18 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
         options.foreignKeys = false
         let reference = try SQLiteConnection(path: ":memory:", options: options)
         for sql in creationStatements { try reference.execute(sql) }
-        for table in tables {
-            let expected = try Self.definitions(table: table.name, on: reference)
-            let actual = try Self.definitions(table: table.name, on: connection)
+        for name in managedObjectNames {
+            let expected = try Self.definitions(table: name, on: reference)
+            let actual = try Self.definitions(table: name, on: connection)
             guard expected == actual else {
-                throw VersionedMigrationError.schemaMismatch(table.name)
+                throw VersionedMigrationError.schemaMismatch(name)
             }
         }
+    }
+
+    /// Includes auxiliary objects so removal is checked by the migration runner.
+    public var managedObjectNames: [String] {
+        tables.flatMap { [$0.name] + FullTextSchema(table: $0).objectNames + FullTextSchema(table: $0).shadowTableNames }
     }
 
     private static func definitions(table: String, on db: SQLiteConnection) throws -> [String] {

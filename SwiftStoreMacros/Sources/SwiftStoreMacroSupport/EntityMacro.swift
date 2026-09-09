@@ -210,6 +210,28 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             result.append(indexesDecl)
         }
 
+        let fullTextIndexes = try FullTextMarkerParser.parse(from: structDecl.memberBlock.members,
+            tableName: tableName, keyColumns: syncKeyColumns, properties: properties)
+        if !fullTextIndexes.isEmpty {
+            let definitions = fullTextIndexes.map { index in
+                let fields = index.columns.map { field in
+                    "FullTextColumn(name: \(String(reflecting: field.name)), column: \(String(reflecting: field.column))" +
+                    (field.jsonPath.map { ", jsonPath: \(String(reflecting: $0))" } ?? "") + ")"
+                }.joined(separator: ", ")
+                let keys = index.keyColumns.map { String(reflecting: $0) }.joined(separator: ", ")
+                return "FullTextIndexDefinition(name: \(String(reflecting: index.name)), columns: [\(fields)], keyColumns: [\(keys)], tokenizer: .\(index.tokenizer.rawValue))"
+            }.joined(separator: ",\n")
+            result.append("public static var fullTextIndexes: [FullTextIndexDefinition] { [\(raw: definitions)] }")
+            let checks = structDecl.memberBlock.members.compactMap { $0.decl.as(MacroExpansionDeclSyntax.self) }
+                .filter { $0.macroName.text == "FullTextIndex" }.flatMap { $0.arguments }
+                .filter { $0.label == nil }.map { argument in
+                    let path = argument.expression.trimmedDescription
+                    let explicit = path.hasPrefix("\\.") ? "\\Self" + path.dropFirst() : path
+                    return "_validateFullTextColumn(\(explicit))"
+                }.joined(separator: "\n")
+            result.append("private static func __swiftstore_validateFullTextColumns() {\n\(raw: checks)\n}")
+        }
+
         // Note: Nested types (non-primitive Codable types) should conform to Embedded protocol
         // for proper fault-tolerant decoding. Add @Embedded to your nested structs.
 

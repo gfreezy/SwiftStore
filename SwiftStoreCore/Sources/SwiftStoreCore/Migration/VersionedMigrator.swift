@@ -117,9 +117,11 @@ public struct VersionedMigrator {
 
     private func verifyTarget(_ target: SchemaSnapshot) throws {
         try target.verify(on: connection)
-        let present = Set(target.tables.map(\.name))
-        for name in Set(migrations.flatMap { $0.target.tables.map(\.name) }).subtracting(present) {
-            if try connection.tableExists(name) { throw VersionedMigrationError.schemaMismatch(name) }
+        let present = Set(target.managedObjectNames)
+        for name in Set(migrations.flatMap { $0.target.managedObjectNames }).subtracting(present) {
+            if try connection.queryScalar("SELECT COUNT(*) FROM sqlite_master WHERE name = ?", values: [.text(name)], type: Int.self) != 0 {
+                throw VersionedMigrationError.schemaMismatch(name)
+            }
         }
     }
 
