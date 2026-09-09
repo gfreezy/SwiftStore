@@ -1,8 +1,8 @@
-# Incremental migrations: build plugin and optional CLI
+# Versioned migrations
 
-Add SwiftStore and enable **SwiftStoreMigrationCheck** on the target containing your Entities and migration Swift files. The plugin checks the schema during normal builds and generates `StoreMigrations.all()`. You do not need a schema executable, a separate model module, a manually maintained registration list, or a `seal` command.
-
-The optional `swiftstore` CLI writes the same files that you can maintain by hand. This format replaces the earlier `schema-history.json` / committed catalog format; there is no compatibility layer for those artifacts.
+Enable **SwiftStoreMigrationCheck** on the target containing your Entities and migration Swift files.
+The plugin checks the schema during builds and generates `StoreMigrations.all()`.
+The optional `swiftstore` CLI generates migration Swift files and incremental JSON snapshots.
 
 ## Enable once
 
@@ -38,7 +38,8 @@ Use one schema/history per plugin-enabled target. Entities in another module are
 
 ## Generate with the optional tool
 
-The CI release workflow publishes **macOS arm64 (Apple Silicon)** archives and `SHA256SUMS` on [GitHub Releases](https://github.com/gfreezy/SwiftStore/releases). After a release containing the CLI is published, download `swiftstore-<version>-macos-arm64.tar.gz` and `SHA256SUMS` into an empty directory, then:
+Download the macOS arm64 (Apple Silicon) CLI archive and `SHA256SUMS` from the selected
+[GitHub Release](https://github.com/gfreezy/SwiftStore/releases) into an empty directory, then:
 
 ```sh
 shasum -a 256 -c SHA256SUMS
@@ -73,9 +74,12 @@ swiftstore migration add 002_display_name --target Sources/MyModels
 
 For an Xcode project, the schema root is the directory containing the `.xcodeproj` and `Migrations`. The CLI recursively scans Swift files below that directory, skipping hidden directories. For projects containing unrelated targets/tests, pass `--sources-file <json-file>` with an array of the exact source file paths for the model-owning target, matching the plugin's scope.
 
-The generator writes only the tables that changed. Unchanged tables inherit their most recent definition. It never overwrites an existing migration. Use `<digits>_<description>`: the first underscore separates an ASCII numeric prefix from an unrestricted description (subject to filename restrictions). The underscore is required; the description may be empty and may contain Chinese, spaces, punctuation, or more underscores. Numbers must be unique, ignoring leading zeros: `001_initial` and `1_other` conflict. Migrations sort numerically (`2` before `10`), and a new number must exceed the latest one. Gaps and arbitrary digit lengths are allowed.
+The generator writes only changed tables and never overwrites a migration. IDs use
+`<digits>_<description>`; the underscore is required, and descriptions may contain Chinese or spaces.
+Numbers sort numerically and must be unique, ignoring leading zeros (`001_initial` conflicts with `1_other`).
+New numbers must exceed the latest migration; gaps are allowed.
 
-Safe structural additions generate SQL. Renames, dropped tables/columns, changed types or constraints, and additions requiring backfills produce a `#error` placeholder with the target definition. Replace it with the required SQL. A normal build then checks the snapshots and compiles your migration code. There is no sealing step.
+Safe structural additions generate SQL. Renames, dropped tables/columns, changed types or constraints, and additions requiring backfills produce a `#error` placeholder with the target definition. Replace it with the required SQL. A normal build checks the snapshots and compiles your migration code.
 
 You can also check without building:
 
@@ -117,9 +121,11 @@ If the previous `users` table contained only an integer primary key and a nullab
 }
 ```
 
-Each listed table replaces its previous definition **in full**, including its columns, indexes, triggers and foreign keys. Do not list unchanged tables. In normal sync-capable Entities, include the actual UUID and timestamp columns too; the generator handles these automatically.
+Each listed table replaces its previous definition **in full**, including its columns, indexes, triggers, foreign keys and full-text indexes. Do not list unchanged tables. In normal sync-capable Entities, include the actual UUID and timestamp columns too; the generator handles these automatically.
 
-For columns, omitted `isNullable` and `isPrimaryKey` default to `false`; omitted `defaultValue` and `generatedAs` mean no default/generated expression. For tables, omitted `indexes`, `triggers` and `foreignKeys` default to empty arrays. Column order is part of the schema.
+For columns, omitted `isNullable` and `isPrimaryKey` default to `false`; omitted `defaultValue` and `generatedAs` mean no default/generated expression. For tables, omitted `indexes`, `triggers`, `foreignKeys` and `fullTextIndexes` default to empty arrays.
+Column order is part of the schema. See [canonical comparison rules](schema-canonicalization.md)
+for null handling and checksum encoding.
 
 Explicitly mark table deletion:
 
@@ -134,9 +140,9 @@ A pure data migration, such as `003_clean_data.swift`, does not need a JSON file
 ## What the build does
 
 1. Reads the selected target's `@Entity` declarations.
-2. Uses the **same Entity macro expansion implementation** as the compiler to derive columns, defaults, generated index columns and indexes.
+2. Uses the **same Entity macro expansion implementation** as the compiler to derive columns, defaults, generated index columns, ordinary indexes and FTS5 declarations.
 3. Sorts migration IDs by numeric prefix and merges their table deltas into each historical target schema.
-4. Compares the latest reconstructed schema with the current Entity schema, including deleted Entities/tables.
+4. Compares the canonical latest schema with the current Entity schema, including removed tables and FTS changes.
 5. Generates the ordered registration code, embedded full target schemas, and source checksums into the plugin work directory.
 
 The build does not write to the project's source directory or run migration bodies. Missing or incorrectly declared `Migration_NUMBER.up` methods are caught when the generated catalog is compiled. Changed source files or snapshots invalidate the catalog build output.
@@ -147,7 +153,7 @@ Only the final structural state is checked during build. A schema can match even
 
 ## Runtime
 
-Schema and data changes use committed migrations only. Runtime auto-alignment APIs have been removed. Apply the generated history before accessing a database; changing live Entity definitions alone cannot upgrade it.
+Apply committed migrations before accessing a database. Changing live Entity definitions alone does not upgrade existing data.
 
 ```swift
 let manager = try ConnectionManager(path: databasePath, entities: [User.self, Post.self])
@@ -168,7 +174,10 @@ Keep business transformations within each migration's own file and use historica
 
 Published migration files must remain immutable. Editing them changes the generated checksum, so a database that already executed them rejects the history. Add a new migration for corrections. The build itself cannot know which versions users have already installed.
 
-Schema validation is intentionally strict. It checks managed table definitions, defaults, indexes and triggers and permits unrelated tables. Custom schema objects must be represented in snapshots. Some semantically equivalent but structurally different SQL definitions may be rejected. Large backfills hold the migration transaction for their duration; resumable online migration is outside this API.
+Runtime verification checks managed tables, defaults, indexes, triggers and FTS auxiliary objects.
+Managed objects must match their snapshots; unrelated tables are permitted. Some structurally different
+SQL definitions are rejected even if semantically equivalent. Large backfills hold the migration
+transaction for their duration.
 
 ## Adopt an existing database
 
@@ -187,9 +196,23 @@ The manager verifies the selected schema, records its history prefix without exe
 
 Tables with an `updated_at` column always receive an automatic update trigger when their schema is generated. Tables without that column receive no such trigger. The CLI, build plugin, and ConnectionManager use the same rule; it does not depend on `syncConfig`. Local updates maintain modification times even before sync is enabled. An explicitly changed `updated_at` value is preserved.
 
-No `swiftstore-migrations.json` file is needed. The former `createUpdateTrigger` setting has been removed; an existing file can be deleted. If your latest migration snapshot lacks a required update trigger, add a new migration with `swiftstore migration add <next-number>_update_timestamps`. The generator writes the trigger SQL and updated table delta. Do not edit previously published migrations. Existing databases apply this additional step, and fresh installs replay it after the earlier history.
+Enabling or disabling sync alone does not require a schema migration. Migration IDs are independent
+of the sync protocol's schema version.
 
-Enabling or disabling sync alone no longer changes the schema or requires a migration. Migration IDs remain independent of the sync protocol's schema version. Whether migrated data is uploaded later by sync bootstrap is a separate application policy.
+## Full-text indexes
+
+`#FullTextIndex` participates in generation and `check`, including nested JSON paths, index names,
+indexed fields and tokenizer selection. Add a migration after changing or removing a declaration.
+
+The generated migration creates local mapping tables, content views, FTS5 tables and maintenance
+triggers, then indexes existing data. When an indexed table's schema changes, its derived search
+objects are rebuilt together. Removing FTS drops those objects while retaining business data.
+
+For manual table rebuilds, also recreate the target FTS objects shown in the generated reference SQL.
+Do not preserve an FTS index while discarding or reassigning its mapping IDs. The runtime verifies
+auxiliary objects and checks that removed objects were cleaned up.
+
+Declaration and query examples are in the [FTS5 guide](../README.md#full-text-search-fts5).
 
 ## Example and tests
 
@@ -204,8 +227,4 @@ python3 IntegrationTests/VersionedMigrations/test_external_package.py
 
 The example uses the public plugin directly, with no schema tool target. The external-package test verifies consumer dependency setup, a rejected schema change, table-level deltas, a manually completed rename, a data-only step, preserved data in unchanged tables, repeat startup and rejection of modified applied history.
 
-## Binary release CI
-
-`.github/workflows/release-cli.yml` builds the CLI natively on a macOS arm64 runner when a version tag is pushed (`1.3.0` or `v1.3.0` style). It can also be dispatched manually with an existing version tag that contains the workflow/tool changes.
-
-CI verifies the checkout against the tag, builds an optimized standalone binary, checks its architecture and executes it outside the build directory, packages it with SHA-256 checksums, and uploads both assets to the tag's GitHub Release. A new release remains a draft until uploads finish. It then downloads the published files, verifies their checksums and runs the downloaded executable. Workflow artifacts are retained as well. Intel and Linux binaries are not produced.
+CLI packaging is defined in the [release workflow](../.github/workflows/release-cli.yml).

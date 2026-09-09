@@ -8,19 +8,21 @@
 | `GET /sync/v1/pull` | query：cursor、可选 limit | changes、cursor、hasMore |
 | `POST /sync/v1/records` | body：keys | records |
 
-## 1. 公共信息
+文中的 payload 使用占位符，实际请求必须发送客户端生成的完整 Base64 内容。
+
+## 公共信息
 
 - 三个接口都携带 query `namespace=<授权数据集>`，例如 `/sync/v1/push?namespace=account-123`。按 URL 查询参数编码，支持非 ASCII 数据集名。
 - 请求头使用 `Authorization: Bearer <token>`。服务器必须验证 Token 对 namespace 的权限，不能信任客户端自行声明的范围。
 - POST 使用 `Content-Type: application/json`。GET 不带 body；响应使用 JSON。
-- API 版本在路径 `/v1` 中，不再重复传 protocolVersion。
+- API 版本由路径 `/v1` 指定。
 - **所有 HTTP 200 响应都必须带 `X-SwiftStore-Server-ID` 头**，其值是服务器持久化的数据库实例 ID，使用非空、无空白的可打印 ASCII 字符串。
 - 首次请求可以省略该实例头。客户端保存首次成功响应的值，之后三个接口的请求都带同名头。服务器必须在处理上传之前校验，若与自身实例 ID 不一致则返回 409。
 - 数据库实例 ID 不能随服务进程重启改变。数据库恢复后历史若不能连续，应更换实例 ID；不能静默接受旧 cursor 或旧上传状态。
 
 namespace 最多 200 UTF-8 字节，不能为空。服务端可按业务定义更严格规则。生产环境使用 HTTPS。
 
-## 2. 不透明记录
+## 不透明记录
 
 上传记录只含 key（同步身份 SHA-256）、updatedAt（Unix 毫秒安全整数）、payload（Base64 不透明内容）。服务器下发时额外带正整数 sequence，表示服务端提交顺序，不参与冲突时间比较。
 
@@ -28,7 +30,7 @@ namespace 最多 200 UTF-8 字节，不能为空。服务端可按业务定义�
 
 HTTP 和 iCloud 客户端共用 SyncRecordEnvelope 编码，生成相同的 key、updatedAt 和 payload 字节。服务器不能解码或重编码 payload，也不能把 updatedAt 改成服务器接收时间。时间和 payload 在重试中保持稳定。payload 内可包含客户端自己的修改 ID，但服务器不解码、不使用它。
 
-## 3. 批量上传
+## 批量上传
 
 `POST /sync/v1/push?namespace=account-123`
 
@@ -38,7 +40,7 @@ HTTP 和 iCloud 客户端共用 SyncRecordEnvelope 编码，生成相同的 key�
     {
       "key": "d0886d7121d5a392ec133e9ee64fad94371f279be2951944bb7db40a6124d0c7",
       "updatedAt": 1788307200125,
-      "payload": "eyJjcmVhdGVkQXQiOjgxMDAwMDAwMC4xMjUsImRldmljZUlkIjoiMDE5OTFCNEEtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZW50aXR5VHlwZSI6ImJvb2siLCJpZCI6IjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMyIsImxvZ2ljYWxDbG9jayI6NDIsIm9wZXJhdGlvbiI6Imluc2VydCIsInBheWxvYWQiOiJ7XCJjcmVhdGVkQXRcIjo4MTAwMDAwMDAuMTI1LFwiaWRcIjpcIjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMVwiLFwidGl0bGVcIjpcIlN3aWZ0IEd1aWRlXCIsXCJ1cGRhdGVkQXRcIjo4MTAwMDAwMDAuMTI1fSIsInNjaGVtYVZlcnNpb24iOjEsInN5bmNLZXkiOiJBUUVCbVJ0S0FBQndBSUFBQUFBQUFBQUIifQ=="
+      "payload": "<Base64 编码的 SyncChange>"
     }
   ]
 }
@@ -56,7 +58,7 @@ HTTP 和 iCloud 客户端共用 SyncRecordEnvelope 编码，生成相同的 key�
 }
 ```
 
-不用 accepted、batchID、批次进度或完整 winners。普通冲突属于成功处理，不返回 HTTP 409。
+普通冲突属于成功处理，不返回 HTTP 409。
 
 需要客户端纠正的项采用 `{"key":"不透明同步key","sequence":123}`，sequence 是整批处理结束时该 key 的当前赢家序号。
 
@@ -66,7 +68,7 @@ HTTP 和 iCloud 客户端共用 SyncRecordEnvelope 编码，生成相同的 key�
 - **HTTP 200 确认整个批次**。客户端清除本批 outbox，并把拒绝 key 与该 key 本批的本地修改关联，持久化修复任务。上传期间新产生的修改不属于这次确认或拒绝。
 - 某一批失败后，不开始 pull；保留尚未确认的数据重试。已经成功的前几批不会重传。
 
-## 4. 上传阶段的冲突规则与安全重试
+## 上传阶段的冲突规则与安全重试
 
 服务器只需按时间判断，不需要区分新修改和网络重试：
 
@@ -96,9 +98,9 @@ return HTTP 200 { rejected }
 - 同 key、同时间、不同 payload：保留已提交内容，返回拒绝 key，不必读取业务数据判断是不是重试。
 - 重试可能让原本成功的上传被统计为需要纠正的项，这是允许的；普通 pull/补查取得的仍是服务器当前版本。
 
-无需 sync_receipts 表、修改 ID 去重索引或每设备拒绝列表。删除标记和当前记录必须保留，否则服务器失去时间下界后，旧重试可能再次被当作新数据接受。
+删除标记和当前记录必须保留，否则服务器失去时间下界后，旧重试可能再次被当作新数据接受。
 
-## 5. 分页 pull
+## 分页 pull
 
 `GET /sync/v1/pull?namespace=account-123&cursor=0&limit=100`
 
@@ -110,7 +112,7 @@ cursor 首次 0，后续用已保存的下载位置；它独立于本地上传�
     {
       "key": "d0886d7121d5a392ec133e9ee64fad94371f279be2951944bb7db40a6124d0c7",
       "updatedAt": 1788307200125,
-      "payload": "eyJjcmVhdGVkQXQiOjgxMDAwMDAwMC4xMjUsImRldmljZUlkIjoiMDE5OTFCNEEtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZW50aXR5VHlwZSI6ImJvb2siLCJpZCI6IjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMyIsImxvZ2ljYWxDbG9jayI6NDIsIm9wZXJhdGlvbiI6Imluc2VydCIsInBheWxvYWQiOiJ7XCJjcmVhdGVkQXRcIjo4MTAwMDAwMDAuMTI1LFwiaWRcIjpcIjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMVwiLFwidGl0bGVcIjpcIlN3aWZ0IEd1aWRlXCIsXCJ1cGRhdGVkQXRcIjo4MTAwMDAwMDAuMTI1fSIsInNjaGVtYVZlcnNpb24iOjEsInN5bmNLZXkiOiJBUUVCbVJ0S0FBQndBSUFBQUFBQUFBQUIifQ==",
+      "payload": "<Base64 编码的 SyncChange>",
       "sequence": 101
     }
   ],
@@ -120,7 +122,7 @@ cursor 首次 0，后续用已保存的下载位置；它独立于本地上传�
 ```
 
 ```sql
-SELECT sequence, id, key, updated_at, payload
+SELECT sequence, key, updated_at, payload
 FROM sync_deltas
 WHERE namespace = :authorized_namespace AND sequence > :cursor
 ORDER BY sequence ASC
@@ -135,7 +137,7 @@ pull 读取已提交数据，不能用落后于刚完成上传的副本。客户
 
 当前协议没有历史截断或快照恢复接口。必须保留从 cursor 0 起可重放的历史及全部当前记录，不能按固定天数清理长期离线设备仍需的数据。
 
-## 6. 只补查缺失 key
+## 只补查缺失 key
 
 `POST /sync/v1/records?namespace=account-123`
 
@@ -153,7 +155,7 @@ pull 读取已提交数据，不能用落后于刚完成上传的副本。客户
     {
       "key": "d0886d7121d5a392ec133e9ee64fad94371f279be2951944bb7db40a6124d0c7",
       "updatedAt": 1788307200125,
-      "payload": "eyJjcmVhdGVkQXQiOjgxMDAwMDAwMC4xMjUsImRldmljZUlkIjoiMDE5OTFCNEEtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZW50aXR5VHlwZSI6ImJvb2siLCJpZCI6IjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMyIsImxvZ2ljYWxDbG9jayI6NDIsIm9wZXJhdGlvbiI6Imluc2VydCIsInBheWxvYWQiOiJ7XCJjcmVhdGVkQXRcIjo4MTAwMDAwMDAuMTI1LFwiaWRcIjpcIjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMVwiLFwidGl0bGVcIjpcIlN3aWZ0IEd1aWRlXCIsXCJ1cGRhdGVkQXRcIjo4MTAwMDAwMDAuMTI1fSIsInNjaGVtYVZlcnNpb24iOjEsInN5bmNLZXkiOiJBUUVCbVJ0S0FBQndBSUFBQUFBQUFBQUIifQ==",
+      "payload": "<Base64 编码的 SyncChange>",
       "sequence": 101
     }
   ]
@@ -167,21 +169,13 @@ pull 读取已提交数据，不能用落后于刚完成上传的副本。客户
 - 只有正常 pull 没覆盖的拒绝 key 才会补查。例如赢家已在请求 cursor 之前，增量不再返回它。
 - 客户端校验最低赢家 sequence 和每 key 已知最大 sequence，避免旧副本或迟到历史页回退数据。这是投递顺序校验，不是再比较一次 updatedAt。
 
-## 7. 删除保持透明
+## 删除
 
-删除也是普通同步记录：
+删除使用相同的 key、updatedAt、payload 包装，payload 内的操作为 delete。
+服务器保留该记录，不物理删除；旧上传按时间被拒绝，更晚的重建正常替换。
+未知 entity/schema 也原样保存和下发，由客户端决定何时应用。
 
-```json
-{
-  "key": "d0886d7121d5a392ec133e9ee64fad94371f279be2951944bb7db40a6124d0c7",
-  "updatedAt": 1788307201125,
-  "payload": "eyJjcmVhdGVkQXQiOjgxMDAwMDAwMS4xMjUsImRldmljZUlkIjoiMDE5OTFCNEEtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZW50aXR5VHlwZSI6ImJvb2siLCJpZCI6IjAxOTkxQjRBLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwNCIsImxvZ2ljYWxDbG9jayI6NDMsIm9wZXJhdGlvbiI6ImRlbGV0ZSIsInNjaGVtYVZlcnNpb24iOjEsInN5bmNLZXkiOiJBUUVCbVJ0S0FBQndBSUFBQUFBQUFBQUIifQ=="
-}
-```
-
-服务器不能物理删除它，不需要理解 payload 表示删除。旧上传按 updatedAt 被拒绝，更晚的重建正常替换。未知 entity/schema 原样保存下发，由客户端决定何时可应用。
-
-## 8. 客户端统一流程
+## 客户端统一流程
 
 1. 本地修改进入持久化 outbox，才推进本地日志进度。
 2. 固定本轮上传列表，逐批 push。每批成功立即保存确认和拒绝项，新编辑留到下一轮。
@@ -192,7 +186,7 @@ pull 读取已提交数据，不能用落后于刚完成上传的副本。客户
 
 服务器不需要 ACK 接口。客户端已保存的业务数据、变更日志和同步状态文件必须配套，一份状态文件不能被多个活跃 transport 共享。
 
-## 9. 时间与错误
+## 时间与错误
 
 客户端强制 NTP 校验，默认允许 ±5 秒，不能关闭。服务端可拒绝过远的未来 updatedAt，但**不能要求离线历史修改接近服务器当前时间**。时间校验缩小误判范围，不代替拒绝后的数据修复。
 
@@ -209,14 +203,8 @@ pull 读取已提交数据，不能用落后于刚完成上传的副本。客户
 
 推荐存储 sync_records（当前版本）、sync_deltas（提交序列）、metadata（数据库实例 ID）。无需实体表或设备拒绝收件箱。
 
-## 10. 验收重点
+## 验证
 
-- 多批 push 必须全部完成，才能出现第一条 pull 请求；新本地修改不延长本轮上传。
-- 中间批次失败：不 pull，不重传已确认批次。pull 失败：保留每页检查点。
-- 正常 pull 覆盖拒绝赢家：不补查；赢家已在 cursor 前：只补查缺失 key。
-- 历史页同 key 但 sequence 太小：不得错误解决拒绝。
-- 响应丢失、重启、批内同 key 多修改、同时间不同内容、重试后当前赢家已改变；重试不新增增量。
-- 缺失实例头、数据库更换、账号隔离、失效 Token、非法 cursor。
-- 旧 ACK 与新拒绝并发：不能清除新的修复任务。
-
-共同接口约定见 [统一同步后端接口](sync-backend-contract.md)。
+[双设备集成测试](../IntegrationTests/TwoDeviceSync/README.md)覆盖分页、冲突、响应丢失、重启和账号隔离。
+实现自己的服务端时，应使用同样的场景验证事务、sequence 顺序和拒绝项修复。
+客户端接口约定见[同步后端约定](sync-backend-contract.md)。

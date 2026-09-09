@@ -20,6 +20,6 @@ and string literals are preserved.
 | Foreign-key `onDelete` and `onUpdate` | Missing defaults to `NO ACTION`; null and unknown values are rejected. |
 | Table/index auxiliary `sql` | Missing, null and empty mean that no original CREATE statement was captured. Nonempty SQL is preserved. |
 
-All collections are encoded explicitly, including empty `fullTextIndexes: []`. There is no
-legacy-encoding compatibility path. Migration source still participates byte-for-byte in the
-checksum; canonicalization never conceals source edits or substantive schema changes.
+All collections are encoded explicitly, including empty `fullTextIndexes: []`. Migration source
+also participates byte-for-byte in the checksum; source edits and substantive schema changes
+still change it.

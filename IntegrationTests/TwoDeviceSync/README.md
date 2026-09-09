@@ -60,12 +60,10 @@ commit response across restart. Revision receipts model SDK change tags at the
 network boundary; this does not verify native CloudKit tag encoding.
 
 ```sh
-swift test --triple arm64-apple-macosx14.0 \
-  --sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-  --filter CloudKitTwoClientTests
+swift test --filter CloudKitTwoClientTests
 ```
 
 Actual Apple CloudKit / CKSyncEngine / background push testing requires a signed
 host app with CloudKit entitlements, a configured container and two devices
 signed into the same test iCloud account. It is not covered by the HTTP simulator
-run or the conditional-save fixture. See [test results](RESULTS.md).
+run or the conditional-save fixture. See [historical test results](RESULTS.md) for a version-specific run.

@@ -1,6 +1,7 @@
 # Two-device test results — 2026-09-09
 
-Product revision: `b121d7e` (`Complete sync transports and support iOS 16`).
+Historical run at revision `b121d7e` (`Complete sync transports and support iOS 16`).
+These results do not certify the current checkout; see [run instructions](README.md) to repeat them.
 
 | Client | Runtime | SQLite | Native `unixepoch('subsec')` |
 | --- | --- | --- | --- |
@@ -29,13 +30,12 @@ a loopback HTTP fixture, with separate persistent queues and journals.
 | 24 randomly interleaved offline edits | PASS |
 | SIGKILL after server commit, restart without duplicate upload | PASS |
 
-CloudKit adapter: two new test functions (three parameterized cases) passed on
+CloudKit adapter: two test functions (three parameterized cases) passed on
 macOS using two independent file journals and a shared conditional-save fixture.
 These cover both conflict orders, deletion, recreation, lost-response restart and
 equal-time first-commit retention. Actual Apple CloudKit was **not** contacted;
 no signed host app/container configuration was supplied.
 
-No product-code regression was found in these scenarios. Test coverage is not
-exhaustive; in particular these runs do not validate cross-file crash atomicity
+These runs do not validate cross-file crash atomicity
 during a local SQLite commit or iOS background execution. The SIGKILL recovery
 case concerns an already-persisted local change awaiting a server response.

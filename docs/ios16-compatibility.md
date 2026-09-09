@@ -1,10 +1,10 @@
 # iOS 16 支持
 
-SwiftStore 的最低 iOS 版本为 16。数据库、宏、变更追踪、HTTP 同步和 CloudKit 同步均可使用；其他平台最低版本保持不变。
+SwiftStore 的最低 iOS 版本为 16。数据库、宏、变更追踪、HTTP 同步和 CloudKit 同步均可使用。其他平台要求见 [README](../README.md#requirements)。
 
 ## 时间字段
 
-Date 字段仍使用 `REAL` Unix 秒。宏生成的默认值、更新时间触发器和迁移流程共用 `SQLiteTimestampSQL.now`：
+Date 字段使用 `REAL` Unix 秒。宏生成的默认值、更新时间触发器和迁移流程共用 `SQLiteTimestampSQL.now`：
 
 ```sql
 COALESCE(
@@ -16,11 +16,11 @@ COALESCE(
 
 优先使用原生 `subsec`。iOS 16.4 自带 SQLite 3.39.5，原生调用返回 `NULL`，此时使用 `%s` 的 Unix 整秒加上 `%f` 的小数部分。两条路径都返回 `REAL`，不会把一分钟内的秒数当作 Unix 时间。
 
-旧的秒级 Date 默认值、单独使用 `unixepoch('subsec')` 的默认值和旧的更新时间触发器需要通过[显式版本化迁移](versioned-migrations.md)升级。修改默认值时编写保留历史时间戳的重建或回填 SQL；修改触发器时显式删除和重建。启动时只执行未应用的迁移，不再自动修正既有结构。
+修改已发布表的时间默认值或触发器时，应通过[版本化迁移](versioned-migrations.md)升级，保留历史时间戳。
 
 ## CloudKit
 
-调用入口仍为 `CloudKitSyncTransport`，应用无需按系统版本选择类型：
+调用入口为 `CloudKitSyncTransport`，应用无需按系统版本选择类型：
 
 | 系统 | 执行方式 | 状态 |
 |---|---|---|
@@ -35,7 +35,7 @@ COALESCE(
 
 开启 iCloud / CloudKit、Push Notifications 和 Background Modes → Remote notifications，并调用 `registerForRemoteNotifications()`。
 
-在宿主应用的远端通知处理方法中，将通知转交给 transport。匹配本订阅时，等待同步完成再调用后台完成回调，例如：
+在宿主应用的远端通知处理方法中，将通知转交给保存的 `transport` 实例。匹配本订阅时，等待 `manager.sync()` 完成再调用后台完成回调：
 
 ```swift
 func application(
@@ -43,7 +43,7 @@ func application(
     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
 ) {
-    guard cloudTransport.handleRemoteNotification(userInfo) else {
+    guard transport.handleRemoteNotification(userInfo) else {
         completionHandler(.noData)
         return
     }
@@ -60,11 +60,12 @@ func application(
 
 `handleRemoteNotification` 只接受配置中的 subscriptionID。iOS 16 在 `automaticallySync` 开启时每 60 秒发出一次前台同步信号，交给 SyncManager 执行，用于补偿遗漏的推送；应用被系统挂起后不会依赖这个计时器，后台同步由宿主通知回调触发。`stop()` 会停止计时器、结束通知流，并隔离之前尚未返回的请求结果。重新启动会恢复持久化的队列。
 
-## 验证
+## 验证范围
 
-- 已在 iOS 16.4（20E247）模拟器的 SQLite 3.39.5 上运行真实包代码，验证时间回退、迁移幂等、历史时间戳保留、REAL 默认值、更新时间触发器、pre-update hook、远端写入不回传及事务回滚。
-- iOS 16.4 模拟器验证了 CloudKit 适配层的编码、上传、拉取、确认和 journal 持久化，网络端使用注入的模拟实现。
-- 自动测试覆盖原生时间函数优先、回退路径、CloudKit 双向冲突、分页、游标过期、失败后重试、并发入队、账号隔离、停止期间的旧请求以及强制时间校验。
-- 真实 iCloud 跨设备同步仍需使用宿主应用的 CloudKit container、签名和账号验证；模拟网络测试不包含 APNs 投递或 CloudKit 服务端行为。
+[双设备测试记录](../IntegrationTests/TwoDeviceSync/RESULTS.md)包含 iOS 16.4 系统 SQLite 的
+时间回退、迁移、pre-update 追踪和 HTTP 同步结果。记录中的版本与运行环境不代表当前代码已重新验证。
+
+CloudKit 的自动测试使用注入网络实现，真实 iCloud 同步、APNs 和后台运行需要带签名与容器授权的
+宿主应用验证，见 [CloudKit 接入](../SwiftStoreSyncCloudTransport/README.md#验证)。
 
 参考：[CloudKit zone 增量拉取](https://developer.apple.com/documentation/cloudkit/ckfetchrecordzonechangesoperation)、[条件保存策略](https://developer.apple.com/documentation/cloudkit/ckmodifyrecordsoperation/recordsavepolicy/ifserverrecordunchanged)。
