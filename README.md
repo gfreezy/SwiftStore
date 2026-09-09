@@ -7,6 +7,7 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 - **Declarative API** - Swift macros auto-generate boilerplate code
 - **Type-safe Queries** - Compile-time checked query builder
 - **Auto Migration** - Smart schema migration without manual SQL
+- **Generated Migrations** - [Incremental table snapshots, a build-check plugin and optional CLI](docs/versioned-migrations.md), with editable data migrations
 - **Multi-device Sync** - Changelog-based bidirectional synchronization
 - **High Performance** - SQLite WAL mode + single-writer multiple-reader connection pool
 - **Dev Server** - Built-in web admin UI for database inspection and file management

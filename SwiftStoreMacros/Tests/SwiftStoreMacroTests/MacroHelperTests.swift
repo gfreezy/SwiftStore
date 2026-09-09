@@ -1,5 +1,5 @@
 import Testing
-@testable import SwiftStoreMacrosImpl
+@testable import SwiftStoreMacroSupport
 
 @Suite("Macro Helper Tests")
 struct MacroHelperTests {

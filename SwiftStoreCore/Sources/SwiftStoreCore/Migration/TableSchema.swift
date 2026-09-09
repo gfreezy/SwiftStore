@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Table Schema
 
 /// Represents a database table schema
-public struct TableSchema: Sendable, Equatable {
+public struct TableSchema: Sendable, Equatable, Codable {
     public let name: String
     public let columns: [ColumnSchema]
     public let indexes: [IndexSchema]
@@ -28,6 +28,16 @@ public struct TableSchema: Sendable, Equatable {
         self.sql = sql
     }
 
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        columns = try values.decode([ColumnSchema].self, forKey: .columns)
+        indexes = try values.decodeIfPresent([IndexSchema].self, forKey: .indexes) ?? []
+        triggers = try values.decodeIfPresent([TriggerSchema].self, forKey: .triggers) ?? []
+        foreignKeys = try values.decodeIfPresent([ForeignKeySchema].self, forKey: .foreignKeys) ?? []
+        sql = try values.decodeIfPresent(String.self, forKey: .sql) ?? ""
+    }
+
     public var columnNames: Set<String> {
         Set(columns.map { $0.name })
     }
@@ -44,7 +54,7 @@ public struct TableSchema: Sendable, Equatable {
 // MARK: - Column Schema
 
 /// Represents a column in a database table
-public struct ColumnSchema: Sendable, Equatable, Hashable {
+public struct ColumnSchema: Sendable, Equatable, Hashable, Codable {
     public let name: String
     public let type: String
     public let isNullable: Bool
@@ -66,6 +76,16 @@ public struct ColumnSchema: Sendable, Equatable, Hashable {
         self.isPrimaryKey = isPrimaryKey
         self.defaultValue = defaultValue
         self.generatedAs = generatedAs
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        type = try values.decode(String.self, forKey: .type)
+        isNullable = try values.decodeIfPresent(Bool.self, forKey: .isNullable) ?? false
+        isPrimaryKey = try values.decodeIfPresent(Bool.self, forKey: .isPrimaryKey) ?? false
+        defaultValue = try values.decodeIfPresent(String.self, forKey: .defaultValue)
+        generatedAs = try values.decodeIfPresent(String.self, forKey: .generatedAs)
     }
 
     public var isGenerated: Bool {
@@ -95,7 +115,7 @@ public struct ColumnSchema: Sendable, Equatable, Hashable {
 // MARK: - Index Schema
 
 /// Represents an index in a database table
-public struct IndexSchema: Sendable, Equatable, Hashable {
+public struct IndexSchema: Sendable, Equatable, Hashable, Codable {
     public let name: String
     public let columns: [String]
     public let isUnique: Bool
@@ -106,6 +126,14 @@ public struct IndexSchema: Sendable, Equatable, Hashable {
         self.columns = columns
         self.isUnique = isUnique
         self.sql = sql
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        columns = try values.decode([String].self, forKey: .columns)
+        isUnique = try values.decodeIfPresent(Bool.self, forKey: .isUnique) ?? false
+        sql = try values.decodeIfPresent(String.self, forKey: .sql) ?? ""
     }
 
     /// Generate SQL for creating this index
@@ -119,7 +147,7 @@ public struct IndexSchema: Sendable, Equatable, Hashable {
 // MARK: - Trigger Schema
 
 /// Represents a trigger in a database table
-public struct TriggerSchema: Sendable, Equatable, Hashable {
+public struct TriggerSchema: Sendable, Equatable, Hashable, Codable {
     public let name: String
     public let event: TriggerEvent
     public let timing: TriggerTiming
@@ -143,13 +171,13 @@ public struct TriggerSchema: Sendable, Equatable, Hashable {
         self.sql = sql
     }
 
-    public enum TriggerEvent: String, Sendable, Equatable, Hashable {
+    public enum TriggerEvent: String, Sendable, Equatable, Hashable, Codable {
         case insert = "INSERT"
         case update = "UPDATE"
         case delete = "DELETE"
     }
 
-    public enum TriggerTiming: String, Sendable, Equatable, Hashable {
+    public enum TriggerTiming: String, Sendable, Equatable, Hashable, Codable {
         case before = "BEFORE"
         case after = "AFTER"
         case insteadOf = "INSTEAD OF"
@@ -159,7 +187,7 @@ public struct TriggerSchema: Sendable, Equatable, Hashable {
 // MARK: - Foreign Key Schema
 
 /// Represents a foreign key constraint
-public struct ForeignKeySchema: Sendable, Equatable, Hashable {
+public struct ForeignKeySchema: Sendable, Equatable, Hashable, Codable {
     public let column: String
     public let referencesTable: String
     public let referencesColumn: String
@@ -180,7 +208,7 @@ public struct ForeignKeySchema: Sendable, Equatable, Hashable {
         self.onUpdate = onUpdate
     }
 
-    public enum ForeignKeyAction: String, Sendable, Equatable, Hashable {
+    public enum ForeignKeyAction: String, Sendable, Equatable, Hashable, Codable {
         case noAction = "NO ACTION"
         case restrict = "RESTRICT"
         case setNull = "SET NULL"

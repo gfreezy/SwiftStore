@@ -1,5 +1,5 @@
 import SwiftSyntaxMacros
-@testable import SwiftStoreMacrosImpl
+@testable import SwiftStoreMacroSupport
 
 nonisolated(unsafe) let testMacros: [String: Macro.Type] = [
     "Entity": EntityMacro.self,

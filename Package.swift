@@ -22,6 +22,10 @@ let package = Package(
         .watchOS(.v10)
     ],
     products: [
+        .executable(name: "swiftstore", targets: ["SwiftStoreMigrationCLI"]),
+        // SwiftPM resolves source-built plugin tools by their target/product name.
+        .executable(name: "SwiftStoreMigrationCLI", targets: ["SwiftStoreMigrationCLI"]),
+        .plugin(name: "SwiftStoreMigrationCheck", targets: ["SwiftStoreMigrationCheck"]),
         .library(name: "SwiftStoreSyncHTTPTransport", targets: ["SwiftStoreSyncHTTPTransport"]),
         // Main umbrella library - includes everything
         .library(
@@ -66,11 +70,19 @@ let package = Package(
         ),
 
         // MARK: - Macros Layer
-        .macro(
-            name: "SwiftStoreMacrosImpl",
+        .target(
+            name: "SwiftStoreMacroSupport",
             dependencies: [
                 "SwiftStoreProtocols",
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+            ],
+            path: "SwiftStoreMacros/Sources/SwiftStoreMacroSupport"
+        ),
+        .macro(
+            name: "SwiftStoreMacrosImpl",
+            dependencies: [
+                "SwiftStoreMacroSupport",
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
             ],
             path: "SwiftStoreMacros/Sources/SwiftStoreMacrosImpl"
@@ -98,6 +110,21 @@ let package = Package(
                 "SwiftStoreProtocols",
             ],
             path: "SwiftStoreCore/Sources/SwiftStoreCore"
+        ),
+
+        .target(
+            name: "SwiftStoreMigrationTool",
+            dependencies: [
+                "SwiftStoreCore", "SwiftStoreMacroSupport",
+                .product(name: "SwiftParser", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+            ],
+            path: "SwiftStoreMigrationTool/Sources/SwiftStoreMigrationTool"
+        ),
+        .testTarget(
+            name: "SwiftStoreMigrationToolTests",
+            dependencies: ["SwiftStoreMigrationTool"],
+            path: "SwiftStoreMigrationTool/Tests/SwiftStoreMigrationToolTests"
         ),
 
         // MARK: - Change Tracker Layer
@@ -176,6 +203,25 @@ let package = Package(
             path: "SwiftStoreServer/Sources/SwiftStoreServerDemo"
         ),
 
+        .executableTarget(
+            name: "SwiftStoreMigrationCLI",
+            dependencies: ["SwiftStoreMigrationTool"],
+            path: "SwiftStoreMigrationTool/Sources/SwiftStoreCLI"
+        ),
+        .plugin(
+            name: "SwiftStoreMigrationCheck",
+            capability: .buildTool(),
+            dependencies: ["SwiftStoreMigrationCLI"],
+            path: "Plugins/SwiftStoreMigrationCheck"
+        ),
+        .executableTarget(
+            name: "MigrationExample",
+            dependencies: ["SwiftStoreCore"],
+            path: "Examples/VersionedMigrations",
+            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_display_name.schema.json"],
+            plugins: ["SwiftStoreMigrationCheck"]
+        ),
+
         // MARK: - Tests
         .testTarget(
             name: "SwiftStoreSyncHTTPTransportTests",
@@ -185,7 +231,7 @@ let package = Package(
         .testTarget(
             name: "SwiftStoreMacroTests",
             dependencies: [
-                "SwiftStoreMacrosImpl",
+                "SwiftStoreMacroSupport",
                 "SwiftStoreMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ],

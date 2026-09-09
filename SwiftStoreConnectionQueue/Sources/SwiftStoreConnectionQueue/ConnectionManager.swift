@@ -309,6 +309,56 @@ open class ConnectionManager: @unchecked Sendable {
         }
     }
 
+    /// Apply committed migrations before exposing connections or starting sync tracking.
+    /// Use previewMigrations for a read-only preview; preview does not complete setup.
+    public func migrate(migrations: [StoreMigration], adoptingBaseline baselineID: String? = nil) async throws {
+        guard !options.readonly else {
+            throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
+        }
+        let shouldRun = migrationStarted.withLock { started -> Bool in
+            if started { return false }
+            started = true
+            return true
+        }
+        guard shouldRun else {
+            try await setupSignal.wait()
+            return
+        }
+        do {
+            try await _write { connection in
+                let expected = SchemaSnapshot(entities: self.entities, createUpdateTrigger: self.syncEnabled)
+                guard migrations.last?.target == expected else {
+                    throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities or trigger options")
+                }
+                let runner = VersionedMigrator(connection: connection, migrations: migrations)
+                if let baselineID {
+                    guard migrations.contains(where: { $0.id == baselineID }) else {
+                        throw VersionedMigrationError.invalidHistory("Unknown baseline ID: \(baselineID)")
+                    }
+                    do {
+                        _ = try runner.pendingMigrationIDs()
+                    } catch VersionedMigrationError.baselineRequired {
+                        try runner.adoptBaseline(through: baselineID)
+                    }
+                }
+                try runner.migrate()
+            }
+            try await writer?.startTracking()
+            try await performAdditionalSetup()
+            await setupSignal.signal()
+        } catch {
+            await setupSignal.signal(result: .failure(error))
+            throw error
+        }
+    }
+
+    /// Does not execute migration bodies, write history, or release the setup gate.
+    public func previewMigrations(_ migrations: [StoreMigration]) async throws -> [String] {
+        try await _write({ connection in
+            try VersionedMigrator(connection: connection, migrations: migrations).pendingMigrationIDs()
+        }, transaction: false)
+    }
+
     /// Subclasses can override this method to add additional initialization logic.
     /// This method is called after migration completes but before setupTask is marked as complete.
     open func performAdditionalSetup() async throws {

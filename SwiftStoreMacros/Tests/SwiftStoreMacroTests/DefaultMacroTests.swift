@@ -4,7 +4,7 @@ import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 import XCTest
 
-@testable import SwiftStoreMacrosImpl
+@testable import SwiftStoreMacroSupport
 
 final class DefaultMacroTests: XCTestCase {
 

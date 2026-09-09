@@ -1,0 +1,41 @@
+{
+  "droppedTables": [],
+  "formatVersion": 1,
+  "tables": [
+    {
+      "columns": [
+        {
+          "isNullable": false,
+          "isPrimaryKey": true,
+          "name": "id",
+          "type": "BLOB"
+        },
+        {
+          "isNullable": true,
+          "isPrimaryKey": false,
+          "name": "display_name",
+          "type": "TEXT"
+        },
+        {
+          "defaultValue": "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable": false,
+          "isPrimaryKey": false,
+          "name": "created_at",
+          "type": "REAL"
+        },
+        {
+          "defaultValue": "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable": false,
+          "isPrimaryKey": false,
+          "name": "updated_at",
+          "type": "REAL"
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [],
+      "name": "person",
+      "sql": "",
+      "triggers": []
+    }
+  ]
+}

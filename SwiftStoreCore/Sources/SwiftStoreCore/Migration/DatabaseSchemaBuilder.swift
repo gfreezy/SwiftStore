@@ -73,13 +73,13 @@ public struct DatabaseSchemaBuilder {
         // Only create update trigger if entity has updated_at column
         let hasUpdatedAt = entity.columns.contains { $0.name == "updated_at" }
         if options.createUpdateTrigger && hasUpdatedAt {
-            triggers.append(buildUpdateTrigger(for: entity.tableName))
+            triggers.append(Self.updateTrigger(for: entity.tableName))
         }
 
         return triggers
     }
 
-    private func buildUpdateTrigger(for tableName: String) -> TriggerSchema {
+    public static func updateTrigger(for tableName: String) -> TriggerSchema {
         let name = "__swiftstore_update_\(tableName)"
         let body = """
             UPDATE \(tableName) SET updated_at = \(SQLiteTimestampSQL.now)

@@ -3,7 +3,7 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
-@testable import SwiftStoreMacrosImpl
+@testable import SwiftStoreMacroSupport
 
 final class EntityMacroComprehensiveTests: XCTestCase {
 
