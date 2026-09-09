@@ -17,9 +17,7 @@ struct SwiftStoreMigrationCheck: BuildToolPlugin {
         let directory = root.appendingPathComponent("Migrations")
         let fm = FileManager.default
         let snapshots = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        let config = root.appendingPathComponent("swiftstore-migrations.json")
-        var inputs = swiftSources + snapshots.filter { $0.lastPathComponent.hasSuffix(".schema.json") } + [list]
-        if fm.fileExists(atPath: config.path) { inputs.append(config) }
+        let inputs = swiftSources + snapshots.filter { $0.lastPathComponent.hasSuffix(".schema.json") } + [list]
         return [.buildCommand(
             displayName: "Check SwiftStore incremental migrations",
             executable: executable,

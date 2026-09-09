@@ -5,7 +5,7 @@ import SwiftStoreCore
 let history = try StoreMigrations.all()
 let fresh = try SQLiteConnection(path: ":memory:")
 try VersionedMigrator(connection: fresh, migrations: history).migrate()
-try SchemaSnapshot(entities: [Person.self], createUpdateTrigger: false).verify(on: fresh)
+try SchemaSnapshot(entities: [Person.self]).verify(on: fresh)
 
 // Upgrade from the first released schema with representative user data.
 let existing = try SQLiteConnection(path: ":memory:")

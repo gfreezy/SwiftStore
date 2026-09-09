@@ -18,8 +18,7 @@ struct PreUpdateTrackingTests {
 
     private func setup(updateTrigger: Bool = false) throws -> (SQLiteConnection, ChangeTracker) {
         let db = try SQLiteConnection(path: ":memory:")
-        let migrator = Migrator(connection: db, createUpdateTrigger: updateTrigger)
-        try migrator.apply(migrator.plan(for: [TestEntity.self]))
+        try migrateTestEntities([TestEntity.self], on: db, includeFixtureTriggers: updateTrigger)
         let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })
         try tracker.start()
@@ -152,8 +151,7 @@ struct PreUpdateTrackingTests {
     @Test("Composite sync keys work without declaring a PRIMARY KEY")
     func compositeKey() throws {
         let db = try SQLiteConnection(path: ":memory:")
-        let migrator = Migrator(connection: db)
-        try migrator.apply(migrator.plan(for: [SnapshotMembership.self]))
+        try migrateTestEntities([SnapshotMembership.self], on: db, includeFixtureTriggers: true)
         let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
             registeredEntities: [SnapshotMembership.self], tickClock: { 1 })
         try tracker.start()

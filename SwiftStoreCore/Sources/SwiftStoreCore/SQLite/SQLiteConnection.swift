@@ -155,18 +155,6 @@ public final class SQLiteConnection {
 
     // MARK: - Update Hook
 
-    /// SQLite's documented DEFAULT-only schema migration needs defensive mode
-    /// disabled temporarily. Restore the caller's setting even if migration fails.
-    func withSchemaEditing<T>(_ block: () throws -> T) throws -> T {
-        var original: Int32 = 0
-        guard swiftstore_sqlite_defensive(db, -1, &original) == SQLITE_OK,
-              swiftstore_sqlite_defensive(db, 0, nil) == SQLITE_OK else {
-            throw StoreError.queryFailed("Cannot enable schema editing for migration")
-        }
-        defer { swiftstore_sqlite_defensive(db, original, nil) }
-        return try block()
-    }
-
     public static var supportsPreUpdateHook: Bool { swiftstore_preupdate_available() != 0 }
 
     /// The connection owns the pre-update slot. Do not attach SQLite Session

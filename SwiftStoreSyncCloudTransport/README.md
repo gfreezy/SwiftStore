@@ -59,9 +59,9 @@ flowchart LR
 
 普通记录直接比较业务数据的 `updated_at`，删除比较删除时间，统一到毫秒精度。时间相同时保留云端已提交的版本，不按删除优先、内容、schemaVersion 或设备 ID 排序。这是整条记录的覆盖规则，不是逐字段合并。
 
-时间字段保持 `REAL`。Date 默认值和自动更新触发器共用 `SQLiteTimestampSQL.now`，通过 `COALESCE` 优先使用 `unixepoch('subsec')`，不支持时回退到 `strftime` 计算毫秒精度的 Unix 秒，兼容 iOS 16 的 SQLite。正式迁移会更新已有表的旧秒级默认值及单独的 `subsec` 默认值，并修正新增时间列时临时使用的 `DEFAULT 0.0`；已有行的时间戳不会因默认值升级而重写。
+时间字段保持 `REAL`。Date 默认值和自动更新触发器共用 `SQLiteTimestampSQL.now`，通过 `COALESCE` 优先使用 `unixepoch('subsec')`，不支持时回退到 `strftime` 计算毫秒精度的 Unix 秒，兼容 iOS 16 的 SQLite。已有表的旧默认值需要通过[版本化迁移](../docs/versioned-migrations.md)显式升级。新增或修改时间列时，审核生成的占位提示，编写保留历史时间戳的重建或回填 SQL。
 
-普通记录使用业务表的更新时间，`__swiftstore_sync_tombstones` 只保存删除时间。已有秒级更新时间触发器通过正式迁移计划升级到毫秒级：Migrator 比较同名触发器定义，将删除和重建放在同一事务中，重复迁移不再产生变更；startTracking 只补录存量数据并启动追踪。接收相同时间的冲突更新不会被本地触发器改成接收时间。
+普通记录使用业务表的更新时间，`__swiftstore_sync_tombstones` 只保存删除时间。已有秒级更新时间触发器通过已提交的版本化迁移升级：迁移体显式删除旧触发器并创建新定义，运行器将这些操作和历史记录在同一事务中提交，重复启动不会重跑已应用的迁移；startTracking 只补录存量数据并启动追踪。接收相同时间的冲突更新不会被本地触发器改成接收时间。
 
 `logicalClock` 用于本地变更日志的增量上传游标，不参与冲突判断。设备 ID 应在每个安装实例中稳定保存，不能在设备间共用。
 

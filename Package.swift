@@ -200,7 +200,9 @@ let package = Package(
                 "SwiftStore",
                 "SwiftStoreServer",
             ],
-            path: "SwiftStoreServer/Sources/SwiftStoreServerDemo"
+            path: "SwiftStoreServer/Sources/SwiftStoreServerDemo",
+            exclude: ["Migrations/001_initial.schema.json"],
+            plugins: ["SwiftStoreMigrationCheck"]
         ),
 
         .executableTarget(
@@ -218,7 +220,7 @@ let package = Package(
             name: "MigrationExample",
             dependencies: ["SwiftStoreCore"],
             path: "Examples/VersionedMigrations",
-            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_display_name.schema.json"],
+            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_display_name.schema.json", "Migrations/003_update_timestamps.schema.json"],
             plugins: ["SwiftStoreMigrationCheck"]
         ),
 

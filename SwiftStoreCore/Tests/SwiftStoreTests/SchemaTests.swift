@@ -3,13 +3,18 @@ import Foundation
 @testable import SwiftStoreCore
 import SwiftStoreProtocols
 
+@Entity(readonly: true)
+private struct UntimestampedRecord {
+    var id: Int
+}
+
 // MARK: - DatabaseSchemaBuilder Tests
 
 @Suite("DatabaseSchemaBuilder Tests")
 struct DatabaseSchemaBuilderTests {
 
-    @Test("Build schema with default options")
-    func testBuildSchemaDefaultOptions() {
+    @Test("Tables with updated_at always receive an update trigger")
+    func testBuildSchemaWithUpdateTrigger() {
         let builder = DatabaseSchemaBuilder()
         let schemas = builder.buildSchemas(from: [TestUser.self])
 
@@ -21,14 +26,9 @@ struct DatabaseSchemaBuilderTests {
         #expect(schema.triggers.count == 1) // update trigger only
     }
 
-    @Test("Build schema without update trigger")
-    func testBuildSchemaWithoutUpdateTrigger() {
-        let builder = DatabaseSchemaBuilder(
-            options: DatabaseSchemaBuildOptions(
-                createUpdateTrigger: false
-            )
-        )
-        let schemas = builder.buildSchemas(from: [TestUser.self])
+    @Test("Tables without updated_at do not receive an update trigger")
+    func testBuildSchemaWithoutUpdatedAt() {
+        let schemas = DatabaseSchemaBuilder().buildSchemas(from: [UntimestampedRecord.self])
 
         #expect(schemas.count == 1)
         #expect(schemas[0].triggers.isEmpty)
@@ -323,96 +323,4 @@ struct SchemaIntegrationTests {
         #expect(builtIndexNames == readIndexNames)
     }
 
-    @Test("Diff detects new table correctly")
-    func testDiffDetectsNewTable() throws {
-        let store = try createTestStore()
-        let builder = DatabaseSchemaBuilder()
-        let reader = DatabaseSchemaReader(connection: store.connection)
-
-        let targetSchemas = builder.buildSchemas(from: [TestUser.self])
-        let currentSchemas = try reader.readAllSchemas()
-
-        // Table doesn't exist yet
-        #expect(currentSchemas["test_user"] == nil)
-
-        // Diff should show needsCreate
-        let diff = SchemaDiff(current: currentSchemas["test_user"], target: targetSchemas[0])
-        #expect(diff.needsCreate == true)
-        #expect(diff.hasChanges == true)
-    }
-
-    @Test("Diff detects no changes for existing table")
-    func testDiffDetectsNoChanges() throws {
-        var store = try createTestStore()
-        try store.register(TestUser.self)
-        try store.migrate()
-
-        let builder = DatabaseSchemaBuilder()
-        let reader = DatabaseSchemaReader(connection: store.connection)
-
-        let targetSchemas = builder.buildSchemas(from: [TestUser.self])
-        let currentSchemas = try reader.readAllSchemas()
-
-        let diff = SchemaDiff(current: currentSchemas["test_user"], target: targetSchemas[0])
-        #expect(diff.needsCreate == false)
-        #expect(diff.columnsToAdd.isEmpty)
-        #expect(diff.indexesToAdd.isEmpty)
-    }
-
-    @Test("Diff detects new columns")
-    func testDiffDetectsNewColumns() throws {
-        var store = try createTestStore()
-
-        // Create table with fewer columns
-        try store.connection.execute("""
-            CREATE TABLE test_user (
-                id blob PRIMARY KEY,
-                name text NOT NULL,
-                created_at real NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at real NOT NULL DEFAULT (strftime('%s', 'now'))
-            )
-        """)
-
-        try store.register(TestUser.self)
-
-        let builder = DatabaseSchemaBuilder()
-        let reader = DatabaseSchemaReader(connection: store.connection)
-
-        let targetSchemas = builder.buildSchemas(from: [TestUser.self])
-        let currentSchemas = try reader.readAllSchemas()
-
-        let diff = SchemaDiff(current: currentSchemas["test_user"], target: targetSchemas[0])
-        #expect(diff.needsCreate == false)
-        #expect(diff.columnsToAdd.count >= 2) // email, age, address missing
-    }
-
-    @Test("Diff detects missing indexes")
-    func testDiffDetectsMissingIndexes() throws {
-        var store = try createTestStore()
-
-        // Create table without index
-        try store.connection.execute("""
-            CREATE TABLE test_user (
-                id blob PRIMARY KEY,
-                name text NOT NULL,
-                email text NOT NULL,
-                age integer,
-                address text NOT NULL,
-                created_at real NOT NULL DEFAULT (strftime('%s', 'now')),
-                updated_at real NOT NULL DEFAULT (strftime('%s', 'now'))
-            )
-        """)
-
-        try store.register(TestUser.self)
-
-        let builder = DatabaseSchemaBuilder()
-        let reader = DatabaseSchemaReader(connection: store.connection)
-
-        let targetSchemas = builder.buildSchemas(from: [TestUser.self])
-        let currentSchemas = try reader.readAllSchemas()
-
-        let diff = SchemaDiff(current: currentSchemas["test_user"], target: targetSchemas[0])
-        #expect(diff.indexesToAdd.count == 1)
-        #expect(diff.indexesToAdd[0].name == "idx_test_user_email")
-    }
 }

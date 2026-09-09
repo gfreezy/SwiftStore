@@ -1,9 +1,5 @@
 #include "SwiftStoreSQLiteSupport.h"
 
-int swiftstore_sqlite_defensive(sqlite3 *db, int enabled, int *result) {
-    return sqlite3_db_config(db, SQLITE_DBCONFIG_DEFENSIVE, enabled, result);
-}
-
 #include <dlfcn.h>
 #include <pthread.h>
 

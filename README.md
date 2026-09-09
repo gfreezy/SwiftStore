@@ -6,8 +6,7 @@ A lightweight SQLite-based data persistence framework for Swift, with multi-devi
 
 - **Declarative API** - Swift macros auto-generate boilerplate code
 - **Type-safe Queries** - Compile-time checked query builder
-- **Auto Migration** - Smart schema migration without manual SQL
-- **Generated Migrations** - [Incremental table snapshots, a build-check plugin and optional CLI](docs/versioned-migrations.md), with editable data migrations
+- **Versioned Migrations** - [Checked-in migrations, incremental table snapshots, a build plugin and optional CLI](#schema-migrations), with editable data migrations
 - **Multi-device Sync** - Changelog-based bidirectional synchronization
 - **High Performance** - SQLite WAL mode + single-writer multiple-reader connection pool
 - **Dev Server** - Built-in web admin UI for database inspection and file management
@@ -93,13 +92,14 @@ struct UserDevice {
 
 ### Database Operations
 
+First [enable the migration plugin and generate the initial migration](#schema-migrations) for the target containing your Entities. The build generates `StoreMigrations.all()`, used below.
+
 ```swift
 // Create connection
 let connection = try SQLiteConnection(path: "database.sqlite")
 
-// Auto migrate
-let migrator = Migrator(connection: connection)
-try migrator.apply(try migrator.plan(for: [User.self]))
+// Apply committed migrations before accessing data.
+try VersionedMigrator(connection: connection, migrations: StoreMigrations.all()).migrate()
 
 // Insert
 let user = User(name: "Alice", email: "alice@example.com", age: 25)
@@ -173,6 +173,8 @@ struct CacheEntry {
 
 ### Multi-device Sync
 
+Generate the history as described in [Schema Migrations](#schema-migrations). Tables with `updated_at` automatically receive an update trigger, whether or not sync is enabled.
+
 ```swift
 // Create connection manager with sync
 let manager = try ConnectionManager(
@@ -185,6 +187,9 @@ let manager = try ConnectionManager(
     )
 )
 
+// Complete setup before reading, writing, or syncing.
+try await manager.migrate(migrations: try StoreMigrations.all())
+
 // Perform sync. The transport is lazily started on the first call;
 // subsequent remote-change notifications auto-trigger sync in the background.
 let result = try await manager.sync()
@@ -195,9 +200,98 @@ See [§6.1 CloudKit transport](#61-cloudkit-transport) for the ready-made
 CloudKit implementation, and [§6 Multi-device Sync](#6-multi-device-sync)
 for a full example including how to implement `SyncTransport` yourself.
 
+## Schema Migrations
+
+SwiftStore uses checked-in versioned migrations for schema and data changes. Review the generated SQL, add data transformations, and replay the committed history on fresh installs and upgrades. Runtime schema auto-alignment has been removed. An existing database without migration history requires explicit baseline adoption.
+
+### 1. Enable the build plugin
+
+Add `SwiftStoreMigrationCheck` to the target containing your Entities and migration Swift files:
+
+```swift
+// In Package.swift's targets array
+.target(
+    name: "MyModels",
+    dependencies: [.product(name: "SwiftStore", package: "SwiftStore")],
+    plugins: [.plugin(name: "SwiftStoreMigrationCheck", package: "SwiftStore")]
+)
+```
+
+The plugin checks that the latest migration schema matches the target's Entities and generates `StoreMigrations.all()` during the build. Keep the Entities and migration declarations in the same target. For Xcode setup and CLI installation, see the [full migration guide](docs/versioned-migrations.md).
+
+Tables with an `updated_at` column automatically receive an update trigger. The CLI, build plugin, and runtime use this same rule for both local and sync-enabled stores; no migration configuration file is needed. The trigger supplies the current time when an update leaves `updated_at` unchanged and preserves an explicitly changed timestamp.
+
+If an existing history lacks these triggers, generate a new migration to add them. Keep earlier migration files unchanged. Enabling sync later does not itself require a schema migration.
+
+### 2. Generate and review migrations
+
+Create the initial migration from the current Entities before changing their schema:
+
+```sh
+swiftstore migration add 001_initial --target Sources/MyModels
+```
+
+After changing an Entity, generate the next migration:
+
+```sh
+swiftstore migration add 002_display_name --target Sources/MyModels
+```
+
+Each migration has a Swift file and, for schema changes, a JSON delta:
+
+```text
+Sources/MyModels/Migrations/
+├── 001_initial.swift
+├── 001_initial.schema.json
+├── 002_display_name.swift
+└── 002_display_name.schema.json
+```
+
+- IDs use `<digits>_<description>` and sort by the numeric prefix: `2` comes before `10`. Numbers must be unique ignoring leading zeros, and each new number must exceed the latest one. Descriptions can contain Chinese, spaces, or punctuation allowed in filenames; quote IDs containing spaces in shell commands.
+- The Swift type uses only the numeric prefix: `002_display_name.swift` declares `Migration_002` with `static func up(_ db: SQLiteConnection) throws`.
+- Safe additions generate SQL. Renames, removals, and changes requiring backfills generate a `#error` placeholder; replace it with SQL that preserves existing data.
+- JSON files contain complete definitions of changed tables. Unchanged tables inherit their previous definitions. A data-only migration needs only its Swift file.
+
+Commit the migration files. Keep published migrations immutable: editing an applied migration changes its checksum and causes startup to reject the history. Builds check schema agreement and compile the migration code; test historical upgrades to verify data transformations.
+
+To check schema agreement without building:
+
+```sh
+swiftstore migration check --target Sources/MyModels
+```
+
+### 3. Apply migrations at startup
+
+For a target whose schema contains `User` and `Post`, register the same entities with the manager and apply the generated history before any reads, writes, or sync:
+
+```swift
+let manager = try ConnectionManager(path: dbPath, entities: [User.self, Post.self])
+try await manager.migrate(migrations: try StoreMigrations.all())
+```
+
+For a direct connection:
+
+```swift
+let connection = try SQLiteConnection(path: dbPath)
+try VersionedMigrator(connection: connection, migrations: StoreMigrations.all()).migrate()
+```
+
+The runner verifies applied checksums and schemas, executes pending migrations in order, and commits the pending batch atomically. A failure rolls back the batch. Repeated startup does not rerun applied migrations. `manager.previewMigrations(...)` returns pending IDs without executing bodies or completing setup.
+
+For an existing database without migration history, explicitly adopt a migration whose target schema matches that database:
+
+```swift
+try await manager.migrate(
+    migrations: try StoreMigrations.all(),
+    adoptingBaseline: "001_initial"
+)
+```
+
+Baseline adoption verifies the schema and records the selected prefix without executing its bodies, then applies later migrations. Use this startup call in place of the normal migration call when adopting a legacy database; it also works for fresh and already tracked databases.
+
 ## Complete Example
 
-The following example demonstrates all core features of SwiftStore:
+The following examples use a plugin-enabled target containing `User`, `Post`, `UserDevice`, and `Favorite`. Generate its initial migration after defining those models. Connection and sync setups are alternatives: use the trigger configuration matching the selected setup. Enabling sync on an existing database requires a new migration adding the update triggers.
 
 ### 1. Define Models
 
@@ -297,7 +391,12 @@ struct Favorite {
     let updatedAt: Date                              // ✅ Required with default
 }
 
-// MARK: - Readonly Entity (for local-only data, flexible id type)
+```
+
+Keep readonly mappings for separately managed databases in another target, outside this migration history:
+
+```swift
+// MARK: - Readonly Entity (flexible id type)
 
 @Entity(readonly: true)
 struct LocalConfig {
@@ -323,10 +422,8 @@ let dbPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMa
     .appendingPathComponent("app.sqlite").path
 let connection = try SQLiteConnection(path: dbPath, options: .init(walMode: true))
 
-// Auto migrate schema
-let migrator = Migrator(connection: connection)
-let plan = try migrator.plan(for: [User.self, Post.self, UserDevice.self, Favorite.self])
-try migrator.apply(plan)
+// The build plugin generates this history from the committed migration files.
+try VersionedMigrator(connection: connection, migrations: StoreMigrations.all()).migrate()
 
 // Insert data (instance method style)
 let user = User(
@@ -439,13 +536,14 @@ try User.deleteAll(connection)  // Delete all
 // Create connection manager with default options
 let manager = try ConnectionManager(
     path: dbPath,
-    entities: [User.self, Post.self]
+    entities: [User.self, Post.self, UserDevice.self, Favorite.self]
 )
+try await manager.migrate(migrations: try StoreMigrations.all())
 
 // Custom options
 let managerWithOptions = try ConnectionManager(
     path: dbPath,
-    entities: [User.self, Post.self],
+    entities: [User.self, Post.self, UserDevice.self, Favorite.self],
     options: ConnectionOptions(
         readonly: false,           // Read-write mode (default)
         synchronous: 1,            // NORMAL sync mode
@@ -457,7 +555,7 @@ let managerWithOptions = try ConnectionManager(
 // Readonly mode - for read-only access to existing database
 let readonlyManager = try ConnectionManager(
     path: dbPath,
-    entities: [User.self],
+    entities: [LocalConfig.self],  // Requires @Entity(readonly: true)
     options: ConnectionOptions(readonly: true)
 )
 // Note: readonly mode disables WAL, write(), migrate(), and sync()
@@ -582,6 +680,8 @@ actor RESTSyncTransport: SyncTransport {
 
 #### Wiring sync into ConnectionManager
 
+The same migration history supports local and sync-enabled managers. `syncConfig` controls synchronization without changing the generated table schema.
+
 ```swift
 let deviceId = loadOrGenerateDeviceId()      // persist across launches
 let transport = RESTSyncTransport(serverURL: URL(string: "https://api.example.com")!)
@@ -596,6 +696,8 @@ let manager = try ConnectionManager(
         ntpToleranceMs: 5000        // reject sync if clock drifts > 5s
     )
 )
+
+try await manager.migrate(migrations: try StoreMigrations.all())
 
 // Trigger sync. First call lazily starts the transport and spawns a
 // background observer that re-triggers sync() whenever the transport
@@ -672,7 +774,7 @@ let cloudTransport = CloudKitSyncTransport(
 // 3. Wire it into ConnectionManager like any other transport.
 let manager = try ConnectionManager(
     path: dbPath,
-    entities: [User.self, Post.self],
+    entities: [User.self, Post.self, UserDevice.self, Favorite.self],
     syncConfig: SyncOptions(
         deviceId: loadOrGenerateDeviceId(),
         transport: cloudTransport,
@@ -681,7 +783,7 @@ let manager = try ConnectionManager(
 )
 
 // 4. Migrate first: this activates tracking and captures preexisting rows.
-try await manager.migrate(dryRun: false)
+try await manager.migrate(migrations: try StoreMigrations.all())
 
 // Start sync at launch, and request another round on foreground/manual refresh.
 // Subsequent local writes and CloudKit background activity trigger sync automatically.
@@ -893,6 +995,8 @@ SwiftStore provides a built-in development server with a Web admin interface (si
 
 ### Quick Start
 
+This standalone example assumes a plugin-enabled target containing `User`, `Post`, and their committed migrations, with update triggers disabled.
+
 ```swift
 import SwiftStore
 import SwiftStoreServer
@@ -901,7 +1005,7 @@ let manager = try ConnectionManager(
     path: "app.sqlite",
     entities: [User.self, Post.self]
 )
-try await manager.migrate(dryRun: false)
+try await manager.migrate(migrations: try StoreMigrations.all())
 
 #if DEBUG
 // You must store server to a variable to keep it running

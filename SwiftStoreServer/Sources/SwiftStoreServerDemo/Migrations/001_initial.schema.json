@@ -1,0 +1,194 @@
+{
+  "droppedTables" : [
+
+  ],
+  "formatVersion" : 1,
+  "tables" : [
+    {
+      "columns" : [
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : true,
+          "name" : "id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "post_id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "author_id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "content",
+          "type" : "TEXT"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "created_at",
+          "type" : "REAL"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "updated_at",
+          "type" : "REAL"
+        }
+      ],
+      "foreignKeys" : [
+
+      ],
+      "indexes" : [
+
+      ],
+      "name" : "comment",
+      "sql" : "",
+      "triggers" : [
+        {
+          "body" : "    UPDATE comment SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;",
+          "condition" : "NEW.updated_at = OLD.updated_at",
+          "event" : "UPDATE",
+          "name" : "__swiftstore_update_comment",
+          "sql" : "CREATE TRIGGER IF NOT EXISTS __swiftstore_update_comment\nAFTER UPDATE ON comment\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE comment SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND",
+          "timing" : "AFTER"
+        }
+      ]
+    },
+    {
+      "columns" : [
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : true,
+          "name" : "id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "author_id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "title",
+          "type" : "TEXT"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "content",
+          "type" : "TEXT"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "status",
+          "type" : "TEXT"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "created_at",
+          "type" : "REAL"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "updated_at",
+          "type" : "REAL"
+        }
+      ],
+      "foreignKeys" : [
+
+      ],
+      "indexes" : [
+
+      ],
+      "name" : "post",
+      "sql" : "",
+      "triggers" : [
+        {
+          "body" : "    UPDATE post SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;",
+          "condition" : "NEW.updated_at = OLD.updated_at",
+          "event" : "UPDATE",
+          "name" : "__swiftstore_update_post",
+          "sql" : "CREATE TRIGGER IF NOT EXISTS __swiftstore_update_post\nAFTER UPDATE ON post\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE post SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND",
+          "timing" : "AFTER"
+        }
+      ]
+    },
+    {
+      "columns" : [
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : true,
+          "name" : "id",
+          "type" : "BLOB"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "name",
+          "type" : "TEXT"
+        },
+        {
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "email",
+          "type" : "TEXT"
+        },
+        {
+          "isNullable" : true,
+          "isPrimaryKey" : false,
+          "name" : "age",
+          "type" : "INTEGER"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "created_at",
+          "type" : "REAL"
+        },
+        {
+          "defaultValue" : "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable" : false,
+          "isPrimaryKey" : false,
+          "name" : "updated_at",
+          "type" : "REAL"
+        }
+      ],
+      "foreignKeys" : [
+
+      ],
+      "indexes" : [
+
+      ],
+      "name" : "user",
+      "sql" : "",
+      "triggers" : [
+        {
+          "body" : "    UPDATE user SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;",
+          "condition" : "NEW.updated_at = OLD.updated_at",
+          "event" : "UPDATE",
+          "name" : "__swiftstore_update_user",
+          "sql" : "CREATE TRIGGER IF NOT EXISTS __swiftstore_update_user\nAFTER UPDATE ON user\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE user SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND",
+          "timing" : "AFTER"
+        }
+      ]
+    }
+  ]
+}

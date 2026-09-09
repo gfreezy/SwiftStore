@@ -32,14 +32,26 @@ func createTestConnection() throws -> SQLiteConnection {
     return try SQLiteConnection(path: tempPath)
 }
 
+// These schemas belong to disposable fixtures; production histories use frozen snapshots.
+func migrateTestEntities(_ entities: [any EntityProtocol.Type], on connection: SQLiteConnection,
+                         includeFixtureTriggers: Bool = false) throws {
+    // Hook tests also exercise manually authored schemas without timestamp triggers.
+    let snapshot = SchemaSnapshot(tables: DatabaseSchemaBuilder().buildSchemas(from: entities).map { table in
+        TableSchema(name: table.name, columns: table.columns, indexes: table.indexes,
+                    triggers: includeFixtureTriggers ? table.triggers : [], foreignKeys: table.foreignKeys)
+    })
+    let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+        for sql in snapshot.creationStatements { try db.execute(sql) }
+    }
+    try VersionedMigrator(connection: connection, migrations: [initial]).migrate()
+}
+
 func createAndMigrateTestDatabase() throws -> (connection: SQLiteConnection, dbPath: String) {
     let tempPath = NSTemporaryDirectory() + "swiftstore_sync_test_\(UUID().uuidString).sqlite"
     let connection = try SQLiteConnection(path: tempPath)
 
     // Migrate TestEntity table (disable update trigger to avoid double-counting in tests)
-    let migrator = Migrator(connection: connection, createUpdateTrigger: false)
-    let plan = try migrator.plan(for: [TestEntity.self])
-    try migrator.apply(plan)
+    try migrateTestEntities([TestEntity.self], on: connection)
 
     return (connection, tempPath)
 }

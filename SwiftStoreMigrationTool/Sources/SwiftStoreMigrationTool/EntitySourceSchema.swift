@@ -17,7 +17,7 @@ public enum EntitySourceSchema {
         return false
     }
 
-    public static func extract(files: [URL], createUpdateTrigger: Bool = false) throws -> SchemaSnapshot {
+    public static func extract(files: [URL]) throws -> SchemaSnapshot {
         var tables: [TableSchema] = []
         for file in files.sorted(by: { $0.path < $1.path }) {
             let source = try String(contentsOf: file, encoding: .utf8)
@@ -54,7 +54,7 @@ public enum EntitySourceSchema {
                 }
                 guard let name = metadata.tableName else { throw failure("Missing table metadata for \(node.name.text)") }
                 if let error = metadata.error { throw error }
-                let triggers = createUpdateTrigger && metadata.columns.contains(where: { $0.name == "updated_at" })
+                let triggers = metadata.columns.contains(where: { $0.name == "updated_at" })
                     ? [DatabaseSchemaBuilder.updateTrigger(for: name)] : []
                 tables.append(TableSchema(name: name, columns: metadata.columns, indexes: metadata.indexes, triggers: triggers))
             }

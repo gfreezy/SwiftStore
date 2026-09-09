@@ -55,21 +55,6 @@ public struct MigrationFile {
 /// Shared implementation for the optional CLI and the build plugin. No source files are changed
 /// during a build: only the registration catalog in the plugin output directory is generated.
 public enum MigrationTool {
-    public struct Configuration: Codable {
-        public var createUpdateTrigger = false
-        public init(createUpdateTrigger: Bool = false) { self.createUpdateTrigger = createUpdateTrigger }
-        public init(from decoder: any Decoder) throws {
-            let values = try decoder.container(keyedBy: CodingKeys.self)
-            createUpdateTrigger = try values.decodeIfPresent(Bool.self, forKey: .createUpdateTrigger) ?? false
-        }
-    }
-
-    public static func configuration(at root: URL) throws -> Configuration {
-        let file = root.appendingPathComponent("swiftstore-migrations.json")
-        guard FileManager.default.fileExists(atPath: file.path) else { return Configuration() }
-        return try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: file))
-    }
-
     public static func sourceFiles(at root: URL) throws -> [URL] {
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { throw failure("Cannot read \(root.path)") }
@@ -81,8 +66,7 @@ public enum MigrationTool {
     }
 
     public static func currentSchema(at root: URL, sources: [URL]? = nil) throws -> SchemaSnapshot {
-        try EntitySourceSchema.extract(files: sources ?? sourceFiles(at: root),
-            createUpdateTrigger: configuration(at: root).createUpdateTrigger)
+        try EntitySourceSchema.extract(files: sources ?? sourceFiles(at: root))
     }
 
     /// IDs use a numeric prefix followed by "_" and a free-form description, ordered numerically.

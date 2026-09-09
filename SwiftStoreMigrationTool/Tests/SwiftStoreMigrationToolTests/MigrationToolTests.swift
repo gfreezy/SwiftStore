@@ -169,7 +169,8 @@ struct MigrationToolTests {
         }
         """#.write(to: file, atomically: true, encoding: .utf8)
         let extracted = try EntitySourceSchema.extract(files: [file])
-        #expect(extracted == SchemaSnapshot(entities: [SourceParity.self], createUpdateTrigger: false))
+        #expect(extracted == SchemaSnapshot(entities: [SourceParity.self]))
+        #expect(extracted.tables.allSatisfy { $0.triggers.isEmpty })
     }
 
     @Test("Source extraction includes default markers, sync keys, JSON index columns and timestamp triggers")
@@ -194,8 +195,9 @@ struct MigrationToolTests {
             var updatedAt: Date = Date()
         }
         """#.write(to: file, atomically: true, encoding: .utf8)
-        let extracted = try EntitySourceSchema.extract(files: [file], createUpdateTrigger: true)
-        #expect(extracted == SchemaSnapshot(entities: [SourceSyncParity.self, SourceKeyParity.self], createUpdateTrigger: true))
+        let extracted = try EntitySourceSchema.extract(files: [file])
+        #expect(extracted == SchemaSnapshot(entities: [SourceSyncParity.self, SourceKeyParity.self]))
+        #expect(try MigrationTool.currentSchema(at: dir) == extracted)
         let table = try #require(extracted.tables.first { $0.name == "source_sync_parity" })
         #expect(table.columns.contains { $0.generatedAs != nil })
         #expect(table.triggers.count == 1)

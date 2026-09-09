@@ -1,27 +1,9 @@
 import Foundation
 import SwiftStoreProtocols
 
-/// Options for building target schema
-public struct DatabaseSchemaBuildOptions: Sendable {
-    /// Add update trigger to schema
-    public var createUpdateTrigger: Bool
-
-    public init(
-        createUpdateTrigger: Bool = true,
-    ) {
-        self.createUpdateTrigger = createUpdateTrigger
-    }
-
-    public static let `default` = DatabaseSchemaBuildOptions()
-}
-
 /// Builds TableSchema from EntityProtocol definitions
 public struct DatabaseSchemaBuilder {
-    public let options: DatabaseSchemaBuildOptions
-
-    public init(options: DatabaseSchemaBuildOptions = .default) {
-        self.options = options
-    }
+    public init() {}
 
     /// Build TableSchema for multiple entities
     public func buildSchemas(from entities: [any EntityProtocol.Type]) -> [TableSchema] {
@@ -70,9 +52,9 @@ public struct DatabaseSchemaBuilder {
     private func buildTriggers(for entity: any EntityProtocol.Type) -> [TriggerSchema] {
         var triggers: [TriggerSchema] = []
 
-        // Only create update trigger if entity has updated_at column
+        // Modification timestamps are maintained independently of sync configuration.
         let hasUpdatedAt = entity.columns.contains { $0.name == "updated_at" }
-        if options.createUpdateTrigger && hasUpdatedAt {
+        if hasUpdatedAt {
             triggers.append(Self.updateTrigger(for: entity.tableName))
         }
 

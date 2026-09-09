@@ -17,8 +17,7 @@ public enum ProjectDiscovery {
         var directory = start
         while true {
             // Existing schema roots also work for nonstandard layouts and deletion of all Entities.
-            if isDirectory(directory.appendingPathComponent("Migrations")) ||
-                FileManager.default.fileExists(atPath: directory.appendingPathComponent("swiftstore-migrations.json").path) {
+            if isDirectory(directory.appendingPathComponent("Migrations")) {
                 return directory
             }
             let entries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -78,7 +77,6 @@ public enum ProjectDiscovery {
         var candidates: [URL] = []
         for item in directories {
             if try isDirectory(item.url.appendingPathComponent("Migrations")) ||
-                FileManager.default.fileExists(atPath: item.url.appendingPathComponent("swiftstore-migrations.json").path) ||
                 EntitySourceSchema.containsEntity(files: MigrationTool.sourceFiles(at: item.url)) {
                 candidates.append(item.url)
             }

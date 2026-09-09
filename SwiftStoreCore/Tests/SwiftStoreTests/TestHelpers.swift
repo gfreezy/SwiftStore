@@ -8,10 +8,9 @@ import SwiftStoreMacros
 /// Test store wrapper that provides connection and migration functionality
 struct TestStore {
     let connection: SQLiteConnection
-    let migrator: Migrator
     let dbPath: String
 
-    // Track registered entities for planMigrations
+    // Entities used to create this disposable test database.
     private var registeredEntities: [any EntityProtocol.Type] = []
 
     init(path: String) throws {
@@ -19,7 +18,6 @@ struct TestStore {
         var options = SQLiteConnection.Options()
         options.walMode = true
         self.connection = try SQLiteConnection(path: path, options: options)
-        self.migrator = Migrator(connection: connection)
     }
 
     mutating func register<E: EntityProtocol>(_ type: E.Type) throws {
@@ -27,8 +25,12 @@ struct TestStore {
     }
 
     func migrate(entities: [any EntityProtocol.Type]) throws {
-        let plan = try migrator.plan(for: entities)
-        try migrator.apply(plan)
+        // Live types are safe here: these are disposable fixtures, not historical migrations.
+        let snapshot = SchemaSnapshot(entities: entities)
+        let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+            for sql in snapshot.creationStatements { try db.execute(sql) }
+        }
+        try VersionedMigrator(connection: connection, migrations: [initial]).migrate()
     }
 
     func migrate() throws {
@@ -39,13 +41,7 @@ struct TestStore {
         Query(E.self)
     }
 
-    func planMigration<E: EntityProtocol>(for type: E.Type) throws -> MigrationPlan {
-        try migrator.plan(for: [type])
-    }
 
-    func planMigrations() throws -> MigrationPlan {
-        try migrator.plan(for: registeredEntities)
-    }
 }
 
 /// Create a temporary store for testing

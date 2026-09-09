@@ -7,8 +7,9 @@ Usage:
   swiftstore migration check [--target <source-directory>]
 
 Without --target, discover the project from the current directory (ambiguous or missing roots are errors).
-Migrations live in <source-directory>/Migrations. IDs sort lexicographically.
-Optional swiftstore-migrations.json: {"createUpdateTrigger": true} for sync-enabled stores.
+Migrations live in <source-directory>/Migrations. IDs use <digits>_<description> and sort by numeric prefix.
+Numbers must be unique ignoring leading zeros; a new number must exceed the latest one.
+Tables with updated_at automatically receive an update trigger, whether or not sync is enabled.
 The build plugin calls check with --sources-file and --output automatically.
 """
 

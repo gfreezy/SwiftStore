@@ -1,7 +1,6 @@
 #include <sqlite3.h>
 
 // Swift cannot call sqlite3_db_config's C variadic interface directly.
-int swiftstore_sqlite_defensive(sqlite3 *db, int enabled, int *result);
 
 // Apple exports the optional pre-update API without declaring it in sqlite3.h.
 // Resolve it at runtime so unsupported OS SQLite builds fail explicitly at start.

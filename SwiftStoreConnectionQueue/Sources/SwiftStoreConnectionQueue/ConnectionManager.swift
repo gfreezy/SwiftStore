@@ -261,54 +261,6 @@ open class ConnectionManager: @unchecked Sendable {
         self.readers = readerEntries
     }
 
-    /// Run database migration
-    /// - Parameter dryRun: If true, only generates the migration plan without applying it
-    /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
-    public func migrate(dryRun: Bool = true, dropUnusedColumns: Bool = false) async throws {
-        guard !options.readonly else {
-            throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
-        }
-
-        let shouldRun = migrationStarted.withLock { started -> Bool in
-            if started { return false }
-            started = true
-            return true
-        }
-
-        if shouldRun {
-            do {
-                try await _write { connection in
-                    let migrator = Migrator(
-                        connection: connection,
-                        createUpdateTrigger: self.syncEnabled, dropUnusedColumns: dropUnusedColumns)
-                    let plan: MigrationPlan = try migrator.plan(for: self.entities)
-                    if !dryRun {
-                        do {
-                            try migrator.apply(plan)
-                        } catch {
-                            SwiftStoreLogger.error("Migration Error: \(error)")
-                            #if DEBUG
-                                fatalError("SwiftStore Migration Error: \(error)")
-                            #else
-                                throw error
-                            #endif
-
-                        }
-                    }
-                    SwiftStoreLogger.info("Migration Plan:\n\(plan)")
-                }
-                if !dryRun { try await writer?.startTracking() }
-                try await self.performAdditionalSetup()
-                await setupSignal.signal()
-            } catch {
-                await setupSignal.signal(result: .failure(error))
-                throw error
-            }
-        } else {
-            try await setupSignal.wait()
-        }
-    }
-
     /// Apply committed migrations before exposing connections or starting sync tracking.
     /// Use previewMigrations for a read-only preview; preview does not complete setup.
     public func migrate(migrations: [StoreMigration], adoptingBaseline baselineID: String? = nil) async throws {
@@ -326,9 +278,9 @@ open class ConnectionManager: @unchecked Sendable {
         }
         do {
             try await _write { connection in
-                let expected = SchemaSnapshot(entities: self.entities, createUpdateTrigger: self.syncEnabled)
+                let expected = SchemaSnapshot(entities: self.entities)
                 guard migrations.last?.target == expected else {
-                    throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities or trigger options")
+                    throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities")
                 }
                 let runner = VersionedMigrator(connection: connection, migrations: migrations)
                 if let baselineID {

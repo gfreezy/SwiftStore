@@ -44,16 +44,22 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         // Create separate connection for changelog database
         self.changeLogConnection = try SQLiteConnection(path: changeLogDbPath)
 
-        // Create changelog table using Migrator
+        // Apply the changelog database's frozen migration history.
         try migrateChangeLogTable()
         lastClock = try ChangeLog.filter(\.deviceId == deviceId).max(\.logicalClock, changeLogConnection) ?? 0
     }
 
     private func migrateChangeLogTable() throws {
-        let migrator = Migrator(
-            connection: changeLogConnection, createUpdateTrigger: false)
-        let plan = try migrator.plan(for: [ChangeLog.self])
-        try migrator.apply(plan)
+        let runner = VersionedMigrator(connection: changeLogConnection, migrations: try ChangeLogMigrations.all())
+        try changeLogConnection.transaction {
+            do {
+                _ = try runner.pendingMigrationIDs()
+            } catch VersionedMigrationError.baselineRequired {
+                // Earlier versions created this same schema without migration bookkeeping.
+                try runner.adoptBaseline(through: "001_initial")
+            }
+            try runner.migrate()
+        }
     }
 
     // MARK: - Lifecycle

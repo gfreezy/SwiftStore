@@ -1,0 +1,14 @@
+import SwiftStoreCore
+
+// Review before publishing. Published migrations must never be edited.
+enum Migration_001 {
+    static func up(_ db: SQLiteConnection) throws {
+        try db.execute("CREATE TABLE comment (\n    id BLOB NOT NULL PRIMARY KEY,\n    post_id BLOB NOT NULL,\n    author_id BLOB NOT NULL,\n    content TEXT NOT NULL,\n    created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL))),\n    updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n)")
+        try db.execute("CREATE TRIGGER IF NOT EXISTS __swiftstore_update_comment\nAFTER UPDATE ON comment\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE comment SET updated_at = (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND")
+        try db.execute("CREATE TABLE post (\n    id BLOB NOT NULL PRIMARY KEY,\n    author_id BLOB NOT NULL,\n    title TEXT NOT NULL,\n    content TEXT NOT NULL,\n    status TEXT NOT NULL,\n    created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL))),\n    updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n)")
+        try db.execute("CREATE TRIGGER IF NOT EXISTS __swiftstore_update_post\nAFTER UPDATE ON post\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE post SET updated_at = (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND")
+        try db.execute("CREATE TABLE user (\n    id BLOB NOT NULL PRIMARY KEY,\n    name TEXT NOT NULL,\n    email TEXT NOT NULL,\n    age INTEGER,\n    created_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL))),\n    updated_at REAL NOT NULL DEFAULT (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n)")
+        try db.execute("CREATE TRIGGER IF NOT EXISTS __swiftstore_update_user\nAFTER UPDATE ON user\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n        UPDATE user SET updated_at = (COALESCE(unixepoch(\'subsec\'), CAST(strftime(\'%s\', \'now\') AS REAL) + CAST(substr(strftime(\'%f\', \'now\'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND")
+        // Add data migration SQL here, or between the schema statements above.
+    }
+}

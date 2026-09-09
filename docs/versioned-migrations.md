@@ -22,13 +22,12 @@ Place the files like this:
 Sources/MyApp/
 ├── User.swift
 ├── Post.swift
-├── Migrations/
-│   ├── 001_initial.swift
-│   ├── 001_initial.schema.json
-│   ├── 002_display_name.swift
-│   ├── 002_display_name.schema.json
-│   └── 003_clean_data.swift
-└── swiftstore-migrations.json    # optional, for sync-enabled stores
+└── Migrations/
+    ├── 001_initial.swift
+    ├── 001_initial.schema.json
+    ├── 002_display_name.swift
+    ├── 002_display_name.schema.json
+    └── 003_clean_data.swift
 ```
 
 The plugin reads the target's Swift sources and `Migrations` directory. SwiftPM may report JSON snapshots as unhandled files; they are plugin inputs and are not needed as application resources. You may list the JSON files in the target's `exclude` argument to silence that warning; the plugin still reads them.
@@ -62,7 +61,7 @@ After changing an Entity:
 swiftstore migration add 002_display_name
 ```
 
-Without `--target`, the CLI walks up from the current directory looking for an existing migration/configuration directory, an Xcode project, or `Package.swift`. It stops at the repository boundary. For SwiftPM it selects the enclosing source target when invoked from inside one; otherwise it selects the plugin-enabled target, or the sole target containing Entities/history. Static custom target paths are supported. Test targets are not candidates.
+Without `--target`, the CLI walks up from the current directory looking for an existing migration directory, an Xcode project, or `Package.swift`. It stops at the repository boundary. For SwiftPM it selects the enclosing source target when invoked from inside one; otherwise it selects the plugin-enabled target, or the sole target containing Entities/history. Static custom target paths are supported. Test targets are not candidates.
 
 If no project/target is found, or more than one target matches, the command fails without generating files. It never silently treats an arbitrary current directory as a project. A computed Package.swift target list/path requires an explicit override; discovery does not execute the manifest or fetch dependencies.
 
@@ -148,6 +147,8 @@ Only the final structural state is checked during build. A schema can match even
 
 ## Runtime
 
+Schema and data changes use committed migrations only. Runtime auto-alignment APIs have been removed. Apply the generated history before accessing a database; changing live Entity definitions alone cannot upgrade it.
+
 ```swift
 let manager = try ConnectionManager(path: databasePath, entities: [User.self, Post.self])
 try await manager.migrate(migrations: try StoreMigrations.all())
@@ -169,15 +170,26 @@ Published migration files must remain immutable. Editing them changes the genera
 
 Schema validation is intentionally strict. It checks managed table definitions, defaults, indexes and triggers and permits unrelated tables. Custom schema objects must be represented in snapshots. Some semantically equivalent but structurally different SQL definitions may be rejected. Large backfills hold the migration transaction for their duration; resumable online migration is outside this API.
 
-## Sync configuration
+## Adopt an existing database
 
-If ConnectionManager enables sync, create `swiftstore-migrations.json` in the schema root:
+For a database created before versioned history was enabled, generate an initial migration from its original Entity definitions, before making further schema changes. Then opt into adopting that matching baseline at startup:
 
-```json
-{"createUpdateTrigger": true}
+```swift
+try await manager.migrate(
+    migrations: try StoreMigrations.all(),
+    adoptingBaseline: "001_initial"
+)
 ```
 
-The default is `false`. Both CLI and plugin read this setting. It must match the manager's sync configuration. A configuration change that alters triggers requires a new migration. Migration IDs are independent of the sync protocol's schema version. Whether migrated data is uploaded later by sync bootstrap is a separate application policy.
+The manager verifies the selected schema, records its history prefix without executing those bodies, and applies later migrations. This call also works on fresh and already tracked databases. A mismatched legacy schema is rejected; it is never automatically aligned or silently marked current.
+
+## Update timestamps and sync
+
+Tables with an `updated_at` column always receive an automatic update trigger when their schema is generated. Tables without that column receive no such trigger. The CLI, build plugin, and ConnectionManager use the same rule; it does not depend on `syncConfig`. Local updates maintain modification times even before sync is enabled. An explicitly changed `updated_at` value is preserved.
+
+No `swiftstore-migrations.json` file is needed. The former `createUpdateTrigger` setting has been removed; an existing file can be deleted. If your latest migration snapshot lacks a required update trigger, add a new migration with `swiftstore migration add <next-number>_update_timestamps`. The generator writes the trigger SQL and updated table delta. Do not edit previously published migrations. Existing databases apply this additional step, and fresh installs replay it after the earlier history.
+
+Enabling or disabling sync alone no longer changes the schema or requires a migration. Migration IDs remain independent of the sync protocol's schema version. Whether migrated data is uploaded later by sync bootstrap is a separate application policy.
 
 ## Example and tests
 

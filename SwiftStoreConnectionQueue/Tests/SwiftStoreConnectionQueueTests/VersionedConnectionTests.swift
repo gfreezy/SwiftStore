@@ -6,7 +6,7 @@ import SwiftStoreConnectionQueue
 @Suite("Versioned ConnectionManager setup")
 struct VersionedConnectionTests {
     private func history() -> [StoreMigration] {
-        let schema = SchemaSnapshot(entities: [ConnectionSyncNote.self], createUpdateTrigger: false)
+        let schema = SchemaSnapshot(entities: [ConnectionSyncNote.self])
         return [StoreMigration(id: "001", checksum: "initial", target: schema) { db in
             for sql in schema.creationStatements { try db.execute(sql) }
         }]
@@ -23,6 +23,23 @@ struct VersionedConnectionTests {
         try await manager.write { try $0.insert(ConnectionSyncNote(title: "ready")) }
         #expect(try await manager.read { try $0.queryScalar("SELECT COUNT(*) FROM connection_sync_note", type: Int.self) } == 1)
         #expect(try await manager.previewMigrations(history()).isEmpty)
+    }
+
+    @Test("A local store maintains updated_at without enabling sync")
+    func localUpdateTimestamp() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+                                            entities: [ConnectionSyncNote.self])
+        try await manager.migrate(migrations: history())
+        try await manager.write { db in
+            try db.execute("INSERT INTO connection_sync_note (id, title, created_at, updated_at) VALUES (randomblob(16), 'before', 123, 123)")
+            try db.execute("UPDATE connection_sync_note SET title = 'after'")
+            let timestamp = try db.queryScalar("SELECT updated_at FROM connection_sync_note", type: Double.self)
+            #expect(abs((timestamp ?? 0) - Date().timeIntervalSince1970) < 5)
+            try db.execute("UPDATE connection_sync_note SET title = 'imported', updated_at = 456.875")
+            #expect(try db.queryScalar("SELECT updated_at FROM connection_sync_note", type: Double.self) == 456.875)
+        }
     }
 
     @Test("Baseline configuration works for legacy, fresh and already tracked databases")

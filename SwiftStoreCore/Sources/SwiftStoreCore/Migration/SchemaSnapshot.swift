@@ -8,9 +8,8 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
         self.tables = tables.sorted { $0.name < $1.name }
     }
 
-    public init(entities: [any EntityProtocol.Type], createUpdateTrigger: Bool = true) {
-        self.init(tables: DatabaseSchemaBuilder(options: .init(createUpdateTrigger: createUpdateTrigger))
-            .buildSchemas(from: entities))
+    public init(entities: [any EntityProtocol.Type]) {
+        self.init(tables: DatabaseSchemaBuilder().buildSchemas(from: entities))
     }
 
     public static let empty = SchemaSnapshot(tables: [])
@@ -47,8 +46,11 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
 
     /// SQL for a fresh database, also used to validate the result of historical migrations.
     public var creationStatements: [String] {
-        let diff = DatabaseDiff(tableDiffs: tables.map { SchemaDiff(current: nil, target: $0) })
-        return MigrationSQLGenerator().generatePlan(from: diff).statements
+        tables.flatMap { table in
+            let definitions = table.columns.map { $0.toSQL() } + table.foreignKeys.map { $0.toSQL() }
+            let create = "CREATE TABLE \(table.name) (\n    \(definitions.joined(separator: ",\n    "))\n)"
+            return [create] + table.indexes.map { $0.toSQL(tableName: table.name) } + table.triggers.map(\.sql)
+        }
     }
 
     /// Strict comparison includes constraints, defaults, generated columns, indexes and triggers.

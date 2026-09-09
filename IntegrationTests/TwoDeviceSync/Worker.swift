@@ -40,8 +40,7 @@ struct Worker {
         let command = try JSONDecoder().decode(Command.self, from: input)
         try FileManager.default.createDirectory(atPath: command.directory, withIntermediateDirectories: true)
         let db = try SQLiteConnection(path: command.directory + "/data.sqlite")
-        let migrator = Migrator(connection: db)
-        try migrator.apply(migrator.plan(for: [Note.self]))
+        try VersionedMigrator(connection: db, migrations: WorkerMigrations.all()).migrate()
         let transport = try HTTPSyncTransport(configuration: HTTPSyncConfiguration(
             serverURL: command.server, namespace: command.namespace, bearerToken: "integration-test",
             stateURL: URL(fileURLWithPath: command.directory + "/transport.json"),

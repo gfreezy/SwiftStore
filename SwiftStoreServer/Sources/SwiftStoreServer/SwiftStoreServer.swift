@@ -7,6 +7,8 @@ import Network
 /// Provides REST API endpoints for executing SQL queries and managing database data.
 /// Intended for development use only - not for production deployment.
 ///
+/// Enable SwiftStoreMigrationCheck on the target containing User and its committed migrations
+/// to generate StoreMigrations before using this example.
 /// Example usage:
 /// ```swift
 /// import SwiftStore
@@ -16,7 +18,7 @@ import Network
 ///     path: "app.sqlite",
 ///     entities: [User.self]
 /// )
-/// try await manager.migrate(dryRun: false)
+/// try await manager.migrate(migrations: try StoreMigrations.all())
 ///
 /// #if DEBUG
 /// let server = try await SwiftStoreServer(

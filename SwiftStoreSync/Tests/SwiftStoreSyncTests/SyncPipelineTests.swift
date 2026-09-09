@@ -59,8 +59,11 @@ final class SyncFixture {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         connection = try SQLiteConnection(path: directory.appendingPathComponent("main.sqlite").path)
-        let migrator = Migrator(connection: connection, createUpdateTrigger: true)
-        try migrator.apply(migrator.plan(for: [SyncNote.self]))
+        let snapshot = SchemaSnapshot(entities: [SyncNote.self])
+        let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+            for sql in snapshot.creationStatements { try db.execute(sql) }
+        }
+        try VersionedMigrator(connection: connection, migrations: [initial]).migrate()
         manager = try SyncManager(connection: connection, config: SyncConfig(
             changeLogDbPath: directory.appendingPathComponent("changes.sqlite").path,
             deviceId: UUIDV7(), registeredEntities: [SyncNote.self], transport: transport,

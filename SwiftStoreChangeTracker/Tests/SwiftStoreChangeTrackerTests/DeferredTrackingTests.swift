@@ -9,8 +9,7 @@ struct DeferredTrackingTests {
 
     private func fixture() throws -> (SQLiteConnection, ChangeTracker) {
         let db = try SQLiteConnection(path: ":memory:")
-        let migrator = Migrator(connection: db, createUpdateTrigger: false)
-        try migrator.apply(migrator.plan(for: [TestEntity.self]))
+        try migrateTestEntities([TestEntity.self], on: db)
         let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:",
             deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })

@@ -28,6 +28,13 @@ private actor RecordingSyncTransport: SyncTransport {
 
 @Suite("ConnectionManager synchronization")
 struct ConnectionSyncTests {
+    private func history() -> [StoreMigration] {
+        let schema = SchemaSnapshot(entities: [ConnectionSyncNote.self])
+        return [StoreMigration(id: "001_initial", checksum: "initial", target: schema) { db in
+            for sql in schema.creationStatements { try db.execute(sql) }
+        }]
+    }
+
     @Test("Migration starts tracking, rollback is excluded, and later writes automatically sync")
     func automaticSync() async throws {
         try await NTPClient.$testTimeQuery.withValue({
@@ -40,7 +47,7 @@ struct ConnectionSyncTests {
                 entities: [ConnectionSyncNote.self], syncConfig: SyncOptions(
                     deviceId: UUIDV7(), transport: transport, schemaVersion: 1,
                     tickClock: { 10 }, ntpToleranceMs: 5000))
-            try await manager.migrate(dryRun: false)
+            try await manager.migrate(migrations: history())
             let hasLegacyTable = try await manager.read { try $0.tableExists("__swiftstore_pending_deletes") }
             #expect(!hasLegacyTable)
             try await manager.write { try $0.insert(ConnectionSyncNote(title: "first")) }
@@ -68,7 +75,7 @@ struct ConnectionSyncTests {
         }
     }
 
-    @Test("Enabling sync uploads preexisting rows once")
+    @Test("Enabling sync reuses the local schema and uploads preexisting rows once")
     func existingRows() async throws {
         try await NTPClient.$testTimeQuery.withValue({
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
@@ -77,21 +84,24 @@ struct ConnectionSyncTests {
             defer { try? FileManager.default.removeItem(at: dir) }
             let path = dir.appendingPathComponent("main.sqlite").path
             let local = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self])
-            try await local.migrate(dryRun: false)
+            try await local.migrate(migrations: history())
             try await local.write { try $0.insert(ConnectionSyncNote(title: "before sync")) }
             let transport = RecordingSyncTransport()
             let deviceID = UUIDV7()
             let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
                 syncConfig: SyncOptions(deviceId: deviceID, transport: transport,
                     schemaVersion: 1, ntpToleranceMs: 5000))
-            try await manager.migrate(dryRun: false)
+            try await manager.migrate(migrations: history())
             _ = try await manager.sync()
+            #expect(try await manager.read {
+                try $0.queryScalar("SELECT COUNT(*) FROM __swiftstore_migrations", type: Int.self)
+            } == 1)
             #expect(await transport.changes.count == 1)
             await manager.stopSync()
             let restarted = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
                 syncConfig: SyncOptions(deviceId: deviceID, transport: transport,
                     schemaVersion: 1, ntpToleranceMs: 5000))
-            try await restarted.migrate(dryRun: false)
+            try await restarted.migrate(migrations: history())
             _ = try await restarted.sync()
             #expect(await transport.changes.count == 1)
             await restarted.stopSync()

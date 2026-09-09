@@ -53,7 +53,7 @@ struct SwiftStoreServerDemo {
         )
 
         // Run migrations
-        try await manager.migrate(dryRun: false)
+        try await manager.migrate(migrations: try StoreMigrations.all())
         print("Database migrated successfully")
 
         // Insert sample data

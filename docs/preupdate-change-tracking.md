@@ -26,14 +26,10 @@ ChangeTracker 使用 `sqlite3_preupdate_hook` 捕获每次行修改的新旧值�
 
 ConnectionManager 启用同步时，正式迁移创建业务表和更新时间触发器。删除直接通过 pre-update hook 捕获，不需要删除触发器或中间表。
 
-直接使用组件的代码可以这样迁移：
+先按[版本化迁移指南](versioned-migrations.md)生成并提交迁移。包含 `updated_at` 的表会自动生成更新时间触发器，无需额外配置，也不依赖是否开启同步。直接使用组件的代码可以这样迁移：
 
 ```swift
-let migrator = Migrator(
-    connection: connection,
-    createUpdateTrigger: true
-)
-try migrator.apply(migrator.plan(for: entities))
+try VersionedMigrator(connection: connection, migrations: StoreMigrations.all()).migrate()
 try tracker.start()
 ```
 
