@@ -262,6 +262,8 @@ open class ConnectionManager: @unchecked Sendable {
     }
 
     /// Apply committed migrations before exposing connections or starting sync tracking.
+    /// A database without migration history adopts the first migration if its schema matches.
+    /// Supply adoptingBaseline to adopt a later version instead; fresh databases run all steps.
     /// Use previewMigrations for a read-only preview; preview does not complete setup.
     public func migrate(migrations: [StoreMigration], adoptingBaseline baselineID: String? = nil) async throws {
         guard !options.readonly else {
@@ -283,7 +285,7 @@ open class ConnectionManager: @unchecked Sendable {
                     throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities")
                 }
                 let runner = VersionedMigrator(connection: connection, migrations: migrations)
-                if let baselineID {
+                if let baselineID = baselineID ?? migrations.first?.id {
                     guard migrations.contains(where: { $0.id == baselineID }) else {
                         throw VersionedMigrationError.invalidHistory("Unknown baseline ID: \(baselineID)")
                     }

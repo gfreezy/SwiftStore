@@ -181,16 +181,26 @@ transaction for their duration.
 
 ## Adopt an existing database
 
-For a database created before versioned history was enabled, generate an initial migration from its original Entity definitions, before making further schema changes. Then opt into adopting that matching baseline at startup:
+For a database created before versioned history was enabled, generate an initial migration from its original Entity definitions, before making further schema changes. ConnectionManager defaults to adopting the first migration as the baseline:
+
+```swift
+try await manager.migrate(migrations: try StoreMigrations.all())
+```
+
+The manager verifies that the legacy schema matches the first migration's target, records that migration without executing its body, and applies later migrations. A mismatched legacy schema is rejected. Fresh databases execute every migration; databases with recorded history continue from the last applied version.
+
+If the legacy database already matches a later version, specify its ID explicitly:
 
 ```swift
 try await manager.migrate(
     migrations: try StoreMigrations.all(),
-    adoptingBaseline: "001_initial"
+    adoptingBaseline: "002_display_name"
 )
 ```
 
-The manager verifies the selected schema, records its history prefix without executing those bodies, and applies later migrations. This call also works on fresh and already tracked databases. A mismatched legacy schema is rejected; it is never automatically aligned or silently marked current.
+The selected baseline and all earlier migrations are recorded without executing their bodies. Schema verification cannot establish whether their data transformations already happened; the legacy data must already reflect those steps.
+
+For direct connections, VersionedMigrator still requires an explicit `adoptBaseline(through:)` call before migrating a legacy database. `previewMigrations` remains read-only and reports `baselineRequired` until a legacy database is adopted.
 
 ## Update timestamps and sync
 
