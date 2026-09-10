@@ -55,7 +55,7 @@ enum WorkerMigrations {
             ]
         }
         """#.utf8))
-        return [StoreMigration(id: "001_initial", checksum: "adfdb22994dbca8140c3b6500da25c5b5c2478e6757bcc0e91f8c656b7a2e311",
+        return [StoreMigration(id: "001_initial",
             target: target, up: Migration_001.up)]
     }
 }

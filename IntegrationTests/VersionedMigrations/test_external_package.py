@@ -102,9 +102,23 @@ print("fresh install passed")
 
     # No stored/generated catalog in the source directory.
     assert not (target / 'Migrations/StoreMigrations.swift').exists()
-    # Source edits must invalidate the build output and change the recorded checksum.
+    # Generated code stores table deltas, with no full snapshot per version or checksums.
+    catalogs = list((root / '.build/plugins/outputs').rglob('StoreMigrations.swift'))
+    assert catalogs
+    catalog = catalogs[0].read_text()
+    assert catalog.count('"name": "post"') == 1
+    assert catalog.count('SchemaDelta.decode') == 2
+    assert 'SchemaSnapshot.decode' not in catalog
+    assert 'checksum' not in catalog
+    # Source-only edits do not reject already applied history now that checksums are removed.
     with (target / 'Migrations/002_rename.swift').open('a') as file:
         file.write('\n// An impermissible edit to an already applied migration.\n')
     run(['swift', 'build'], root)
-    run([executable, db], root, expected=1, contains='Applied migrations were removed, reordered or modified')
-    print('PASS: build recomputes hashes; runtime refuses edited published history.', flush=True)
+    run([executable, db], root, contains='upgrade passed')
+    print('PASS: compact catalog compiles; source-only edits do not invalidate recorded IDs.', flush=True)
+
+    # Renaming an applied ID still rejects the history prefix.
+    (target / 'Migrations/003_data.swift').rename(target / 'Migrations/003_renamed.swift')
+    run(['swift', 'build'], root)
+    run([executable, db], root, expected=1, contains='Applied migrations were removed, reordered or renamed')
+    print('PASS: runtime still rejects renamed applied migration IDs.', flush=True)

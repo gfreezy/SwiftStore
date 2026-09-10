@@ -1,8 +1,7 @@
 # Canonical schema comparison
 
 Migration generation and `check` canonicalize schema snapshots before comparing them.
-`SchemaSnapshot.json()` also canonicalizes before encoding, so migration checksums use the
-same representation. `SchemaSnapshot.isEquivalent(to:)` exposes this comparison to callers.
+`SchemaSnapshot.json()` also canonicalizes before encoding. `SchemaSnapshot.isEquivalent(to:)` exposes this comparison to callers.
 
 Canonicalization is specific to schema metadata; it does not modify Entity JSON or migration
 Swift source. Decoding resolves field defaults, then `canonicalized()` normalizes table order
@@ -20,6 +19,11 @@ and string literals are preserved.
 | Foreign-key `onDelete` and `onUpdate` | Missing defaults to `NO ACTION`; null and unknown values are rejected. |
 | Table/index auxiliary `sql` | Missing, null and empty mean that no original CREATE statement was captured. Nonempty SQL is preserved. |
 
-All collections are encoded explicitly, including empty `fullTextIndexes: []`. Migration source
-also participates byte-for-byte in the checksum; source edits and substantive schema changes
-still change it.
+All collections are encoded explicitly, including empty `fullTextIndexes: []`. Snapshots and
+`SchemaDelta.json()` use sorted keys, two-space indentation, a space after each colon, and inline
+empty collections. The formatter only changes JSON syntax outside string tokens. SQL literals,
+escaped newlines and custom trigger body whitespace are preserved exactly. Generated timestamp
+trigger bodies start at column zero; their CREATE TRIGGER statements indent the body consistently.
+
+There are no migration checksums. History verification checks the ordered ID prefix and actual
+database schema. A source-only edit to an applied migration is not detected and is not replayed.

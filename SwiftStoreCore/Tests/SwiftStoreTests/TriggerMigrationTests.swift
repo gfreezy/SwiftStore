@@ -28,10 +28,10 @@ struct TriggerMigrationTests {
         let initial = snapshot(trigger: legacyTrigger)
         let replacement = DatabaseSchemaBuilder.updateTrigger(for: "test_tag")
         return [
-            StoreMigration(id: "001_initial", checksum: "initial", target: initial) { db in
+            StoreMigration(id: "001_initial", target: initial) { db in
                 for sql in initial.creationStatements { try db.execute(sql) }
             },
-            StoreMigration(id: "002_trigger", checksum: "trigger", target: snapshot(trigger: replacement)) { db in
+            StoreMigration(id: "002_trigger", target: snapshot(trigger: replacement)) { db in
                 try db.execute("DROP TRIGGER __swiftstore_update_test_tag")
                 if fail { try db.execute("INVALID SQL") }
                 try db.execute(replacement.sql)

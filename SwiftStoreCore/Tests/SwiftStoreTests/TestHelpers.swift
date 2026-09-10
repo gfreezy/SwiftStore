@@ -27,7 +27,7 @@ struct TestStore {
     func migrate(entities: [any EntityProtocol.Type]) throws {
         // Live types are safe here: these are disposable fixtures, not historical migrations.
         let snapshot = SchemaSnapshot(entities: entities)
-        let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+        let initial = StoreMigration(id: "001_fixture", target: snapshot) { db in
             for sql in snapshot.creationStatements { try db.execute(sql) }
         }
         try VersionedMigrator(connection: connection, migrations: [initial]).migrate()

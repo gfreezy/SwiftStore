@@ -15,14 +15,14 @@ struct VersionedMigrationTests {
     private var steps: [StoreMigration] {
         let first = v1
         return [
-            StoreMigration(id: "001", checksum: "first", target: v1) { db in
+            StoreMigration(id: "001", target: v1) { db in
                 for sql in first.creationStatements { try db.execute(sql) }
             },
-            StoreMigration(id: "002", checksum: "second", target: v2) { db in
+            StoreMigration(id: "002", target: v2) { db in
                 try db.execute("ALTER TABLE people RENAME COLUMN name TO display_name")
                 try db.execute("UPDATE people SET display_name = trim(display_name)")
             },
-            StoreMigration(id: "003", checksum: "third", target: v2) { db in
+            StoreMigration(id: "003", target: v2) { db in
                 try db.execute("UPDATE people SET display_name = display_name || '!' ")
             }
         ]
@@ -57,7 +57,7 @@ struct VersionedMigrationTests {
         let initial = Array(steps.prefix(1))
         try VersionedMigrator(connection: db, migrations: initial).migrate()
         try db.execute("INSERT INTO people VALUES (1, ' Ada ')")
-        let broken = StoreMigration(id: "004", checksum: "broken", target: v2) { db in
+        let broken = StoreMigration(id: "004", target: v2) { db in
             try db.execute("UPDATE people SET display_name = 'lost'")
             try db.execute("INVALID SQL")
         }
@@ -69,11 +69,11 @@ struct VersionedMigrationTests {
         #expect(try VersionedMigrator(connection: db, migrations: steps).pendingMigrationIDs() == ["002", "003"])
     }
 
-    @Test("Modified, removed, reordered and duplicate histories are rejected")
+    @Test("Renamed, removed, reordered and duplicate histories are rejected")
     func invalidHistory() throws {
         let db = try SQLiteConnection(path: ":memory:")
         try VersionedMigrator(connection: db, migrations: steps).migrate()
-        let changed = StoreMigration(id: "003", checksum: "edited", target: v2) { _ in }
+        let changed = StoreMigration(id: "003_renamed", target: v2) { _ in }
         for history in [Array(steps.prefix(2)), [steps[1], steps[0], steps[2]], steps + [steps[2]], Array(steps.prefix(2)) + [changed]] {
             #expect(throws: VersionedMigrationError.self) {
                 try VersionedMigrator(connection: db, migrations: history).migrate()
@@ -98,7 +98,7 @@ struct VersionedMigrationTests {
     @Test("A body that leaves the wrong schema is rolled back")
     func incompleteBody() throws {
         let db = try SQLiteConnection(path: ":memory:")
-        let wrong = StoreMigration(id: "001", checksum: "wrong", target: v1) { db in
+        let wrong = StoreMigration(id: "001", target: v1) { db in
             try db.execute("CREATE TABLE people (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)")
         }
         #expect(throws: VersionedMigrationError.self) {
@@ -113,11 +113,11 @@ struct VersionedMigrationTests {
         let initial = v1
         let renamed = SchemaSnapshot(tables: [TableSchema(name: "Members", columns: initial.tables[0].columns)])
         let history = [
-            StoreMigration(id: "001", checksum: "initial", target: initial) { db in
+            StoreMigration(id: "001", target: initial) { db in
                 for sql in initial.creationStatements { try db.execute(sql) }
                 try db.execute("INSERT INTO people VALUES (1, 'Ada')")
             },
-            StoreMigration(id: "002", checksum: "rename", target: renamed) { db in
+            StoreMigration(id: "002", target: renamed) { db in
                 try db.execute("ALTER TABLE people RENAME TO Members")
             }
         ]

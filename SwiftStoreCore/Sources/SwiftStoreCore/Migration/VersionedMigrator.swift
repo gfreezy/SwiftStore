@@ -14,18 +14,16 @@ public enum VersionedMigrationError: Error, CustomStringConvertible {
     }
 }
 
-/// A frozen migration. The generation tool supplies a hash of its source and target snapshot.
+/// A frozen migration identified by its ID and historical target snapshot.
 /// Bodies must only change this database; external side effects cannot be rolled back.
 public struct StoreMigration: Sendable {
     public let id: String
-    public let checksum: String
     public let target: SchemaSnapshot
     public let up: @Sendable (SQLiteConnection) throws -> Void
 
-    public init(id: String, checksum: String, target: SchemaSnapshot,
+    public init(id: String, target: SchemaSnapshot,
                 up: @escaping @Sendable (SQLiteConnection) throws -> Void) {
         self.id = id
-        self.checksum = checksum
         self.target = target
         self.up = up
     }
@@ -83,8 +81,8 @@ public struct VersionedMigrator {
 
     private func validateHistory() throws {
         guard !migrations.isEmpty, Set(migrations.map(\.id)).count == migrations.count,
-              migrations.allSatisfy({ !$0.id.isEmpty && !$0.checksum.isEmpty }) else {
-            throw VersionedMigrationError.invalidHistory("Supply a nonempty ordered list with unique IDs and checksums")
+              migrations.allSatisfy({ !$0.id.isEmpty }) else {
+            throw VersionedMigrationError.invalidHistory("Supply a nonempty ordered list with unique IDs")
         }
         for migration in migrations { try migration.target.validate() }
     }
@@ -92,13 +90,12 @@ public struct VersionedMigrator {
     private func appliedCount() throws -> Int {
         try validateHistory()
         guard try connection.tableExists(Self.historyTable) else { return 0 }
-        let stmt = try connection.prepare("SELECT position, id, checksum FROM __swiftstore_migrations ORDER BY position")
+        let stmt = try connection.prepare("SELECT position, id FROM __swiftstore_migrations ORDER BY position")
         var count = 0
         while try stmt.step() {
             guard count < migrations.count, stmt.columnInt64(0) == Int64(count),
-                  stmt.columnString(1) == migrations[count].id,
-                  stmt.columnString(2) == migrations[count].checksum else {
-                throw VersionedMigrationError.invalidHistory("Applied migrations were removed, reordered or modified at position \(count)")
+                  stmt.columnString(1) == migrations[count].id else {
+                throw VersionedMigrationError.invalidHistory("Applied migrations were removed, reordered or renamed at position \(count)")
             }
             count += 1
         }
@@ -130,14 +127,13 @@ public struct VersionedMigrator {
             CREATE TABLE IF NOT EXISTS __swiftstore_migrations (
                 position INTEGER NOT NULL UNIQUE,
                 id TEXT NOT NULL PRIMARY KEY,
-                checksum TEXT NOT NULL,
                 applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
     }
 
     private func record(_ migration: StoreMigration, position: Int) throws {
-        try connection.execute("INSERT INTO __swiftstore_migrations (position, id, checksum) VALUES (?, ?, ?)",
-            values: [.integer(Int64(position)), .text(migration.id), .text(migration.checksum)])
+        try connection.execute("INSERT INTO __swiftstore_migrations (position, id) VALUES (?, ?)",
+                               values: [.integer(Int64(position)), .text(migration.id)])
     }
 }

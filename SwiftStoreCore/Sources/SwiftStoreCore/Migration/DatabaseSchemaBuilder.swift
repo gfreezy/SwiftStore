@@ -67,14 +67,15 @@ public struct DatabaseSchemaBuilder {
         let body = """
             UPDATE \(tableName) SET updated_at = \(SQLiteTimestampSQL.now)
             WHERE rowid = NEW.rowid;
-        """
+            """
         let sql = """
             CREATE TRIGGER IF NOT EXISTS \(name)
             AFTER UPDATE ON \(tableName)
             FOR EACH ROW
             WHEN NEW.updated_at = OLD.updated_at
             BEGIN
-                \(body)
+                UPDATE \(tableName) SET updated_at = \(SQLiteTimestampSQL.now)
+                WHERE rowid = NEW.rowid;
             END
             """
 

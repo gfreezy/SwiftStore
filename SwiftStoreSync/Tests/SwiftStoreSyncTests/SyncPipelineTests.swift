@@ -60,7 +60,7 @@ final class SyncFixture {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         connection = try SQLiteConnection(path: directory.appendingPathComponent("main.sqlite").path)
         let snapshot = SchemaSnapshot(entities: [SyncNote.self])
-        let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+        let initial = StoreMigration(id: "001_fixture", target: snapshot) { db in
             for sql in snapshot.creationStatements { try db.execute(sql) }
         }
         try VersionedMigrator(connection: connection, migrations: [initial]).migrate()

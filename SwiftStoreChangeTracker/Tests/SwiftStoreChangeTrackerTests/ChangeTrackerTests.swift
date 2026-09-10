@@ -40,7 +40,7 @@ func migrateTestEntities(_ entities: [any EntityProtocol.Type], on connection: S
         TableSchema(name: table.name, columns: table.columns, indexes: table.indexes,
                     triggers: includeFixtureTriggers ? table.triggers : [], foreignKeys: table.foreignKeys)
     })
-    let initial = StoreMigration(id: "001_fixture", checksum: "fixture", target: snapshot) { db in
+    let initial = StoreMigration(id: "001_fixture", target: snapshot) { db in
         for sql in snapshot.creationStatements { try db.execute(sql) }
     }
     try VersionedMigrator(connection: connection, migrations: [initial]).migrate()

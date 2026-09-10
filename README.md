@@ -240,7 +240,7 @@ migration generation and checks, including backfilling existing records.
 
 See the [migration guide](docs/versioned-migrations.md) for CLI installation, Xcode setup,
 manual migrations and adopting existing databases, and [schema comparison rules](docs/schema-canonicalization.md)
-for snapshot defaults and checksums.
+for snapshot defaults and JSON formatting.
 
 ## Connection Pool
 

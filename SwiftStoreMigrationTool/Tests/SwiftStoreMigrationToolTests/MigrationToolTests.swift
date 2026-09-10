@@ -62,7 +62,47 @@ struct MigrationToolTests {
         #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("StoreMigrations.swift").path))
     }
 
-    @Test("Data-only migration needs no snapshot; manual edits automatically update checksum")
+    @Test("Generated catalogs embed only deltas as readable raw JSON and omit data-only payloads")
+    func catalogDeltas() throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let v1 = SchemaSnapshot(tables: [people, posts])
+        let v2 = SchemaSnapshot(tables: [changedPeople, posts])
+        try MigrationTool.generate(id: "001_initial", target: v1, directory: dir)
+        try MigrationTool.generate(id: "002_name", target: v2, directory: dir)
+        try MigrationTool.generate(id: "003_data", target: v2, directory: dir)
+        let final = SchemaSnapshot(tables: [changedPeople])
+        try MigrationTool.generate(id: "004_drop", target: final, directory: dir)
+        let source = String(decoding: try MigrationTool.check(target: final, directory: dir), as: UTF8.self)
+        #expect(source.contains("var catalog = StoreMigrationCatalog()"))
+        #expect(source.components(separatedBy: "try catalog.append").count - 1 == 4)
+        #expect(source.components(separatedBy: "SchemaDelta.decode").count - 1 == 3)
+        #expect(source.components(separatedBy: "\"name\": \"posts\"").count - 1 == 1)
+        #expect(source.components(separatedBy: "\"name\": \"people\"").count - 1 == 2)
+        #expect(source.contains("\"droppedTables\": [\n                    \"posts\""))
+        #expect(!source.contains("SchemaSnapshot.decode"))
+        #expect(!source.contains("checksum"))
+        #expect(!source.contains(#"\"name\""#))
+        #expect(source.contains("return catalog.migrations"))
+        let json = try String(contentsOf: dir.appendingPathComponent("002_name.schema.json"), encoding: .utf8)
+        #expect(json.contains("\"indexes\": []"))
+        #expect(!json.contains("\" :"))
+    }
+
+    @Test("Raw JSON delimiters cannot be closed or interpolated by SQL strings")
+    func catalogEscaping() throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let target = SchemaSnapshot(tables: [TableSchema(name: "sample", columns: [
+            ColumnSchema(name: "value", type: "TEXT", defaultValue: ##"'"# \#(unsafe)  中文 []'"##)
+        ])])
+        try MigrationTool.generate(id: "001_initial", target: target, directory: dir)
+        let source = String(decoding: try MigrationTool.check(target: target, directory: dir), as: UTF8.self)
+        #expect(source.contains("Data(##\"\"\""))
+        #expect(source.contains("\"\"\"##.utf8)"))
+    }
+
+    @Test("Data-only migration needs no snapshot or checksum")
     func manualDataOnly() throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -76,8 +116,8 @@ struct MigrationToolTests {
         try (original + "\n// Manual data transformation\n").write(to: file, atomically: true, encoding: .utf8)
         _ = try MigrationTool.check(target: target, directory: dir)
         let after = try MigrationTool.readHistory(directory: dir)
-        #expect(before[0].checksum == after[0].checksum)
-        #expect(before[1].checksum != after[1].checksum)
+        #expect(before[0].target == after[0].target)
+        #expect(before[1].target == after[1].target)
     }
 
     @Test("Deletion is explicit and a rename preserves unrelated tables")

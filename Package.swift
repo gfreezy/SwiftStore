@@ -6,7 +6,7 @@ import CompilerPluginSupport
 ///
 /// Usage:
 /// ```swift
-/// .package(url: "https://github.com/gfreezy/SwiftStore", from: "2.0.1")
+/// .package(url: "https://github.com/gfreezy/SwiftStore", from: "3.0.0")
 /// ```
 ///
 /// Products:
@@ -201,7 +201,7 @@ let package = Package(
                 "SwiftStoreServer",
             ],
             path: "SwiftStoreServer/Sources/SwiftStoreServerDemo",
-            exclude: ["Migrations/001_initial.schema.json"],
+            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_trigger_format.schema.json"],
             plugins: ["SwiftStoreMigrationCheck"]
         ),
 
@@ -220,7 +220,7 @@ let package = Package(
             name: "MigrationExample",
             dependencies: ["SwiftStoreCore"],
             path: "Examples/VersionedMigrations",
-            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_display_name.schema.json", "Migrations/003_update_timestamps.schema.json"],
+            exclude: ["Migrations/001_initial.schema.json", "Migrations/002_display_name.schema.json", "Migrations/003_update_timestamps.schema.json", "Migrations/004_trigger_format.schema.json"],
             plugins: ["SwiftStoreMigrationCheck"]
         ),
 

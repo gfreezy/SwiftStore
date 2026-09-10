@@ -30,7 +30,7 @@ private actor RecordingSyncTransport: SyncTransport {
 struct ConnectionSyncTests {
     private func history() -> [StoreMigration] {
         let schema = SchemaSnapshot(entities: [ConnectionSyncNote.self])
-        return [StoreMigration(id: "001_initial", checksum: "initial", target: schema) { db in
+        return [StoreMigration(id: "001_initial", target: schema) { db in
             for sql in schema.creationStatements { try db.execute(sql) }
         }]
     }

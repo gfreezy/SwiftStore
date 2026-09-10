@@ -7,7 +7,7 @@ import SwiftStoreConnectionQueue
 struct VersionedConnectionTests {
     private func history() -> [StoreMigration] {
         let schema = SchemaSnapshot(entities: [ConnectionSyncNote.self])
-        return [StoreMigration(id: "001", checksum: "initial", target: schema) { db in
+        return [StoreMigration(id: "001", target: schema) { db in
             for sql in schema.creationStatements { try db.execute(sql) }
         }]
     }
@@ -50,11 +50,11 @@ struct VersionedConnectionTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let schema = history()[0].target
         let migrations = [
-            StoreMigration(id: "001", checksum: "initial", target: schema) { db in
+            StoreMigration(id: "001", target: schema) { db in
                 for sql in schema.creationStatements { try db.execute(sql) }
                 try db.insert(ConnectionSyncNote(title: "fresh"))
             },
-            StoreMigration(id: "002", checksum: "update", target: schema) { db in
+            StoreMigration(id: "002", target: schema) { db in
                 try db.execute("UPDATE connection_sync_note SET title = title || '!'")
             }
         ]
@@ -91,13 +91,13 @@ struct VersionedConnectionTests {
             TableSchema(name: "legacy_metadata", columns: [ColumnSchema(name: "value", type: "TEXT")])
         ])
         let migrations = [
-            StoreMigration(id: "001", checksum: "initial", target: initial) { db in
+            StoreMigration(id: "001", target: initial) { db in
                 for sql in initial.creationStatements { try db.execute(sql) }
             },
-            StoreMigration(id: "002", checksum: "remove_metadata", target: schema) { db in
+            StoreMigration(id: "002", target: schema) { db in
                 try db.execute("DROP TABLE legacy_metadata")
             },
-            StoreMigration(id: "003", checksum: "update", target: schema) { db in
+            StoreMigration(id: "003", target: schema) { db in
                 try db.execute("UPDATE connection_sync_note SET title = title || '!'")
             }
         ]
@@ -138,7 +138,7 @@ struct VersionedConnectionTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
                                             entities: [ConnectionSyncNote.self])
-        let bad = StoreMigration(id: "bad", checksum: "bad", target: history()[0].target) { db in
+        let bad = StoreMigration(id: "bad", target: history()[0].target) { db in
             try db.execute("INVALID SQL")
         }
         await #expect(throws: (any Error).self) { try await manager.migrate(migrations: [bad]) }

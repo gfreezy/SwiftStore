@@ -17,10 +17,10 @@ struct TimestampDefaultMigrationTests {
         let initial = snapshot(defaultValue: "(strftime('%s', 'now'))")
         let target = snapshot(defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
         return [
-            StoreMigration(id: "001_initial", checksum: "initial", target: initial) { db in
+            StoreMigration(id: "001_initial", target: initial) { db in
                 for sql in initial.creationStatements { try db.execute(sql) }
             },
-            StoreMigration(id: "002_defaults", checksum: "defaults", target: target) { db in
+            StoreMigration(id: "002_defaults", target: target) { db in
                 // Historical SQL deliberately rebuilds the table rather than editing sqlite_master.
                 try db.execute("""
                     CREATE TABLE replacement (

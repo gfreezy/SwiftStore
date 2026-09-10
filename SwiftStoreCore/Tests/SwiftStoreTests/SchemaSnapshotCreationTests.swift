@@ -23,7 +23,7 @@ struct SchemaSnapshotCreationTests {
                 foreignKeys: [ForeignKeySchema(column: "parent_id", referencesTable: "parent", referencesColumn: "id")])
         ])
         let connection = try SQLiteConnection(path: ":memory:")
-        let initial = StoreMigration(id: "001_initial", checksum: "initial", target: snapshot) { db in
+        let initial = StoreMigration(id: "001_initial", target: snapshot) { db in
             for sql in snapshot.creationStatements { try db.execute(sql) }
         }
         try VersionedMigrator(connection: connection, migrations: [initial]).migrate()

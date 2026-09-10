@@ -14,7 +14,7 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
 
     public static let empty = SchemaSnapshot(tables: [])
 
-    /// Canonical typed representation used before comparing or hashing schemas.
+    /// Canonical typed representation used before encoding or comparing schemas.
     /// Decoders resolve field-specific defaults (including absent/null/empty collections).
     /// Only table order is normalized; column/index-column order and SQL expressions are semantic.
     public func canonicalized() throws -> SchemaSnapshot {
@@ -28,10 +28,7 @@ public struct SchemaSnapshot: Codable, Sendable, Equatable {
     }
 
     public func json() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-        // Hash and comparison inputs share one representation, including explicit empty arrays.
-        return try encoder.encode(canonicalized())
+        try SchemaJSON.encode(canonicalized())
     }
 
     public static func decode(_ data: Data) throws -> SchemaSnapshot {

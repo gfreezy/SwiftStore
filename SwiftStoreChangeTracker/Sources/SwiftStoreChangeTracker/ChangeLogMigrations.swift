@@ -82,7 +82,7 @@ enum ChangeLogMigrations {
             ]
         }
         """#.utf8))
-        return [StoreMigration(id: "001_initial", checksum: "18ed5a5084b4aa763083849136f8927cc2e00fb4dc9b96b50965a55b92037842",
+        return [StoreMigration(id: "001_initial",
             target: target, up: Migration_001.up)]
     }
 }

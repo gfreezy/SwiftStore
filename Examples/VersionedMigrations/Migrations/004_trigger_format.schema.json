@@ -1,0 +1,51 @@
+{
+  "droppedTables": [],
+  "formatVersion": 1,
+  "tables": [
+    {
+      "columns": [
+        {
+          "isNullable": false,
+          "isPrimaryKey": true,
+          "name": "id",
+          "type": "BLOB"
+        },
+        {
+          "isNullable": true,
+          "isPrimaryKey": false,
+          "name": "display_name",
+          "type": "TEXT"
+        },
+        {
+          "defaultValue": "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable": false,
+          "isPrimaryKey": false,
+          "name": "created_at",
+          "type": "REAL"
+        },
+        {
+          "defaultValue": "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))",
+          "isNullable": false,
+          "isPrimaryKey": false,
+          "name": "updated_at",
+          "type": "REAL"
+        }
+      ],
+      "foreignKeys": [],
+      "fullTextIndexes": [],
+      "indexes": [],
+      "name": "person",
+      "sql": "",
+      "triggers": [
+        {
+          "body": "UPDATE person SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\nWHERE rowid = NEW.rowid;",
+          "condition": "NEW.updated_at = OLD.updated_at",
+          "event": "UPDATE",
+          "name": "__swiftstore_update_person",
+          "sql": "CREATE TRIGGER IF NOT EXISTS __swiftstore_update_person\nAFTER UPDATE ON person\nFOR EACH ROW\nWHEN NEW.updated_at = OLD.updated_at\nBEGIN\n    UPDATE person SET updated_at = (COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))\n    WHERE rowid = NEW.rowid;\nEND",
+          "timing": "AFTER"
+        }
+      ]
+    }
+  ]
+}

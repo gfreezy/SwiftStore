@@ -125,7 +125,7 @@ Each listed table replaces its previous definition **in full**, including its co
 
 For columns, omitted `isNullable` and `isPrimaryKey` default to `false`; omitted `defaultValue` and `generatedAs` mean no default/generated expression. For tables, omitted `indexes`, `triggers`, `foreignKeys` and `fullTextIndexes` default to empty arrays.
 Column order is part of the schema. See [canonical comparison rules](schema-canonicalization.md)
-for null handling and checksum encoding.
+for null handling and readable JSON encoding.
 
 Explicitly mark table deletion:
 
@@ -143,7 +143,7 @@ A pure data migration, such as `003_clean_data.swift`, does not need a JSON file
 2. Uses the **same Entity macro expansion implementation** as the compiler to derive columns, defaults, generated index columns, ordinary indexes and FTS5 declarations.
 3. Sorts migration IDs by numeric prefix and merges their table deltas into each historical target schema.
 4. Compares the canonical latest schema with the current Entity schema, including removed tables and FTS changes.
-5. Generates the ordered registration code, embedded full target schemas, and source checksums into the plugin work directory.
+5. Generates ordered registration code containing the initial table definitions and subsequent deltas as readable raw multiline JSON literals into the plugin work directory. No per-version full snapshots or checksums are embedded.
 
 The build does not write to the project's source directory or run migration bodies. Missing or incorrectly declared `Migration_NUMBER.up` methods are caught when the generated catalog is compiled. Changed source files or snapshots invalidate the catalog build output.
 
@@ -166,13 +166,29 @@ For direct connections:
 try VersionedMigrator(connection: db, migrations: StoreMigrations.all()).migrate()
 ```
 
-The generated registry reconstructs complete snapshots for the runner; full snapshots are not duplicated in the project's JSON files. The runner verifies applied history and schema, executes pending steps in order, checks the resulting schema/foreign keys, and records successful IDs and checksums atomically. A failure rolls back the entire pending batch. ConnectionManager releases its read/write setup gate and starts tracking only after success.
+`StoreMigrations.all()` creates a `StoreMigrationCatalog` and appends each frozen `SchemaDelta`
+in migration order at runtime. Each append merges the delta into the preceding target and retains
+that step's complete `SchemaSnapshot` for verification. The initial delta starts from an empty
+schema; listed tables replace their entire definition, unlisted tables inherit, and `droppedTables`
+explicitly removes tables. Data-only steps omit the delta and inherit the preceding target. Full
+snapshots are not duplicated in generated source or stored in separate resources.
+
+The runner verifies the ordered prefix of applied IDs and the actual schema, executes pending steps
+in order, checks each resulting schema/foreign keys, and records successful IDs atomically. A failure rolls back the entire pending batch. ConnectionManager releases its read/write setup gate and starts tracking only after success.
 
 A fresh database replays all steps, including data-only migrations. Cross-version upgrades execute every pending step. Unchanged tables are not rebuilt by the incremental format. SQL bodies can still explicitly change any table when needed.
 
-Keep business transformations within each migration's own file and use historical SQL, not current Entity types. The checksum covers the source file and reconstructed target schema; it cannot freeze external helper implementations. Do not commit, roll back, perform network actions, or call `manager.write` from a body.
+Keep business transformations within each migration's own file and use historical SQL, not current Entity types. Do not commit, roll back, perform network actions, or call `manager.write` from a body.
 
-Published migration files must remain immutable. Editing them changes the generated checksum, so a database that already executed them rejects the history. Add a new migration for corrections. The build itself cannot know which versions users have already installed.
+Keep published migration files immutable and add new migrations for corrections. There are no
+checksums: source-only changes to an already applied migration are not detected or replayed.
+Removed, reordered or renamed applied IDs are rejected, and schema drift is still rejected.
+The build itself cannot know which versions users have already installed.
+
+Starting with 3.0.0, `StoreMigration` takes `id`, `target` and `up`; remove the old `checksum` argument from manual
+registrations. New history tables contain `position`, `id` and `applied_at`. This is a breaking
+change with no compatibility path for old history tables that require a checksum column or old
+timestamp-trigger metadata layouts.
 
 Runtime verification checks managed tables, defaults, indexes, triggers and FTS auxiliary objects.
 Managed objects must match their snapshots; unrelated tables are permitted. Some structurally different
@@ -235,6 +251,6 @@ swift test
 python3 IntegrationTests/VersionedMigrations/test_external_package.py
 ```
 
-The example uses the public plugin directly, with no schema tool target. The external-package test verifies consumer dependency setup, a rejected schema change, table-level deltas, a manually completed rename, a data-only step, preserved data in unchanged tables, repeat startup and rejection of modified applied history.
+The example uses the public plugin directly, with no schema tool target. The external-package test verifies consumer dependency setup, a rejected schema change, table-level deltas, a manually completed rename, a data-only step, preserved data in unchanged tables, repeat startup, acceptance of source-only edits, and rejection of renamed applied IDs.
 
 CLI packaging is defined in the [release workflow](../.github/workflows/release-cli.yml).

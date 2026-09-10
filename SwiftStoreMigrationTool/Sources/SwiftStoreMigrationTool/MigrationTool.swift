@@ -1,53 +1,10 @@
-import CryptoKit
 import Foundation
 import SwiftStoreCore
-
-/// One migration's table-level changes. Missing tables inherit their previous definition.
-public struct SchemaDelta: Codable, Sendable, Equatable {
-    public let formatVersion: Int
-    public let tables: [TableSchema]
-    public let droppedTables: [String]
-
-    public init(tables: [TableSchema] = [], droppedTables: [String] = []) {
-        self.formatVersion = 1
-        self.tables = tables.sorted { $0.name < $1.name }
-        self.droppedTables = droppedTables.sorted()
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        formatVersion = try values.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
-        tables = try values.decodeIfPresent([TableSchema].self, forKey: .tables) ?? []
-        droppedTables = try values.decodeIfPresent([String].self, forKey: .droppedTables) ?? []
-    }
-
-    public static func between(_ old: SchemaSnapshot, _ new: SchemaSnapshot) -> SchemaDelta {
-        SchemaDelta(tables: new.tables.filter { !old.tables.contains($0) },
-                    droppedTables: old.tables.map(\.name).filter { name in !new.tables.contains { $0.name == name } })
-    }
-
-    public func applying(to previous: SchemaSnapshot) throws -> SchemaSnapshot {
-        try SchemaSnapshot(tables: tables).validate()
-        guard formatVersion == 1, Set(droppedTables).count == droppedTables.count,
-              Set(droppedTables).isDisjoint(with: tables.map(\.name)) else {
-            throw VersionedMigrationError.invalidHistory("Invalid schema delta: unsupported format, duplicate deletion, or replacement/deletion overlap")
-        }
-        var merged = Dictionary(uniqueKeysWithValues: previous.tables.map { ($0.name, $0) })
-        for name in droppedTables {
-            guard merged.removeValue(forKey: name) != nil else {
-                throw VersionedMigrationError.invalidHistory("Cannot drop unknown table \(name)")
-            }
-        }
-        for table in tables { merged[table.name] = table }
-        let result = SchemaSnapshot(tables: Array(merged.values))
-        return try result.canonicalized()
-    }
-}
 
 public struct MigrationFile {
     public let id: String
     public let target: SchemaSnapshot
-    public let checksum: String
+    public let delta: SchemaDelta
     public var symbol: String { "Migration_" + id.prefix { $0 != "_" } }
 }
 
@@ -90,7 +47,7 @@ public enum MigrationTool {
         guard !fm.fileExists(atPath: swift.path), !fm.fileExists(atPath: json.path) else { throw failure("Refusing to overwrite migration \(id)") }
         try Data(source.utf8).write(to: swift, options: .withoutOverwriting)
         if !delta.tables.isEmpty || !delta.droppedTables.isEmpty {
-            do { try encode(delta).write(to: json, options: .withoutOverwriting) }
+            do { try delta.json().write(to: json, options: .withoutOverwriting) }
             catch { try? fm.removeItem(at: swift); throw error }
         }
     }
@@ -120,14 +77,7 @@ public enum MigrationTool {
             let delta = FileManager.default.fileExists(atPath: json.path)
                 ? try JSONDecoder().decode(SchemaDelta.self, from: Data(contentsOf: json)) : SchemaDelta()
             target = try delta.applying(to: target)
-            let source = try Data(contentsOf: directory.appendingPathComponent(id + ".swift"))
-            var bytes = Data(id.utf8)
-            bytes.append(0)
-            bytes.append(try target.json())
-            bytes.append(0)
-            bytes.append(source)
-            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-            result.append(MigrationFile(id: id, target: target, checksum: hash))
+            result.append(MigrationFile(id: id, target: target, delta: delta))
         }
         return result
     }
@@ -142,26 +92,31 @@ public enum MigrationTool {
             throw failure("Entity schema changed. Add a migration. Changed tables: \(delta.tables.map(\.name)); removed tables: \(delta.droppedTables)")
         }
         var lines = ["// Generated during build. Do not commit this file.", "import Foundation", "import SwiftStoreCore", "",
-                     "public enum StoreMigrations {", "    public static func all() throws -> [StoreMigration] {", "        ["]
+                     "public enum StoreMigrations {", "    public static func all() throws -> [StoreMigration] {",
+                     "        var catalog = StoreMigrationCatalog()"]
         for entry in history {
-            let json = String(decoding: try entry.target.json(), as: UTF8.self)
-            lines += ["            StoreMigration(id: \(String(reflecting: entry.id)), checksum: \(String(reflecting: entry.checksum)),",
-                      "                target: try SchemaSnapshot.decode(Data(\(String(reflecting: json)).utf8)),",
-                      "                up: \(entry.symbol).up),"]
+            lines.append("        try catalog.append(id: \(String(reflecting: entry.id)),")
+            if entry.delta.tables.isEmpty && entry.delta.droppedTables.isEmpty {
+                lines.append("            up: \(entry.symbol).up)")
+            } else {
+                let json = String(decoding: try entry.delta.json(), as: UTF8.self)
+                // Raw multiline literals keep JSON readable and preserve SQL escapes. Choose a
+                // delimiter that cannot terminate the literal or start Swift interpolation.
+                var hashes = "#"
+                while json.contains("\"" + hashes) || json.contains("\\" + hashes) { hashes += "#" }
+                lines.append("            delta: try SchemaDelta.decode(Data(\(hashes)\"\"\"")
+                lines += json.components(separatedBy: "\n").map { "                " + $0 }
+                lines.append("                \"\"\"\(hashes).utf8)),")
+                lines.append("            up: \(entry.symbol).up)")
+            }
         }
-        lines += ["        ]", "    }", "}", ""]
+        lines += ["        return catalog.migrations", "    }", "}", ""]
         return Data(lines.joined(separator: "\n").utf8)
     }
 
     public static func check(root: URL, sources: [URL]? = nil, output: URL? = nil) throws {
         let data = try check(target: currentSchema(at: root, sources: sources), directory: root.appendingPathComponent("Migrations"))
         if let output { try data.write(to: output, options: .atomic) }
-    }
-
-    private static func encode<T: Encodable>(_ value: T) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-        return try encoder.encode(value)
     }
 
     private static func migrationNumber(_ id: String) throws -> String {

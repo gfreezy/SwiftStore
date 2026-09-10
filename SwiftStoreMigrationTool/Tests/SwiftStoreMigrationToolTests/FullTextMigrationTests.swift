@@ -46,7 +46,7 @@ struct FullTextMigrationTests {
         let visitor = ExecuteSQLVisitor()
         visitor.walk(Parser.parse(source: source))
         let statements = visitor.statements
-        return StoreMigration(id: id, checksum: id, target: new) { db in
+        return StoreMigration(id: id, target: new) { db in
             for sql in statements { try db.execute(sql) }
         }
     }
@@ -124,7 +124,7 @@ struct FullTextMigrationTests {
     func rollback() throws {
         let one = try migration("001", from: .empty, to: original)
         let target = indexed
-        let failing = StoreMigration(id: "002", checksum: "002", target: target) { db in
+        let failing = StoreMigration(id: "002", target: target) { db in
             for sql in FullTextSchema(table: target.tables[0]).creationStatements { try db.execute(sql) }
             try db.execute("INVALID SQL")
         }
@@ -175,7 +175,7 @@ struct FullTextMigrationTests {
         let one = try migration("001", from: .empty, to: indexed)
         let db = try SQLiteConnection(path: ":memory:")
         try VersionedMigrator(connection: db, migrations: [one]).migrate()
-        let noCleanup = StoreMigration(id: "002", checksum: "002", target: original) { db in
+        let noCleanup = StoreMigration(id: "002", target: original) { db in
             for name in FullTextSchema(table: indexed.tables[0]).triggerNames {
                 try db.execute("DROP TRIGGER \"\(name)\"")
             }
