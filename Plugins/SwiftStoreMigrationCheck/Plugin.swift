@@ -4,8 +4,8 @@ import PackagePlugin
 @main
 struct SwiftStoreMigrationCheck: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
-        guard let module = target as? SourceModuleTarget else { return [] }
-        return try commands(root: URL(fileURLWithPath: target.directory.string), targetName: target.name, sources: module.sourceFiles.filter { $0.type == .source }.map(\.url),
+        guard let module = target as? SwiftSourceModuleTarget else { return [] }
+        return try commands(root: module.directoryURL, targetName: module.name, sources: module.sourceFiles.filter { $0.type == .source }.map(\.url),
             work: context.pluginWorkDirectoryURL, executable: context.tool(named: "SwiftStoreMigrationCLI").url)
     }
 
