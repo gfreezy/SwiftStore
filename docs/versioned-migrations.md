@@ -39,6 +39,13 @@ In the default single-database layout, the plugin reads the target's Swift sourc
 
 For an Xcode project, add the package, select the target, and add **SwiftStoreMigrationCheck** under **Build Phases → Run Build Tool Plug-ins**. Put `Migrations` beside the `.xcodeproj`, and add its Swift files to that target's Compile Sources. Add JSON snapshots to Copy Bundle Resources; preserve separate resource subdirectories for multiple databases. The default bundle is `.main`. The plugin scans the selected target's input Swift files, not every file in the project.
 
+If Xcode reports `sandbox-exec: execvp()` with a missing `SwiftStoreMigrationCLI`, the
+host tool has not been built, so migration checking has not started. Releases through
+3.0.1 share one executable target between two products, which can leave the tool out
+of Xcode's build dependencies. Upgrade to 3.0.2 or later: each product has its own
+executable target and shares the command implementation. If staying on an affected
+version, omit the optional plugin and run `swiftstore migration check` before building.
+
 Without `swiftstore.json`, each plugin-enabled target uses one database, one `Migrations` directory,
 and the `StoreMigrations.all()` entry point. In a configured project, omitting `namespace` or
 setting it to `"default"` preserves exactly these names; only one default namespace is allowed per target. For multiple databases in the same target, configure

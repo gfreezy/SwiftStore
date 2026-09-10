@@ -22,8 +22,9 @@ let package = Package(
         .watchOS(.v10)
     ],
     products: [
-        .executable(name: "swiftstore", targets: ["SwiftStoreMigrationCLI"]),
-        // SwiftPM resolves source-built plugin tools by their target/product name.
+        .executable(name: "swiftstore", targets: ["SwiftStoreStandaloneCLI"]),
+        // Keep the plugin tool in its own product with the same target name. Sharing
+        // its target with the standalone product can omit Xcode's host-tool build edge.
         .executable(name: "SwiftStoreMigrationCLI", targets: ["SwiftStoreMigrationCLI"]),
         .plugin(name: "SwiftStoreMigrationCheck", targets: ["SwiftStoreMigrationCheck"]),
         .library(name: "SwiftStoreSyncHTTPTransport", targets: ["SwiftStoreSyncHTTPTransport"]),
@@ -205,6 +206,11 @@ let package = Package(
             plugins: ["SwiftStoreMigrationCheck"]
         ),
 
+        .executableTarget(
+            name: "SwiftStoreStandaloneCLI",
+            dependencies: ["SwiftStoreMigrationTool"],
+            path: "SwiftStoreMigrationTool/Sources/SwiftStoreStandaloneCLI"
+        ),
         .executableTarget(
             name: "SwiftStoreMigrationCLI",
             dependencies: ["SwiftStoreMigrationTool"],
