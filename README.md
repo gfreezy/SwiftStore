@@ -61,11 +61,12 @@ Table and column names default to snake_case. Override the table with
 ### Database Operations
 
 [Enable the migration plugin and generate the initial migration](#schema-migrations) first.
-The build generates `StoreMigrations.all()` for the target containing your models and migrations.
+The CLI writes `StoreMigrations.swift` alongside your migrations. Commit and compile it like ordinary Swift source; the build plugin only checks.
+Bundle the `.schema.json` files as resources: SwiftPM callers pass `.module`, while Xcode apps can use `.main`. See [resource setup](docs/versioned-migrations.md) and [multiple databases](docs/multiple-databases.md#bundle-schema-resources).
 
 ```swift
 let connection = try SQLiteConnection(path: "app.sqlite")
-try VersionedMigrator(connection: connection, migrations: StoreMigrations.all()).migrate()
+try VersionedMigrator(connection: connection, migrations: StoreMigrations.all(bundle: .module)).migrate()
 
 var user = User(name: "Alice", email: "alice@example.com", age: 25)
 try user.insert(connection)
@@ -238,6 +239,9 @@ Apply migrations before accessing the database. Tables containing `updated_at` r
 update trigger; explicitly changed timestamps are preserved. FTS declarations participate in
 migration generation and checks, including backfilling existing records.
 
+For multiple databases in the same target, use [database groups in swiftstore.json](docs/multiple-databases.md).
+Each database has independent Entity sources, migrations and generated Swift names.
+
 See the [migration guide](docs/versioned-migrations.md) for CLI installation, Xcode setup,
 manual migrations and adopting existing databases, and [schema comparison rules](docs/schema-canonicalization.md)
 for snapshot defaults and JSON formatting.
@@ -251,7 +255,7 @@ Writes are serialized and transactional; reads use a connection pool.
 import SwiftStore
 
 let manager = try ConnectionManager(path: "app.sqlite", entities: [User.self])
-try await manager.migrate(migrations: try StoreMigrations.all())
+try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
 
 try await manager.write { connection in
     try User(name: "Bob", email: "bob@example.com", age: 30).insert(connection)
@@ -285,7 +289,7 @@ let manager = try ConnectionManager(
     entities: [User.self],
     syncConfig: SyncOptions(deviceId: deviceId, transport: transport, schemaVersion: 1)
 )
-try await manager.migrate(migrations: try StoreMigrations.all())
+try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
 try await manager.sync()
 ```
 

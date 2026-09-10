@@ -35,7 +35,7 @@ public enum ProjectDiscovery {
         throw failure("Cannot find a migration project from \(start.path). Run inside an Xcode/SwiftPM project or specify --target <directory>.")
     }
 
-    private static func packageTarget(manifest: URL, start: URL) throws -> URL {
+    private static func packageTarget(manifest: URL, start: URL, targetName: String? = nil) throws -> URL {
         let root = manifest.deletingLastPathComponent()
         let syntax = Parser.parse(source: try String(contentsOf: manifest, encoding: .utf8))
         let visitor = PackageTargetsVisitor()
@@ -43,7 +43,7 @@ public enum ProjectDiscovery {
         guard !syntax.hasError, let expressions = visitor.targets else {
             throw failure("Cannot infer targets from \(manifest.path). Specify --target <source-directory> for a computed Package.swift manifest.")
         }
-        var directories: [(url: URL, plugin: Bool)] = []
+        var directories: [(name: String, url: URL, plugin: Bool)] = []
         for element in expressions {
             guard let call = element.expression.as(FunctionCallExprSyntax.self),
                   let kind = call.calledExpression.as(MemberAccessExprSyntax.self)?.declName.baseName.text else {
@@ -64,7 +64,10 @@ public enum ProjectDiscovery {
             guard isDirectory(url) else { continue }
             let plugin = call.arguments.first { $0.label?.text == "plugins" }?
                 .expression.trimmedDescription.contains("SwiftStoreMigrationCheck") ?? false
-            directories.append((url, plugin))
+            directories.append((name, url, plugin))
+        }
+        if let targetName {
+            return try unique(directories.filter { $0.name == targetName }.map(\.url))
         }
         // Invocation from within a target is an explicit enough signal, even in a multi-target package.
         let containing = directories.filter { start.path == $0.url.path || start.path.hasPrefix($0.url.path + "/") }
@@ -82,6 +85,14 @@ public enum ProjectDiscovery {
             }
         }
         return try unique(candidates)
+    }
+
+    /// Resolve a named SwiftPM target without executing its manifest. Xcode source membership
+    /// is supplied by the build plugin through --sources-file.
+    public static func sourceDirectory(targetName: String, projectRoot: URL) throws -> URL? {
+        let manifest = projectRoot.appendingPathComponent("Package.swift")
+        guard FileManager.default.fileExists(atPath: manifest.path) else { return nil }
+        return try packageTarget(manifest: manifest, start: projectRoot, targetName: targetName)
     }
 
     private static func unique(_ paths: [URL]) throws -> URL {

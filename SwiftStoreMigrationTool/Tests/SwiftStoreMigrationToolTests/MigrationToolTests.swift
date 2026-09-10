@@ -59,10 +59,10 @@ struct MigrationToolTests {
         #expect(try MigrationTool.readHistory(directory: dir).last?.target == v2)
         let catalog = try MigrationTool.check(target: v2, directory: dir)
         #expect(String(decoding: catalog, as: UTF8.self).contains("Migration_002.up"))
-        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("StoreMigrations.swift").path))
+        #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("StoreMigrations.swift").path))
     }
 
-    @Test("Generated catalogs embed only deltas as readable raw JSON and omit data-only payloads")
+    @Test("Catalogs reference schema resources and omit data-only resource loads")
     func catalogDeltas() throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -76,10 +76,12 @@ struct MigrationToolTests {
         let source = String(decoding: try MigrationTool.check(target: final, directory: dir), as: UTF8.self)
         #expect(source.contains("var catalog = StoreMigrationCatalog()"))
         #expect(source.components(separatedBy: "try catalog.append").count - 1 == 4)
-        #expect(source.components(separatedBy: "SchemaDelta.decode").count - 1 == 3)
-        #expect(source.components(separatedBy: "\"name\": \"posts\"").count - 1 == 1)
-        #expect(source.components(separatedBy: "\"name\": \"people\"").count - 1 == 2)
-        #expect(source.contains("\"droppedTables\": [\n                    \"posts\""))
+        #expect(source.components(separatedBy: "SchemaDelta.load").count - 1 == 3)
+        #expect(source.contains("\"001_initial.schema.json\""))
+        #expect(source.contains("\"002_name.schema.json\""))
+        #expect(source.contains("\"004_drop.schema.json\""))
+        #expect(!source.contains("003_data.schema.json"))
+        #expect(!source.contains("\"tables\""))
         #expect(!source.contains("SchemaSnapshot.decode"))
         #expect(!source.contains("checksum"))
         #expect(!source.contains(#"\"name\""#))
@@ -89,7 +91,7 @@ struct MigrationToolTests {
         #expect(!json.contains("\" :"))
     }
 
-    @Test("Raw JSON delimiters cannot be closed or interpolated by SQL strings")
+    @Test("SQL literal contents stay in schema resources instead of generated catalog code")
     func catalogEscaping() throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -98,8 +100,11 @@ struct MigrationToolTests {
         ])])
         try MigrationTool.generate(id: "001_initial", target: target, directory: dir)
         let source = String(decoding: try MigrationTool.check(target: target, directory: dir), as: UTF8.self)
-        #expect(source.contains("Data(##\"\"\""))
-        #expect(source.contains("\"\"\"##.utf8)"))
+        #expect(!source.contains("unsafe"))
+        #expect(!source.contains("SchemaDelta.decode"))
+        #expect(source.contains("SchemaDelta.load"))
+        let delta = try SchemaDelta.load(from: dir.appendingPathComponent("001_initial.schema.json"))
+        #expect(delta.tables == target.tables)
     }
 
     @Test("Data-only migration needs no snapshot or checksum")

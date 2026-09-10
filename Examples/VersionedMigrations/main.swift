@@ -2,7 +2,7 @@ import Foundation
 import SwiftStoreCore
 
 // Fresh install: replay all committed steps.
-let history = try StoreMigrations.all()
+let history = try StoreMigrations.all(bundle: .module)
 let fresh = try SQLiteConnection(path: ":memory:")
 try VersionedMigrator(connection: fresh, migrations: history).migrate()
 try SchemaSnapshot(entities: [Person.self]).verify(on: fresh)

@@ -31,6 +31,32 @@ public struct SchemaDelta: Codable, Sendable, Equatable {
         try JSONDecoder().decode(Self.self, from: data)
     }
 
+    /// Load one frozen delta from an application or SwiftPM resource bundle. Lookup is exact:
+    /// a missing database subdirectory never falls back to another database's same-named file.
+    public static func load(_ filename: String, in bundle: Bundle = .main,
+                            subdirectory: String? = nil) throws -> SchemaDelta {
+        guard let root = bundle.resourceURL else {
+            throw VersionedMigrationError.invalidHistory("Bundle has no resource directory: \(bundle.bundlePath)")
+        }
+        guard !filename.isEmpty, !filename.contains("/"), filename != ".", filename != ".." else {
+            throw VersionedMigrationError.invalidHistory("Invalid schema resource filename: \(filename)")
+        }
+        var directory = root
+        if let subdirectory, !subdirectory.isEmpty {
+            guard !(subdirectory as NSString).isAbsolutePath,
+                  !subdirectory.split(separator: "/").contains("..") else {
+                throw VersionedMigrationError.invalidHistory("Schema resource subdirectory must stay inside the bundle")
+            }
+            directory = directory.appendingPathComponent(subdirectory, isDirectory: true)
+        }
+        return try load(from: directory.appendingPathComponent(filename))
+    }
+
+    public static func load(from file: URL) throws -> SchemaDelta {
+        do { return try decode(Data(contentsOf: file)) }
+        catch { throw VersionedMigrationError.invalidHistory("Cannot load schema resource \(file.path): \(error)") }
+    }
+
     public static func between(_ old: SchemaSnapshot, _ new: SchemaSnapshot) -> SchemaDelta {
         SchemaDelta(tables: new.tables.filter { !old.tables.contains($0) },
                     droppedTables: old.tables.map(\.name).filter { name in !new.tables.contains { $0.name == name } })

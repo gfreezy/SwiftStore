@@ -1,8 +1,10 @@
 # Versioned migrations
 
 Enable **SwiftStoreMigrationCheck** on the target containing your Entities and migration Swift files.
-The plugin checks the schema during builds and generates `StoreMigrations.all()`.
-The optional `swiftstore` CLI generates migration Swift files and incremental JSON snapshots.
+The plugin only checks schemas and registration metadata during builds; it does not generate Swift
+code or change application behavior. The `swiftstore` CLI writes migration Swift files, incremental
+JSON snapshots and an editable `StoreMigrations.swift` catalog. Commit the catalog and compile it
+with the migration files. Projects can also maintain these files manually.
 
 ## Enable once
 
@@ -12,6 +14,8 @@ For a SwiftPM target:
 .target(
     name: "MyApp",
     dependencies: [.product(name: "SwiftStore", package: "SwiftStore")],
+    resources: [.copy("Migrations/001_initial.schema.json"),
+                .copy("Migrations/002_display_name.schema.json")],
     plugins: [.plugin(name: "SwiftStoreMigrationCheck", package: "SwiftStore")]
 )
 ```
@@ -27,14 +31,25 @@ Sources/MyApp/
     ├── 001_initial.schema.json
     ├── 002_display_name.swift
     ├── 002_display_name.schema.json
-    └── 003_clean_data.swift
+    ├── 003_clean_data.swift
+    └── StoreMigrations.swift
 ```
 
-The plugin reads the target's Swift sources and `Migrations` directory. SwiftPM may report JSON snapshots as unhandled files; they are plugin inputs and are not needed as application resources. You may list the JSON files in the target's `exclude` argument to silence that warning; the plugin still reads them.
+In the default single-database layout, the plugin reads the target's Swift sources and `Migrations` directory. JSON files are also runtime resources: list each JSON file in SwiftPM `resources` as above and call `StoreMigrations.all(bundle: .module)`. Add a resource declaration when adding a schema file. Do not copy or process the entire mixed `Migrations` directory: SwiftPM would treat its Swift files as resources too. For automatic inclusion of new JSON files, use a separate `schemas` directory and copy that directory as described in the [multiple-database guide](multiple-databases.md#bundle-schema-resources).
 
-For an Xcode project, add the package, select the target, and add **SwiftStoreMigrationCheck** under **Build Phases → Run Build Tool Plug-ins**. Put `Migrations` beside the `.xcodeproj`, and add its Swift files to that target's Compile Sources. JSON snapshots do not need target membership or copying into the application. The plugin scans the selected target's input Swift files, not every file in the project.
+For an Xcode project, add the package, select the target, and add **SwiftStoreMigrationCheck** under **Build Phases → Run Build Tool Plug-ins**. Put `Migrations` beside the `.xcodeproj`, and add its Swift files to that target's Compile Sources. Add JSON snapshots to Copy Bundle Resources; preserve separate resource subdirectories for multiple databases. The default bundle is `.main`. The plugin scans the selected target's input Swift files, not every file in the project.
 
-Use one schema/history per plugin-enabled target. Entities in another module are not discovered through imports; put the plugin, Entities, and migration declarations together in their owning module. If multiple Xcode targets use the same project-root history, they must have the same Entity schema and compile the same migration declarations.
+Without `swiftstore.json`, each plugin-enabled target uses one database, one `Migrations` directory,
+and the `StoreMigrations.all()` entry point. In a configured project, omitting `namespace` or
+setting it to `"default"` preserves exactly these names; only one default namespace is allowed per target. For multiple databases in the same target, configure
+separate Entity sources, migration directories and Swift namespaces in
+[swiftstore.json](multiple-databases.md). `migration check` defaults to checking **all configured
+databases**, while the build plugin checks all databases belonging to its current target.
+
+Entities in another module are not discovered through imports; put the plugin, Entities, and
+migration declarations together in their owning module. In the unconfigured Xcode layout,
+targets sharing the project-root history must have the same Entity schema and compile the same
+migration declarations.
 
 ## Generate with the optional tool
 
@@ -62,7 +77,9 @@ After changing an Entity:
 swiftstore migration add 002_display_name
 ```
 
-Without `--target`, the CLI walks up from the current directory looking for an existing migration directory, an Xcode project, or `Package.swift`. It stops at the repository boundary. For SwiftPM it selects the enclosing source target when invoked from inside one; otherwise it selects the plugin-enabled target, or the sole target containing Entities/history. Static custom target paths are supported. Test targets are not candidates.
+The CLI first looks for `swiftstore.json`, stopping at the repository boundary. If found, paths
+are relative to that file; use `--database` to select a database for generation and `--target-name`
+to narrow a multi-target configuration. Without configuration or `--target`, the CLI walks up from the current directory looking for an existing migration directory, an Xcode project, or `Package.swift`. It stops at the repository boundary. For SwiftPM it selects the enclosing source target when invoked from inside one; otherwise it selects the plugin-enabled target, or the sole target containing Entities/history. Static custom target paths are supported. Test targets are not candidates.
 
 If no project/target is found, or more than one target matches, the command fails without generating files. It never silently treats an arbitrary current directory as a project. A computed Package.swift target list/path requires an explicit override; discovery does not execute the manifest or fetch dependencies.
 
@@ -74,7 +91,8 @@ swiftstore migration add 002_display_name --target Sources/MyModels
 
 For an Xcode project, the schema root is the directory containing the `.xcodeproj` and `Migrations`. The CLI recursively scans Swift files below that directory, skipping hidden directories. For projects containing unrelated targets/tests, pass `--sources-file <json-file>` with an array of the exact source file paths for the model-owning target, matching the plugin's scope.
 
-The generator writes only changed tables and never overwrites a migration. IDs use
+The generator writes only changed tables and never overwrites a migration. It also creates the
+catalog, or appends the new registration while preserving existing source and comments. IDs use
 `<digits>_<description>`; the underscore is required, and descriptions may contain Chinese or spaces.
 Numbers sort numerically and must be unique, ignoring leading zeros (`001_initial` conflicts with `1_other`).
 New numbers must exceed the latest migration; gaps are allowed.
@@ -87,9 +105,40 @@ You can also check without building:
 swiftstore migration check
 ```
 
+## Editable registration catalog
+
+`migration add` writes `Migrations/StoreMigrations.swift` (or `NamespaceMigrations.swift` for a named
+database namespace). Add this file to Xcode Compile Sources along with the migration Swift files;
+SwiftPM discovers them in the target directory automatically. The catalog references bundled JSON deltas and each migration's ordinary compiled `up` method; no JSON payload is embedded in Swift.
+
+After adding/removing migration files or adding/removing their JSON files manually, update the corresponding catalog
+entries yourself or explicitly regenerate the catalog:
+
+```sh
+swiftstore migration catalog
+swiftstore migration catalog --database dictionary
+```
+
+`catalog` replaces the selected catalogs' contents; it does not edit migration bodies or snapshots.
+`add` preserves existing catalog source and inserts its new entry before the final return. If it
+cannot safely extend the existing catalog, it fails before creating migration files.
+
+Comments, formatting and helper code may be edited. For static validation, keep registrations as
+direct `catalog.append` calls in `all()`, with literal IDs, `Migration_NUMBER.up` references (prefixed
+for named namespaces), and `SchemaDelta.load("ID.schema.json", in: bundle, subdirectory: subdirectory)` resource references. Keep `bundle` and `subdirectory` as parameters of `all`. A data-only entry
+omits `delta`. Check verifies their count, order, IDs, method references and resource filenames against
+the migration files, and merges the source JSON deltas to compare with Entities. Editing an existing JSON file does not require regenerating the catalog. It does not evaluate arbitrary Swift control flow or prove data transformations.
+The compiler and runtime schema verification remain necessary.
+
+Missing or stale catalogs fail `check`; builds never regenerate or overwrite them. Without the
+plugin, the same checked-in Swift files still compile and execute the same migration bodies.
+If upgrading from a version that generated catalogs during builds or embedded JSON in Swift, run `migration catalog` once and configure the JSON bundle resources.
+
 ## Maintain files manually
 
-A migration consists of `ID.swift` and an optional `ID.schema.json`. The Swift file declares `Migration_NUMBER` with a synchronous, throwing `static func up(_ db: SQLiteConnection)` method. The type uses only the numeric prefix, preserving leading zeros: `002_修改姓名.swift` declares `Migration_002`. No special annotation is needed.
+In the default namespace, a migration consists of `ID.swift` and an optional
+`ID.schema.json`. Named namespaces prefix Swift filenames with `Namespace_` to avoid duplicate
+basenames in one target; JSON filenames and IDs remain unchanged. The Swift file declares `Migration_NUMBER` with a synchronous, throwing `static func up(_ db: SQLiteConnection)` method. In the default namespace, the type uses only the numeric prefix, preserving leading zeros: `002_修改姓名.swift` declares `Migration_002`. No special annotation is needed.
 
 For example, `002_display_name.swift`:
 
@@ -141,11 +190,13 @@ A pure data migration, such as `003_clean_data.swift`, does not need a JSON file
 
 1. Reads the selected target's `@Entity` declarations.
 2. Uses the **same Entity macro expansion implementation** as the compiler to derive columns, defaults, generated index columns, ordinary indexes and FTS5 declarations.
-3. Sorts migration IDs by numeric prefix and merges their table deltas into each historical target schema.
+3. Partitions Entity files by database when configured, then sorts each database's migration IDs by numeric prefix and merges its table deltas into each historical target schema.
 4. Compares the canonical latest schema with the current Entity schema, including removed tables and FTS changes.
-5. Generates ordered registration code containing the initial table definitions and subsequent deltas as readable raw multiline JSON literals into the plugin work directory. No per-version full snapshots or checksums are embedded.
+5. Checks the committed catalog's registration IDs, order, `up` references and decoded deltas against each database's migration files.
 
-The build does not write to the project's source directory or run migration bodies. Missing or incorrectly declared `Migration_NUMBER.up` methods are caught when the generated catalog is compiled. Changed source files or snapshots invalidate the catalog build output.
+The build does not write to the project's source directory or run migration bodies. Missing or incorrectly declared `Migration_NUMBER.up` methods are caught when the committed catalog is compiled. The configuration file, source membership list, migration files and snapshots are build inputs.
+Changing their contents or adding/removing files reruns the check. The plugin writes only source/input
+lists and a success stamp in its work directory, with no generated Swift output.
 
 Source extraction does not type-check user code or evaluate build conditions. Conditional `@Entity` declarations and `#if` members inside an Entity are rejected rather than guessed. Keep the persisted schema stable across configurations. Handwritten `EntityProtocol` conformances and Entities produced by other code generators are outside this source-scanning workflow. Macro type/default mapping remains exactly the library's current behavior.
 
@@ -157,13 +208,13 @@ Apply committed migrations before accessing a database. Changing live Entity def
 
 ```swift
 let manager = try ConnectionManager(path: databasePath, entities: [User.self, Post.self])
-try await manager.migrate(migrations: try StoreMigrations.all())
+try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
 ```
 
 For direct connections:
 
 ```swift
-try VersionedMigrator(connection: db, migrations: StoreMigrations.all()).migrate()
+try VersionedMigrator(connection: db, migrations: StoreMigrations.all(bundle: .module)).migrate()
 ```
 
 `StoreMigrations.all()` creates a `StoreMigrationCatalog` and appends each frozen `SchemaDelta`
@@ -171,7 +222,7 @@ in migration order at runtime. Each append merges the delta into the preceding t
 that step's complete `SchemaSnapshot` for verification. The initial delta starts from an empty
 schema; listed tables replace their entire definition, unlisted tables inherit, and `droppedTables`
 explicitly removes tables. Data-only steps omit the delta and inherit the preceding target. Full
-snapshots are not duplicated in generated source or stored in separate resources.
+snapshots are not duplicated in generated source. Only the original JSON deltas are bundled; complete snapshots are assembled in memory. Missing or invalid resources throw while constructing the catalog, before migration SQL executes.
 
 The runner verifies the ordered prefix of applied IDs and the actual schema, executes pending steps
 in order, checks each resulting schema/foreign keys, and records successful IDs atomically. A failure rolls back the entire pending batch. ConnectionManager releases its read/write setup gate and starts tracking only after success.
@@ -200,7 +251,7 @@ transaction for their duration.
 For a database created before versioned history was enabled, generate an initial migration from its original Entity definitions, before making further schema changes. ConnectionManager defaults to adopting the first migration as the baseline:
 
 ```swift
-try await manager.migrate(migrations: try StoreMigrations.all())
+try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
 ```
 
 The manager verifies that the legacy schema matches the first migration's target, records that migration without executing its body, and applies later migrations. A mismatched legacy schema is rejected. Fresh databases execute every migration; databases with recorded history continue from the last applied version.
@@ -209,7 +260,7 @@ If the legacy database already matches a later version, specify its ID explicitl
 
 ```swift
 try await manager.migrate(
-    migrations: try StoreMigrations.all(),
+    migrations: try StoreMigrations.all(bundle: .module),
     adoptingBaseline: "002_display_name"
 )
 ```
@@ -251,6 +302,7 @@ swift test
 python3 IntegrationTests/VersionedMigrations/test_external_package.py
 ```
 
-The example uses the public plugin directly, with no schema tool target. The external-package test verifies consumer dependency setup, a rejected schema change, table-level deltas, a manually completed rename, a data-only step, preserved data in unchanged tables, repeat startup, acceptance of source-only edits, and rejection of renamed applied IDs.
+The example uses the public plugin directly, with no schema tool target. The external-package test verifies consumer dependency setup, a rejected schema change, table-level deltas, a manually completed rename, a data-only step, preserved data in unchanged tables, repeat startup, acceptance of source-only edits, and rejection of renamed applied IDs. It also compiles two databases in one target, upgrades their
+independent histories, and checks configuration, Entity ownership and snapshot input changes.
 
 CLI packaging is defined in the [release workflow](../.github/workflows/release-cli.yml).

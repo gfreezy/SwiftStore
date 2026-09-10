@@ -1,0 +1,1 @@
+../../SwiftStoreMigrationTool/Sources/SwiftStoreMigrationTool/MigrationConfiguration.swift

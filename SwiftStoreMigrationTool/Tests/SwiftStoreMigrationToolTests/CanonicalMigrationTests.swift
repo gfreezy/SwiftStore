@@ -21,6 +21,7 @@ struct CanonicalMigrationTests {
                       #", "indexes":[],"triggers":[],"foreignKeys":[],"fullTextIndexes":[]"#] {
             let json = "{\"tables\":[{\"name\":\"legacy\",\"columns\":[{\"name\":\"id\",\"type\":\"BLOB\",\"isPrimaryKey\":true}]\(extra)}]}"
             try json.write(to: file, atomically: true, encoding: .utf8)
+            try MigrationTool.writeCatalog(directory: directory)
             catalogs.append(try MigrationTool.check(target: target, directory: directory))
         }
         #expect(Set(catalogs).count == 1)
