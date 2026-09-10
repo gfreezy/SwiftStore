@@ -187,7 +187,7 @@ struct MultiDatabaseTests {
         try write("Sources/App/Main/Models/Item.swift", in: root, text: "// All managed tables removed")
         let empty = try MigrationProject.load(root: root)
         try empty.generate(id: "002_drop", databaseID: "main")
-        let delta = try SchemaDelta.decode(Data(contentsOf: project.databases[0].migrations.appendingPathComponent("002_drop.schema.json")))
+        let delta = try SchemaDelta.decode(Data(contentsOf: project.databases[0].migrations.appendingPathComponent("MainStore_002_drop.schema.json")))
         #expect(delta.droppedTables == ["items"])
         _ = try empty.check()
         entries[0]["sources"] = ["missing"]

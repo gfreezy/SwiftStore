@@ -112,10 +112,16 @@ Each group keeps independent IDs and JSON filenames. The example above produces:
 | main (default) | `001_initial.swift` | `Migration_001` | `StoreMigrations.swift`, `StoreMigrations.all()` |
 | dictionary | `DictionaryStore_001_initial.swift` | `DictionaryStoreMigration_001` | `DictionaryStoreMigrations.swift`, `DictionaryStoreMigrations.all()` |
 
-Both JSON files are called `001_initial.schema.json` in their respective directories. Named
-namespaces prefix Swift filenames because Swift requires unique source basenames within a target,
-even across directories. Name Entity source files uniquely too, such as `MainItem.swift` and
-`DictionaryItem.swift`.
+The default database's JSON is `001_initial.schema.json`; the dictionary's is
+`DictionaryStore_001_initial.schema.json`. Named namespaces prefix both Swift and JSON
+filenames, so the resources can share the bundle root even when migration IDs repeat.
+Omitting `namespace` or using `"default"` keeps both filenames unprefixed. Name Entity
+source files uniquely too, such as `MainItem.swift` and `DictionaryItem.swift`.
+
+Starting with 3.0.3, named databases require prefixed JSON filenames. When upgrading, rename each JSON to
+`Namespace_ID.schema.json`, update any explicit resource file references, and run
+`swiftstore migration catalog`. Keep migration IDs, SQL and JSON contents unchanged.
+The CLI rejects unprefixed JSON for named databases; there is no legacy-name fallback.
 
 Both migration files and catalogs compile as ordinary Swift sources. No source conversion or
 special runtime interpreter is involved. Each catalog independently merges its initial schema and
@@ -144,16 +150,21 @@ For an existing single database, keep the current layout and list each JSON file
 `resources: [.copy("Migrations/001_initial.schema.json"), ...]`. These files land at the bundle root.
 Use `StoreMigrations.all(bundle: .module)`; keep that setup when assigning the default namespace.
 
-For a new database, configure `schemas` to a JSON-only directory inside its target, for example
+For a named database, individual files can also be copied into the bundle root, for example
+`.copy("Dictionary/Migrations/DictionaryStore_001_initial.schema.json")`. Call
+`DictionaryStoreMigrations.all(bundle: .module)` without a subdirectory.
+
+For automatic inclusion of new JSON files, configure `schemas` to a JSON-only directory inside its target, for example
 `Sources/MyApp/Resources/DictionarySchemas`, and add `.copy("Resources/DictionarySchemas")` to the
 target's resources. Future JSON files in that directory are included automatically. Do not copy
 an entire directory that also contains migration Swift files: SwiftPM treats those as resources
 instead of compiling them. To use JSON-only directories for all databases, configure distinct
 `schemas` paths and move the existing JSON files there without renaming them.
 
-For Xcode, include JSON files in Copy Bundle Resources. Keep each database's files in a preserved
-resource subdirectory (for example a folder reference) to avoid flattening duplicate filenames.
-Pass its name as `subdirectory`. Configuration itself does not need to be bundled.
+For Xcode, include JSON files in Copy Bundle Resources. The default namespace and unique named
+namespace prefixes allow all schemas to be copied into the bundle root. If you choose to preserve
+resource subdirectories (for example with folder references), pass each directory's name as
+`subdirectory`. Configuration itself does not need to be bundled.
 
 `all(bundle:subdirectory:)` defaults to `.main` and the bundle root. SwiftPM callers must pass
 `.module`; a framework can pass its own resource bundle. Lookup is exact and does not recursively

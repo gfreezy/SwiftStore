@@ -21,7 +21,7 @@ enum MigrationCatalogSource {
     private static func registration(_ entry: MigrationFile) throws -> [String] {
         var lines = ["        try catalog.append(id: \(String(reflecting: entry.id)),"]
         if entry.hasSnapshot {
-            lines.append("            delta: try SchemaDelta.load(\(String(reflecting: entry.id + ".schema.json")), in: bundle, subdirectory: subdirectory),")
+            lines.append("            delta: try SchemaDelta.load(\(String(reflecting: entry.schemaFilename)), in: bundle, subdirectory: subdirectory),")
         }
         lines.append("            up: \(entry.symbol).up)")
         return lines
@@ -60,16 +60,17 @@ enum MigrationCatalogSource {
                 throw failure("Catalog ID, order or up reference differs at \(entry.id)")
             }
             if entry.hasSnapshot {
+                let filename = entry.schemaFilename
                 guard let expression = deltas.first?.expression,
                       let load = unwrapped(expression).as(FunctionCallExprSyntax.self),
                       tokens(load.calledExpression) == "SchemaDelta.load", load.arguments.count == 3,
                       load.arguments.first?.label == nil,
-                      load.arguments.first?.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue == entry.id + ".schema.json",
+                      load.arguments.first?.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue == filename,
                       load.arguments.filter({ $0.label?.text == "in" }).count == 1,
                       load.arguments.first(where: { $0.label?.text == "in" }).map({ tokens($0.expression) }) == "bundle",
                       load.arguments.filter({ $0.label?.text == "subdirectory" }).count == 1,
                       load.arguments.first(where: { $0.label?.text == "subdirectory" }).map({ tokens($0.expression) }) == "subdirectory" else {
-                    throw failure("Catalog schema resource differs at \(entry.id). Use SchemaDelta.load(\"\(entry.id).schema.json\", in: bundle, subdirectory: subdirectory)")
+                    throw failure("Catalog schema resource differs at \(entry.id). Use SchemaDelta.load(\"\(filename)\", in: bundle, subdirectory: subdirectory)")
                 }
             } else if !deltas.isEmpty {
                 throw failure("Data-only catalog entry \(entry.id) must inherit the preceding schema without a resource")

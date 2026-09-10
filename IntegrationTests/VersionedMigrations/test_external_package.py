@@ -15,10 +15,7 @@ def run(args, cwd, expected=0, contains=None):
     if args[:2] in (['swift', 'build'], ['swift', 'run']):
         target = cwd / 'Sources/Consumer'
         resources = [f'.copy({json.dumps(str(p.relative_to(target)))})'
-                     for p in sorted(target.rglob('*.schema.json'))
-                     if 'Resources' not in p.relative_to(target).parts]
-        if (target / 'Resources/DictionarySchemas').exists():
-            resources.append('.copy("Resources/DictionarySchemas")')
+                     for p in sorted(target.rglob('*.schema.json'))]
         manifest = cwd / 'Package.swift'
         lines = manifest.read_text().splitlines()
         manifest.write_text('\n'.join(
@@ -172,7 +169,7 @@ print("fresh install passed")
     let main = try SQLiteConnection(path: CommandLine.arguments[1])
     let dictionary = try SQLiteConnection(path: CommandLine.arguments[2])
     let mainHistory = try StoreMigrations.all(bundle: .module)
-    let dictionaryHistory = try DictionaryStoreMigrations.all(bundle: .module, subdirectory: "DictionarySchemas")
+    let dictionaryHistory = try DictionaryStoreMigrations.all(bundle: .module)
     try VersionedMigrator(connection: main, migrations: mainHistory).migrate()
     try VersionedMigrator(connection: dictionary, migrations: dictionaryHistory).migrate()
     try main.execute("INSERT OR IGNORE INTO items (id, name) VALUES (X'00000000000000000000000000000001', 'main')")

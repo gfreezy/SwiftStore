@@ -37,7 +37,7 @@ Sources/MyApp/
 
 In the default single-database layout, the plugin reads the target's Swift sources and `Migrations` directory. JSON files are also runtime resources: list each JSON file in SwiftPM `resources` as above and call `StoreMigrations.all(bundle: .module)`. Add a resource declaration when adding a schema file. Do not copy or process the entire mixed `Migrations` directory: SwiftPM would treat its Swift files as resources too. For automatic inclusion of new JSON files, use a separate `schemas` directory and copy that directory as described in the [multiple-database guide](multiple-databases.md#bundle-schema-resources).
 
-For an Xcode project, add the package, select the target, and add **SwiftStoreMigrationCheck** under **Build Phases → Run Build Tool Plug-ins**. Put `Migrations` beside the `.xcodeproj`, and add its Swift files to that target's Compile Sources. Add JSON snapshots to Copy Bundle Resources; preserve separate resource subdirectories for multiple databases. The default bundle is `.main`. The plugin scans the selected target's input Swift files, not every file in the project.
+For an Xcode project, add the package, select the target, and add **SwiftStoreMigrationCheck** under **Build Phases → Run Build Tool Plug-ins**. Put `Migrations` beside the `.xcodeproj`, and add its Swift files to that target's Compile Sources. Add JSON snapshots to Copy Bundle Resources; named databases prefix their JSON filenames so they can share the bundle root. The default bundle is `.main`. The plugin scans the selected target's input Swift files, not every file in the project.
 
 If Xcode reports `sandbox-exec: execvp()` with a missing `SwiftStoreMigrationCLI`, the
 host tool has not been built, so migration checking has not started. Releases through
@@ -132,7 +132,7 @@ cannot safely extend the existing catalog, it fails before creating migration fi
 
 Comments, formatting and helper code may be edited. For static validation, keep registrations as
 direct `catalog.append` calls in `all()`, with literal IDs, `Migration_NUMBER.up` references (prefixed
-for named namespaces), and `SchemaDelta.load("ID.schema.json", in: bundle, subdirectory: subdirectory)` resource references. Keep `bundle` and `subdirectory` as parameters of `all`. A data-only entry
+for named namespaces), and `SchemaDelta.load("ID.schema.json", in: bundle, subdirectory: subdirectory)` resource references (`"Namespace_ID.schema.json"` for named namespaces). Keep `bundle` and `subdirectory` as parameters of `all`. A data-only entry
 omits `delta`. Check verifies their count, order, IDs, method references and resource filenames against
 the migration files, and merges the source JSON deltas to compare with Entities. Editing an existing JSON file does not require regenerating the catalog. It does not evaluate arbitrary Swift control flow or prove data transformations.
 The compiler and runtime schema verification remain necessary.
@@ -144,8 +144,9 @@ If upgrading from a version that generated catalogs during builds or embedded JS
 ## Maintain files manually
 
 In the default namespace, a migration consists of `ID.swift` and an optional
-`ID.schema.json`. Named namespaces prefix Swift filenames with `Namespace_` to avoid duplicate
-basenames in one target; JSON filenames and IDs remain unchanged. The Swift file declares `Migration_NUMBER` with a synchronous, throwing `static func up(_ db: SQLiteConnection)` method. In the default namespace, the type uses only the numeric prefix, preserving leading zeros: `002_修改姓名.swift` declares `Migration_002`. No special annotation is needed.
+`ID.schema.json`. Named namespaces prefix both Swift and JSON filenames with `Namespace_`
+to avoid duplicate filenames in one target and its resource bundle. Migration IDs remain unchanged;
+the default namespace adds no prefix. The Swift file declares `Migration_NUMBER` with a synchronous, throwing `static func up(_ db: SQLiteConnection)` method. In the default namespace, the type uses only the numeric prefix, preserving leading zeros: `002_修改姓名.swift` declares `Migration_002`. No special annotation is needed.
 
 For example, `002_display_name.swift`:
 

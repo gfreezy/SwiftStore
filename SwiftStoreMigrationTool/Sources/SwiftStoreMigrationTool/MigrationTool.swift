@@ -7,6 +7,7 @@ public struct MigrationFile {
     public let delta: SchemaDelta
     public let namespace: String?
     public let hasSnapshot: Bool
+    public var schemaFilename: String { (namespace.map { $0 + "_" } ?? "") + id + ".schema.json" }
     public var symbol: String { (namespace ?? "") + "Migration_" + id.prefix { $0 != "_" } }
 }
 
@@ -43,8 +44,9 @@ public enum MigrationTool {
         let source = try MigrationSourceGenerator.source(symbol: (namespace ?? "") + "Migration_" + id.prefix { $0 != "_" }, from: previous, to: target)
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        let swift = directory.appendingPathComponent((namespace.map { $0 + "_" } ?? "") + id + ".swift")
-        let json = (schemas ?? directory).appendingPathComponent(id + ".schema.json")
+        let basename = (namespace.map { $0 + "_" } ?? "") + id
+        let swift = directory.appendingPathComponent(basename + ".swift")
+        let json = (schemas ?? directory).appendingPathComponent(basename + ".schema.json")
         guard !fm.fileExists(atPath: swift.path), !fm.fileExists(atPath: json.path) else { throw failure("Refusing to overwrite migration \(id)") }
         let catalog = catalogFile(directory: directory, namespace: namespace)
         let entry = MigrationFile(id: id, target: target, delta: delta, namespace: namespace,
@@ -98,18 +100,24 @@ public enum MigrationTool {
         let schemaNames = try schemas.map { url in
             FileManager.default.fileExists(atPath: url.path) ? try FileManager.default.contentsOfDirectory(atPath: url.path) : []
         } ?? names
-        for name in schemaNames where name.hasSuffix(".schema.json") {
-            guard ids.contains(String(name.dropLast(12))) else { throw failure("Snapshot \(name) has no matching Swift migration") }
+        let prefix = namespace.map { $0 + "_" } ?? ""
+        for name in schemaNames.sorted() where name.hasSuffix(".schema.json") {
+            let stem = String(name.dropLast(12))
+            guard stem.hasPrefix(prefix) else {
+                throw failure("Configured schema filenames must start with \(prefix): \(name)")
+            }
+            let id = String(stem.dropFirst(prefix.count))
+            guard ids.contains(id) else { throw failure("Snapshot \(name) has no matching Swift migration") }
         }
         var target = SchemaSnapshot.empty
         var result: [MigrationFile] = []
         for id in ids {
-            let json = (schemas ?? directory).appendingPathComponent(id + ".schema.json")
-            let delta = FileManager.default.fileExists(atPath: json.path)
-                ? try JSONDecoder().decode(SchemaDelta.self, from: Data(contentsOf: json)) : SchemaDelta()
+            let json = (schemas ?? directory).appendingPathComponent(prefix + id + ".schema.json")
+            let hasSnapshot = FileManager.default.fileExists(atPath: json.path)
+            let delta = hasSnapshot ? try SchemaDelta.load(from: json) : SchemaDelta()
             target = try delta.applying(to: target)
             result.append(MigrationFile(id: id, target: target, delta: delta, namespace: namespace,
-                                        hasSnapshot: FileManager.default.fileExists(atPath: json.path)))
+                                        hasSnapshot: hasSnapshot))
         }
         return result
     }
