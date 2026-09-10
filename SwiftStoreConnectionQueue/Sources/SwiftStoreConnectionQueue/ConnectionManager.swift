@@ -40,7 +40,7 @@ public struct SyncOptions: Sendable {
     public let tickClock: @Sendable () -> Int64
     /// Sync configuration including batch size settings
     public let syncConfiguration: SyncConfiguration
-    /// NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
+    /// Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
     public let ntpToleranceMs: Int64
 
     /// Initialize sync configuration.
@@ -56,7 +56,7 @@ public struct SyncOptions: Sendable {
     ///   - changeLogDbPath: Path to the change log database file, nil to auto-generate from main database path (e.g., db.sqlite -> db_changelog.sqlite)
     ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
     ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
+    ///   - ntpToleranceMs: Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
     public init(
         deviceId: UUIDV7,
         transport: any SyncTransport,

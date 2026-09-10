@@ -85,7 +85,7 @@ public struct SyncConfig: Sendable {
     ///   - transport: Sync transport layer responsible for communicating with the remote server
     ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: NTP time offset tolerance in milliseconds; must be positive and cannot be disabled
+    ///   - ntpToleranceMs: Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
     public init(
         changeLogDbPath: String,
         deviceId: UUIDV7,

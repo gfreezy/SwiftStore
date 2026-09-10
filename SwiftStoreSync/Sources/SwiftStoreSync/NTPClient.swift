@@ -46,24 +46,29 @@ public enum NTPError: Error, LocalizedError {
 /// Simple NTP client for time verification
 /// Uses SNTP (Simple Network Time Protocol) for basic time synchronization
 public final class NTPClient {
-    // Internal, task-scoped network substitution for deterministic tests. The
-    // public configuration has no bypass, and the real bounds check still runs.
-    @TaskLocal static var testTimeQuery: (@Sendable () async throws -> NTPVerificationResult)?
+    private static let startupCheck = NTPStartupCheck {
+        try await verifyTime()
+    }
 
-    /// Required gate shared by manual sync and CloudKit background callbacks.
+    // Tests get a fresh process-lifetime cache without affecting other tests.
+    @TaskLocal static var testStartupCheck: NTPStartupCheck?
+
+    /// Checks network time at the first sync in this process, with a total
+    /// deadline of three seconds. Concurrent callers share the check; later
+    /// calls reuse its result, including network failure/timeout (fail open).
+    /// A measured offset outside the caller's tolerance still rejects sync.
     public static func requireAccurateTime(toleranceMs: Int64 = 5000) async throws {
         guard toleranceMs > 0 else { throw NTPError.invalidTolerance }
         try Task.checkCancellation()
-        let result: NTPVerificationResult
-        if let testTimeQuery { result = try await testTimeQuery() }
-        else { result = try await verifyTime(toleranceMs: toleranceMs) }
-        // Compare signed bounds without abs(Int64.min) overflow.
-        guard result.offsetMs >= -toleranceMs, result.offsetMs <= toleranceMs else {
-            throw NTPError.timeOutOfSync(offsetMs: result.offsetMs, toleranceMs: toleranceMs)
-        }
+        let outcome = await (testStartupCheck ?? startupCheck).result()
         try Task.checkCancellation()
+        if case .measured(let result) = outcome {
+            // Avoid abs(Int64.min), and apply each caller's configured tolerance.
+            guard result.offsetMs >= -toleranceMs, result.offsetMs <= toleranceMs else {
+                throw NTPError.timeOutOfSync(offsetMs: result.offsetMs, toleranceMs: toleranceMs)
+            }
+        }
     }
-
 
     /// Default NTP servers
     public static let defaultServers = [
@@ -125,7 +130,7 @@ public final class NTPClient {
 
             // Parse transmit timestamp (bytes 40-47)
             packet.transmitTimestamp = data.withUnsafeBytes { ptr in
-                ptr.load(fromByteOffset: 40, as: UInt64.self).bigEndian
+                ptr.loadUnaligned(fromByteOffset: 40, as: UInt64.self).bigEndian
             }
 
             return packet
@@ -142,11 +147,11 @@ public final class NTPClient {
         return seconds + fraction - ntpEpochOffset
     }
 
-    /// Verify local time against NTP servers
+    /// Perform an uncached network measurement. Sync uses `requireAccurateTime` instead.
     /// - Parameters:
     ///   - toleranceMs: Maximum acceptable offset in milliseconds (default 5 seconds)
     ///   - servers: NTP servers to query (default Apple, Google, Cloudflare, pool.ntp.org)
-    ///   - timeout: Timeout for each server request in seconds
+    ///   - timeout: Total time budget in seconds, including DNS and server fallback
     /// - Returns: Verification result
     public static func verifyTime(
         toleranceMs: Int64 = 5000,
@@ -154,137 +159,47 @@ public final class NTPClient {
         timeout: TimeInterval = 3.0
     ) async throws -> NTPVerificationResult {
         guard toleranceMs > 0 else { throw NTPError.invalidTolerance }
+        guard timeout.isFinite, timeout > 0 else { throw NTPError.timeout }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(timeout))
         var lastError: Error = NTPError.allServersFailed
 
-        for server in servers {
+        for (index, server) in servers.enumerated() {
+            try Task.checkCancellation()
+            let remaining = clock.now.duration(to: deadline)
+            guard remaining > .zero else { throw NTPError.timeout }
+            // Reserve time for fallbacks so a silent first server cannot consume
+            // the entire startup budget. Each request's deadline includes DNS.
+            let attemptTimeout = remaining / (servers.count - index)
             do {
-                let result = try await queryServer(server, timeout: timeout, toleranceMs: toleranceMs)
-                return result
+                return try await queryServer(server, timeout: attemptTimeout, toleranceMs: toleranceMs)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 lastError = error
-                continue
             }
         }
-
         throw lastError
     }
 
     /// Query a single NTP server
     private static func queryServer(
         _ server: String,
-        timeout: TimeInterval,
+        timeout: Duration,
         toleranceMs: Int64
     ) async throws -> NTPVerificationResult {
-        let socket = try createSocket()
-        defer { close(socket) }
-
-        let serverAddress = try resolveAddress(server)
-
-        // Record send time
-        let t1 = Date().timeIntervalSince1970
-
-        // Send NTP request
-        let request = NTPPacket()
-        let requestData = request.toData()
-        try sendPacket(socket, data: requestData, to: serverAddress)
-
-        // Set receive timeout
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout.truncatingRemainder(dividingBy: 1)) * 1_000_000))
-        setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
-        // Receive response
-        let responseData = try receivePacket(socket)
-
-        // Record receive time
-        let t4 = Date().timeIntervalSince1970
-
-        guard let response = NTPPacket.fromData(responseData) else {
+        let reply = try await NTPRequest(server: server, packet: NTPPacket().toData(), timeout: timeout).response()
+        guard let response = NTPPacket.fromData(reply.data) else {
             throw NTPError.invalidResponse
         }
-
-        // Calculate offset
-        // t3 is the NTP server transmit time
         let t3 = ntpToUnix(response.transmitTimestamp)
-
-        // Simplified offset calculation: (t3 - t4)
-        // Full calculation would be: ((t2 - t1) + (t3 - t4)) / 2
-        // We use simplified because we don't have receive timestamp from server
-        let offset = t3 - t4
-        let offsetMs = Int64(offset * 1000)
-
-        // RTT is approximately t4 - t1
-        let rttMs = Int64((t4 - t1) * 1000)
-
+        let offsetMs = Int64((t3 - reply.receivedAt.timeIntervalSince1970) * 1000)
+        let rttMs = Int64(reply.receivedAt.timeIntervalSince(reply.sentAt) * 1000)
         return NTPVerificationResult(
             offsetMs: offsetMs,
-            isValid: abs(offsetMs) <= toleranceMs,
+            isValid: offsetMs >= -toleranceMs && offsetMs <= toleranceMs,
             server: server,
             rttMs: rttMs
         )
-    }
-
-    // MARK: - Socket helpers
-
-    private static func createSocket() throws -> Int32 {
-        let sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-        guard sock >= 0 else {
-            throw NTPError.networkError(NSError(domain: "NTPClient", code: Int(errno), userInfo: [
-                NSLocalizedDescriptionKey: String(cString: strerror(errno))
-            ]))
-        }
-        return sock
-    }
-
-    private static func resolveAddress(_ hostname: String) throws -> sockaddr_in {
-        var hints = addrinfo()
-        hints.ai_family = AF_INET
-        hints.ai_socktype = SOCK_DGRAM
-
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(hostname, "123", &hints, &result)
-
-        guard status == 0, let info = result else {
-            throw NTPError.networkError(NSError(domain: "NTPClient", code: Int(status), userInfo: [
-                NSLocalizedDescriptionKey: "Failed to resolve \(hostname)"
-            ]))
-        }
-
-        defer { freeaddrinfo(result) }
-
-        let addr = info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
-        return addr
-    }
-
-    private static func sendPacket(_ socket: Int32, data: Data, to address: sockaddr_in) throws {
-        var addr = address
-        let sent = data.withUnsafeBytes { ptr in
-            withUnsafePointer(to: &addr) { addrPtr in
-                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                    sendto(socket, ptr.baseAddress, data.count, 0, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-        }
-
-        guard sent >= 0 else {
-            throw NTPError.networkError(NSError(domain: "NTPClient", code: Int(errno), userInfo: [
-                NSLocalizedDescriptionKey: String(cString: strerror(errno))
-            ]))
-        }
-    }
-
-    private static func receivePacket(_ socket: Int32) throws -> Data {
-        var buffer = [UInt8](repeating: 0, count: 48)
-        let received = recv(socket, &buffer, buffer.count, 0)
-
-        guard received > 0 else {
-            if errno == EAGAIN || errno == EWOULDBLOCK {
-                throw NTPError.timeout
-            }
-            throw NTPError.networkError(NSError(domain: "NTPClient", code: Int(errno), userInfo: [
-                NSLocalizedDescriptionKey: String(cString: strerror(errno))
-            ]))
-        }
-
-        return Data(buffer[0..<received])
     }
 }

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import CloudKit
 import SwiftStoreCore
-import SwiftStoreSync
+@testable import SwiftStoreSync
 @testable import SwiftStoreSyncCloudTransport
 
 private actor OperationsMemoryStore: CloudKitSyncStateStore {
@@ -75,6 +75,34 @@ struct CloudKitOperationsTests {
         var settings = CloudKitOperationsSettings(zoneID: zone, recordType: "Change", namespace: "test")
         settings.automaticallySync = false
         return CloudKitOperationsTransport(settings: settings, client: client, stateStore: store, validateTime: { _ in })
+    }
+
+    @Test("CloudKit operations reuse fail-open time validation and preserve CloudKit errors")
+    func unavailableTime() async throws {
+        actor Measurements {
+            var count = 0
+            func query() throws -> NTPVerificationResult { count += 1; throw NTPError.timeout }
+        }
+        let measurements = Measurements()
+        let client = OperationsClientStub(), store = OperationsMemoryStore()
+        var settings = CloudKitOperationsSettings(zoneID: zone, recordType: "Change", namespace: "test")
+        settings.automaticallySync = false
+        // Use the production time-validation closure, not the fixture's bypass.
+        let transport = CloudKitOperationsTransport(settings: settings, client: client, stateStore: store)
+        let device = UUIDV7()
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { try await measurements.query() })) {
+            try await transport.start(deviceId: device)
+            _ = try await transport.syncNow()
+            await client.configure(failFetch: true)
+            await #expect(throws: CKError.self) { try await transport.syncNow() }
+            await client.configure()
+            await transport.stop()
+            try await transport.start(deviceId: device)
+            _ = try await transport.syncNow()
+            await transport.stop()
+        }
+        #expect(await measurements.count == 1)
+        #expect(await client.fetchedTokens.count == 3)
     }
 
     @Test("Upload conflict uses shared timestamp rule and pull supplies the winner")

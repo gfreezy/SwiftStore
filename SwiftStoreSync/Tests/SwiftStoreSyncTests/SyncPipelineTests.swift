@@ -88,9 +88,9 @@ final class SyncFixture {
 struct SyncPipelineTests {
     @Test("Rejected corrections are acknowledged only after the server version reaches the business table")
     func rejectedCorrectionApplyAcknowledgement() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let note = SyncNote(title: "server")
@@ -126,9 +126,9 @@ struct SyncPipelineTests {
 
     @Test("Failed network round keeps the staged watermark and retries without duplicate enqueue")
     func retryUpload() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             try f.connection.insert(SyncNote(title: "offline"))
@@ -143,9 +143,9 @@ struct SyncPipelineTests {
 
     @Test("Apply failure and future schema stay unacknowledged")
     func failedApply() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let note = SyncNote(title: "future")
@@ -164,9 +164,9 @@ struct SyncPipelineTests {
 
     @Test("Committed updates, deletions and recreations apply without being uploaded again")
     func committedLifecycle() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let note = SyncNote(title: "committed")
@@ -186,15 +186,15 @@ struct SyncPipelineTests {
 
 }
 
-@Suite("Mandatory sync time validation")
+@Suite("Startup sync time validation")
 @MainActor
 struct MandatorySyncTimeTests {
     @Test("Signed tolerance boundaries are inclusive; extreme offsets fail safely",
         arguments: [Int64.min, -5001, -5000, 0, 5000, 5001, Int64.max])
     func bounds(offset: Int64) async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: offset, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             if offset >= -5000 && offset <= 5000 {
                 try await NTPClient.requireAccurateTime(toleranceMs: 5000)
             } else {
@@ -216,9 +216,9 @@ struct MandatorySyncTimeTests {
         defer { f.cleanup() }
         try f.connection.insert(SyncNote(title: "local"))
         await f.transport.stage([try f.remote(SyncNote(title: "remote"), time: 100)])
-        await NTPClient.$testTimeQuery.withValue({
+        await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 5001, isValid: false, server: "test", rttMs: 1)
-        }) {
+        })) {
             await #expect(throws: NTPError.self) { try await f.manager.startTransport() }
             await #expect(throws: NTPError.self) { try await f.manager.sync() }
         }
@@ -230,23 +230,24 @@ struct MandatorySyncTimeTests {
         #expect(try SyncNote.all(f.connection).count == 1)
     }
 
-    @Test("An unavailable time source fails closed and later recovery resumes sync")
-    func unavailableThenRecovery() async throws {
+    @Test("Unavailable startup time allows sync while transport errors still propagate")
+    func unavailableTimeAllowsSync() async throws {
         let f = try SyncFixture()
         defer { f.cleanup() }
-        try f.connection.insert(SyncNote(title: "waiting for time"))
-        await NTPClient.$testTimeQuery.withValue({ throw NTPError.allServersFailed }) {
-            await #expect(throws: NTPError.self) { try await f.manager.sync() }
+        try f.connection.insert(SyncNote(title: "offline time source"))
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { throw NTPError.allServersFailed })) {
+            try await f.manager.startTransport()
+            await f.transport.setFailure(true)
+            await #expect(throws: SyncError.self) { try await f.manager.sync() }
+            await f.transport.setFailure(false)
+            _ = try await f.manager.sync()
+            #expect(await f.transport.starts == 1)
+            #expect(await f.transport.queued.count == 1)
         }
-        #expect(await f.transport.queued.isEmpty)
-        try await NTPClient.$testTimeQuery.withValue({
-            NTPVerificationResult(offsetMs: 10, isValid: true, server: "test", rttMs: 1)
-        }) { _ = try await f.manager.sync() }
-        #expect(await f.transport.queued.count == 1)
     }
 
-    @Test("A clock change during network I/O blocks local application and acknowledgement")
-    func driftDuringSync() async throws {
+    @Test("Transport startup, sync and downloaded batches reuse one startup measurement")
+    func reuseStartupMeasurement() async throws {
         let f = try SyncFixture()
         defer { f.cleanup() }
         await f.transport.stage([try f.remote(SyncNote(title: "downloaded"), time: 100)])
@@ -259,19 +260,22 @@ struct MandatorySyncTimeTests {
             }
         }
         let measurements = Measurements()
-        await NTPClient.$testTimeQuery.withValue({ await measurements.next() }) {
-            await #expect(throws: NTPError.self) { try await f.manager.sync() }
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { await measurements.next() })) {
+            try await f.manager.startTransport()
+            _ = try await f.manager.sync()
+            _ = try await f.manager.sync()
         }
-        #expect(try SyncNote.all(f.connection).isEmpty)
-        #expect(await f.transport.inbox.count == 1)
-        #expect(await f.transport.acknowledged.isEmpty)
+        #expect(await measurements.count == 1)
+        #expect(try SyncNote.all(f.connection).count == 1)
+        #expect(await f.transport.inbox.isEmpty)
+        #expect(await f.transport.acknowledged.count == 1)
     }
 
     @Test("Equal updated_at conflicts preserve the timestamp and restore the local update trigger")
     func equalTimestamp() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let time = Date(timeIntervalSince1970: 100.125)
@@ -299,7 +303,7 @@ struct MandatorySyncTimeTests {
 struct ServerConflictDecisionTests {
     @Test("The server decision replaces local data even when the local comparator would prefer it")
     func serverIsAuthoritative() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let time = Date(timeIntervalSince1970: 1000.125)
@@ -323,7 +327,7 @@ struct ServerConflictDecisionTests {
 
     @Test("Unsubmitted local work defers application without acknowledging the server record")
     func pendingProtection() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let time = Date(timeIntervalSince1970: 1000.125)
@@ -346,7 +350,7 @@ struct ServerConflictDecisionTests {
 
     @Test("Writes arriving during the request remain protected until the next server round")
     func editsDuringRequest() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let local = SyncNote(title: "before")
@@ -377,7 +381,7 @@ struct ServerConflictDecisionTests {
 
     @Test("A retained server row can undo a local deletion without delete-first tie breaking")
     func serverRowAfterLocalDelete() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let local = SyncNote(title: "retained")
@@ -396,7 +400,7 @@ struct ServerConflictDecisionTests {
 
     @Test("Server decisions do not compare timestamps against the local database")
     func noSecondTimestampDecision() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let f = try SyncFixture()
             defer { f.cleanup() }
             let local = SyncNote(title: "local", createdAt: Date(timeIntervalSince1970: 2000), updatedAt: Date(timeIntervalSince1970: 2000))

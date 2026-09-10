@@ -148,7 +148,7 @@ struct HTTPSyncTransportTests {
 
     private func fixture(_ replies: [APIReply], device: UUIDV7 = UUIDV7(), batchSize: Int = 100,
                          body: (Fixture) async throws -> Void) async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
             let configuration = config(root, batchSize: batchSize)
@@ -323,7 +323,7 @@ struct HTTPSyncTransportTests {
 
     @Test("Writes during upload belong to the next cycle; a key-level rejection cannot reject later edits", arguments: [false, true])
     func frozenSnapshotAndStop(rejectUploads: Bool) async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
             let device = UUIDV7(), first = change(device), second = change(device, time: 810000001)
@@ -371,7 +371,7 @@ struct HTTPSyncTransportTests {
 
     @Test("A timestamp-only server safely handles lost responses and equal-time different payloads")
     func retryWithoutServerModificationIDs() async throws {
-        try await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) }) {
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1) })) {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
             let device = UUIDV7(), original = change(device), sameTime = change(device)
@@ -400,6 +400,31 @@ struct HTTPSyncTransportTests {
         }
     }
 
+    @Test("HTTP startup and repeated pulls share fail-open time validation without swallowing HTTP failures")
+    func unavailableTime() async throws {
+        actor Measurements {
+            var count = 0
+            func query() throws -> NTPVerificationResult { count += 1; throw NTPError.timeout }
+        }
+        let measurements = Measurements()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let api = ScriptedAPI([page(), .failure("pull"), page()])
+        let transport = try HTTPSyncTransport(configuration: config(root), sendRequest: { try await api.send($0) })
+        let device = UUIDV7()
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { try await measurements.query() })) {
+            try await transport.start(deviceId: device)
+            _ = try await transport.syncNow()
+            await #expect(throws: NetworkFailure.self) { try await transport.syncNow() }
+            await transport.stop()
+            try await transport.start(deviceId: device)
+            _ = try await transport.syncNow()
+            await transport.stop()
+        }
+        #expect(await measurements.count == 1)
+        #expect(await api.requests.count == 3)
+    }
+
     @Test("Namespace and device state stay bound; time validation cannot be disabled")
     func identityAndTime() async throws {
         let device = UUIDV7()
@@ -408,7 +433,7 @@ struct HTTPSyncTransportTests {
             let other = try HTTPSyncTransport(configuration: config(f.root, namespace: "other"), sendRequest: { try await f.api.send($0) })
             await #expect(throws: HTTPSyncError.self) { try await other.start(deviceId: device) }
             await #expect(throws: HTTPSyncError.self) { try await f.transport.start(deviceId: UUIDV7()) }
-            await NTPClient.$testTimeQuery.withValue({ .init(offsetMs: 5001, isValid: false, server: "test", rttMs: 1) }) {
+            await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { .init(offsetMs: 5001, isValid: false, server: "test", rttMs: 1) })) {
                 await #expect(throws: NTPError.self) { try await f.transport.start(deviceId: device) }
             }
             #expect(await f.api.requests.isEmpty)

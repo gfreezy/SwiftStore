@@ -37,9 +37,9 @@ struct ConnectionSyncTests {
 
     @Test("Migration starts tracking, rollback is excluded, and later writes automatically sync")
     func automaticSync() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
             NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        })) {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: dir) }
             let transport = RecordingSyncTransport()
@@ -77,9 +77,15 @@ struct ConnectionSyncTests {
 
     @Test("Enabling sync reuses the local schema and uploads preexisting rows once")
     func existingRows() async throws {
-        try await NTPClient.$testTimeQuery.withValue({
-            NTPVerificationResult(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
-        }) {
+        actor Measurements {
+            var count = 0
+            func query() -> NTPVerificationResult {
+                count += 1
+                return .init(offsetMs: 0, isValid: true, server: "test", rttMs: 1)
+            }
+        }
+        let measurements = Measurements()
+        try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: { await measurements.query() })) {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: dir) }
             let path = dir.appendingPathComponent("main.sqlite").path
@@ -106,5 +112,6 @@ struct ConnectionSyncTests {
             #expect(await transport.changes.count == 1)
             await restarted.stopSync()
         }
+        #expect(await measurements.count == 1)
     }
 }

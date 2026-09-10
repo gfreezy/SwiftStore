@@ -47,9 +47,12 @@ Background Modes → Remote notifications。iOS 16 的回调接法见[兼容说�
 - 账号变化或已存在的 zone 被删除时，同步报错并保留本地数据。切换账号时，宿主应选择对应的业务库、日志库和状态目录。
 - 不要只删除 journal 来重置同步；业务库、变更日志和同步状态必须配套管理。
 
-时间校验必须开启。`SyncOptions.ntpToleranceMs` 默认为 5000 毫秒，必须为正数；
-ConnectionManager 将同一阈值传给 transport。直接使用 transport 时在 `CloudKitTransportConfig`
-中设置阈值。校时失败或偏差超限时保留队列、阻止上传和本地应用；修复后可重试 `sync()`。
+`SyncOptions.ntpToleranceMs` 默认为 5000 毫秒，必须为正数；ConnectionManager 将同一阈值传给
+transport。直接使用 transport 时在 `CloudKitTransportConfig` 中设置阈值。
+每个进程第一次同步时联网校时一次，总等待上限为 3 秒（含 DNS 和服务器回退）；并发请求合并，
+所有连接、后端、后台回调和后续批次共享结果。超时或网络失败记录日志后放行，进程内不重试。
+成功测得偏差超限时仍保留队列并阻止同步；修复时间后重新启动应用，才会重新联网校验。
+无需宿主应用添加启动钩子或额外配置。
 
 ## 云端记录
 

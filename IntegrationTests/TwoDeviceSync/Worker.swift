@@ -88,10 +88,10 @@ struct Worker {
                 }
             } else { concurrent = nil }
             do {
-                try await NTPClient.$testTimeQuery.withValue({
+                try await NTPClient.$testStartupCheck.withValue(NTPStartupCheck(query: {
                     NTPVerificationResult(offsetMs: command.offsetMs, isValid: true,
                                           server: "deterministic-test", rttMs: 1)
-                }) {
+                })) {
                     try await manager.startTransport()
                     let result = try await manager.sync()
                     output["pushed"] = result.pushedCount

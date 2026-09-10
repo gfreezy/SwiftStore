@@ -42,13 +42,13 @@ It is an in-memory test fixture, not a production server implementation.
 - Unapplied download followed by a conflicting local edit.
 - Local writes while upload or download is held in flight.
 - Failed local transaction rolls back both business rows and captured changes.
-- Mandatory time gate: ±5000 ms accepted, ±5001 ms rejected before any HTTP request.
+- Startup time gate: ±5000 ms accepted, ±5001 ms rejected before any HTTP request.
 - Endpoint/namespace/device journal identity and server database identity checks.
 - SIGKILL after server commit and before its response, followed by recovery.
 - Deterministic random interleaving of 24 edits across two offline clients.
 
-NTP **network results are injected** using the internal task-local test hook;
-the real tolerance check still runs. This tests the gate, not public NTP reachability.
+NTP **network results are injected** into an isolated startup cache for each worker process;
+the real cache and tolerance check still run. This tests the gate, not public NTP reachability.
 Simulator workers do not test app suspension, signing, entitlements or APNs.
 
 ## CloudKit scope
