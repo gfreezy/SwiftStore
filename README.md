@@ -257,8 +257,11 @@ Writes are serialized and transactional; reads use a connection pool.
 ```swift
 import SwiftStore
 
-let manager = try ConnectionManager(path: "app.sqlite", entities: [User.self])
-try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
+let manager = try ConnectionManager(
+    path: "app.sqlite",
+    entities: [User.self],
+    migrations: try StoreMigrations.all(bundle: .module)
+)
 
 try await manager.write { connection in
     try User(name: "Bob", email: "bob@example.com", age: 30).insert(connection)
@@ -267,6 +270,8 @@ let users = try await manager.read { connection in
     try User.filter { $0.age >= 18 }.all(connection)
 }
 ```
+
+Passing `migrations:` automatically starts migration from the synchronous initializer. Reads, writes and sync wait for migrations and additional setup, and propagate any failure. You can optionally call `try await manager.waitForMigration()` to wait explicitly; it is not required before accessing the database. For a migration preview, use the initializer without `migrations:` and call `previewMigrations` followed by `migrate` explicitly.
 
 Use `ConnectionOptions` to configure the reader count, cache size and SQLite synchronous mode.
 A raw `SQLiteConnection` must not be used concurrently.
@@ -282,13 +287,13 @@ import SwiftStore
 let manager = try ConnectionManager(
     path: "app.sqlite",
     entities: [User.self],
+    migrations: try StoreMigrations.all(bundle: .module),
     syncConfig: SyncOptions(
         deviceId: deviceId,
         schemaVersion: 1,
         cloudKit: CloudKitSyncConfiguration(containerIdentifier: "iCloud.com.example.app")
     )
 )
-try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
 let result = try await manager.sync()
 ```
 

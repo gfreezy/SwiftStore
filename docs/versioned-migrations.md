@@ -215,9 +215,14 @@ Only the final structural state is checked during build. A schema can match even
 Apply committed migrations before accessing a database. Changing live Entity definitions alone does not upgrade existing data.
 
 ```swift
-let manager = try ConnectionManager(path: databasePath, entities: [User.self, Post.self])
-try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
+let manager = try ConnectionManager(
+    path: databasePath,
+    entities: [User.self, Post.self],
+    migrations: try StoreMigrations.all(bundle: .module)
+)
 ```
+
+`ConnectionManager` with `migrations:` starts migration automatically from its synchronous initializer. Reads, writes and sync wait for migration, tracking initialization, and `performAdditionalSetup()`. Optionally call `try await manager.waitForMigration()` to await the same completion explicitly. Migration/setup errors propagate to these waiting operations; `init` throws only synchronous opening/configuration errors. Failed migration SQL rolls back as usual. Concurrent and repeated waits share the same completion result. Automatic migration has no fixed setup timeout, so large migrations can finish. Readonly mode cannot use this initializer. The optional `adoptingBaseline:` argument has the same behavior as on `migrate`. To preview first, keep using the initializer without `migrations:`, then call `previewMigrations` and `migrate` separately.
 
 For direct connections:
 

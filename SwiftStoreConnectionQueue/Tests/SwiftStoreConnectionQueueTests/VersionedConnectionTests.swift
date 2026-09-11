@@ -3,6 +3,17 @@ import Testing
 import SwiftStoreCore
 import SwiftStoreConnectionQueue
 
+private final class AdditionalSetupManager: ConnectionManager, @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    var setupFinished: Bool { lock.withLock { finished } }
+
+    override func performAdditionalSetup() async throws {
+        try await Task.sleep(for: .milliseconds(30))
+        lock.withLock { finished = true }
+    }
+}
+
 @Suite("Versioned ConnectionManager setup")
 struct VersionedConnectionTests {
     private func history() -> [StoreMigration] {
@@ -10,6 +21,84 @@ struct VersionedConnectionTests {
         return [StoreMigration(id: "001", target: schema) { db in
             for sql in schema.creationStatements { try db.execute(sql) }
         }]
+    }
+
+    @Test("Initializing with migrations automatically gates access and does not replay applied steps")
+    func initializeWithMigrations() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("store.sqlite").path
+        let schema = history()[0].target
+        let migrations = history() + [StoreMigration(id: "002", target: schema) { db in
+            try db.insert(ConnectionSyncNote(title: "seed"))
+        }]
+        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: migrations)
+        #expect(try await manager.read { try $0.queryScalar("SELECT title FROM connection_sync_note", type: String.self) } == "seed")
+        try await manager.write { try $0.insert(ConnectionSyncNote(title: "written")) }
+        let reopened = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: migrations)
+        #expect(try await reopened.read { try $0.queryScalar("SELECT COUNT(*) FROM connection_sync_note", type: Int.self) } == 2)
+        try await reopened.waitForMigration()
+        try await reopened.waitForMigration()
+        #expect(try await reopened.previewMigrations(migrations).isEmpty)
+    }
+
+    @Test("Automatic migration failure reaches explicit waiters and database operations with rollback")
+    func failedInitialization() async throws {
+        enum Failure: Error { case intentional }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("store.sqlite").path
+        let migrations = history() + [StoreMigration(id: "002", target: history()[0].target) { db in
+            try db.insert(ConnectionSyncNote(title: "rolled back"))
+            throw Failure.intentional
+        }]
+        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: migrations)
+        await #expect(throws: Failure.self) { try await manager.waitForMigration() }
+        await #expect(throws: Failure.self) { try await manager.waitForMigration() }
+        await #expect(throws: Failure.self) { try await manager.read { try $0.tableExists("connection_sync_note") } }
+        await #expect(throws: Failure.self) { try await manager.write { try $0.insert(ConnectionSyncNote(title: "blocked")) } }
+        await #expect(throws: Failure.self) { _ = try await manager.sync() }
+        let db = try SQLiteConnection(path: path)
+        #expect(try !db.tableExists("connection_sync_note"))
+        #expect(try !db.tableExists("__swiftstore_migrations"))
+        let recovered = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: history())
+        #expect(try await recovered.read { try $0.tableExists("connection_sync_note") })
+    }
+
+    @Test("Readonly migration initialization fails before opening the database")
+    func readonlyInitialization() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(throws: ConnectionManagerError.self) {
+            _ = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+                entities: [], migrations: history(), options: .init(readonly: true))
+        }
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @Test("Concurrent optional waits and reads include additional setup")
+    func waitForAdditionalSetup() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try AdditionalSetupManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self], migrations: history())
+        async let first: Void = manager.waitForMigration()
+        async let second: Void = manager.waitForMigration()
+        async let read: Bool = manager.read { _ in manager.setupFinished }
+        _ = try await (first, second)
+        #expect(manager.setupFinished)
+        #expect(try await read)
+        try await manager.waitForMigration()
+    }
+
+    @Test("Explicit migrate cannot replace the history scheduled by initialization")
+    func automaticHistoryIsReserved() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self], migrations: history())
+        try await manager.migrate(migrations: [])
+        #expect(try await manager.read { try $0.tableExists("connection_sync_note") })
     }
 
     @Test("Preview can be followed by migration and normal read/write")
@@ -43,8 +132,8 @@ struct VersionedConnectionTests {
     }
 
     @Test("Default and explicit baselines work for legacy, fresh and already tracked databases",
-          arguments: [Optional<String>.none, "001"])
-    func baselineConfiguration(baselineID: String?) async throws {
+          arguments: [Optional<String>.none, "001"], [false, true])
+    func baselineConfiguration(baselineID: String?, initializeWithMigrations: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -66,8 +155,14 @@ struct VersionedConnectionTests {
                 try db.insert(ConnectionSyncNote(title: "legacy"))
             }
             for _ in 0..<2 {
-                let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self])
-                try await manager.migrate(migrations: migrations, adoptingBaseline: baselineID)
+                let manager: ConnectionManager
+                if initializeWithMigrations {
+                    manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+                        migrations: migrations, adoptingBaseline: baselineID)
+                } else {
+                    manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self])
+                    try await manager.migrate(migrations: migrations, adoptingBaseline: baselineID)
+                }
                 try await manager.read { db throws -> Void in
                     #expect(try db.queryScalar("SELECT COUNT(*) FROM connection_sync_note", type: Int.self) == 1)
                     #expect(try db.queryScalar("SELECT title FROM connection_sync_note", type: String.self) == (legacy ? "legacy!" : "fresh!"))
@@ -112,8 +207,10 @@ struct VersionedConnectionTests {
         #expect(try !db.tableExists("__swiftstore_migrations"))
         #expect(try db.queryScalar("SELECT title FROM connection_sync_note", type: String.self) == "legacy")
 
-        let explicitManager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self])
-        try await explicitManager.migrate(migrations: migrations, adoptingBaseline: "002")
+        let explicitManager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+            migrations: migrations, adoptingBaseline: "002")
+        try await explicitManager.waitForMigration()
+        #expect(try await explicitManager.previewMigrations(migrations).isEmpty)
         #expect(try db.queryScalar("SELECT title FROM connection_sync_note", type: String.self) == "legacy!")
         #expect(try db.queryScalar("SELECT COUNT(*) FROM __swiftstore_migrations", type: Int.self) == 3)
     }

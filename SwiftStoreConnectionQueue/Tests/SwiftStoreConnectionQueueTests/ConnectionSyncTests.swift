@@ -26,11 +26,11 @@ struct ConnectionSyncTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("business.sqlite").path
-        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], syncConfig: options())
         let schema = snapshot
-        try await manager.migrate(migrations: [.init(id: "001", target: schema) { db in
-            for sql in schema.creationStatements { try db.execute(sql) }
-        }])
+        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+            migrations: [.init(id: "001", target: schema) { db in
+                for sql in schema.creationStatements { try db.execute(sql) }
+            }], syncConfig: options())
         try await manager.write { try $0.insert(ConnectionSyncNote(title: "one")) }
         let counts = try await manager.write { db in
             (try ChangeLog.count(db), try db.queryScalar("PRAGMA synchronous", type: Int.self))

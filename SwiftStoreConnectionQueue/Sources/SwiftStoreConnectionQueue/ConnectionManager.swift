@@ -90,7 +90,8 @@ public struct ConnectionOptions: Sendable {
 open class ConnectionManager: @unchecked Sendable {
     public let path: String
     public let options: ConnectionOptions
-    private let setupSignal = AsyncSignal(timeout: .seconds(10))
+    // Configured only during initialization, before the manager escapes to callers.
+    private var setupSignal = AsyncSignal(timeout: .seconds(10))
     private let migrationStarted = Lock<Bool>(false)
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
@@ -195,6 +196,32 @@ open class ConnectionManager: @unchecked Sendable {
         self.readers = readerEntries
     }
 
+    /// Initialize synchronously and automatically start applying committed migrations.
+    /// Reads, writes and sync wait for setup and propagate migration or additional setup errors.
+    /// Readonly mode is rejected. Omit migrations and call migrate separately to preview first.
+    /// - Parameter adoptingBaseline: Optional legacy baseline; defaults to the first migration.
+    public convenience init(
+        path: String,
+        entities: [any EntityProtocol.Type],
+        migrations: [StoreMigration],
+        options: ConnectionOptions = .init(),
+        syncConfig: SyncOptions? = nil,
+        adoptingBaseline baselineID: String? = nil
+    ) throws {
+        guard !options.readonly else {
+            throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
+        }
+        try self.init(path: path, entities: entities, options: options, syncConfig: syncConfig)
+        // Automatic setup is already scheduled, so the missing-migrate watchdog is unnecessary.
+        // Large migrations must not permanently fail waiting callers after ten seconds.
+        setupSignal = AsyncSignal()
+        migrationStarted.withLock { $0 = true }
+        Task {
+            do { try await applyMigrations(migrations, adoptingBaseline: baselineID) }
+            catch { /* applyMigrations records the failure in setupSignal for all callers. */ }
+        }
+    }
+
     /// Apply committed migrations before exposing connections or starting sync tracking.
     /// A database without migration history adopts the first migration if its schema matches.
     /// Supply adoptingBaseline to adopt a later version instead; fresh databases run all steps.
@@ -212,6 +239,10 @@ open class ConnectionManager: @unchecked Sendable {
             try await setupSignal.wait()
             return
         }
+        try await applyMigrations(migrations, adoptingBaseline: baselineID)
+    }
+
+    private func applyMigrations(_ migrations: [StoreMigration], adoptingBaseline baselineID: String?) async throws {
         do {
             try await _write { connection in
                 let expected = SchemaSnapshot(entities: self.entities)
@@ -248,18 +279,19 @@ open class ConnectionManager: @unchecked Sendable {
     }
 
     /// Subclasses can override this method to add additional initialization logic.
-    /// This method is called after migration completes but before setupTask is marked as complete.
+    /// This method is called after migration completes but before migration completion is signaled.
     open func performAdditionalSetup() async throws {
         // Default implementation is empty, subclasses can override
     }
 
-    /// Wait for setup (migration) to complete before performing operations.
-    /// If migrate() hasn't been called yet, suspends until it is called and completes.
-    private func waitForSetup() async throws {
+    /// Optionally wait for migrations, sync tracking and additional setup to complete.
+    /// read, write and sync already wait automatically. Repeated and concurrent calls share
+    /// the same result. Migration/setup failures are thrown to all current and future callers.
+    public func waitForMigration() async throws {
         try await setupSignal.wait()
     }
 
-    /// Internal write that bypasses waitForSetup (used by migrate to avoid deadlock)
+    /// Internal write that bypasses waitForMigration (used by migrate to avoid deadlock)
     private func _write<T: Sendable>(
         isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
@@ -277,7 +309,7 @@ open class ConnectionManager: @unchecked Sendable {
         isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
-        try await waitForSetup()
+        try await waitForMigration()
         return try await _write(block, transaction: transaction)
     }
 
@@ -288,7 +320,7 @@ open class ConnectionManager: @unchecked Sendable {
         isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T
     ) async throws -> T {
-        try await waitForSetup()
+        try await waitForMigration()
         // Try to find a reader that is not in use
         for reader in readers {
             let found = reader.isInUse.withLock { isInUse in
@@ -329,7 +361,7 @@ open class ConnectionManager: @unchecked Sendable {
     /// - Returns: Sync result with statistics
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func sync() async throws -> SyncResult {
-        try await waitForSetup()
+        try await waitForMigration()
         guard let writer else {
             throw ConnectionManagerError.readonlyMode("Cannot sync in readonly mode.")
         }
