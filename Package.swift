@@ -22,6 +22,7 @@ let package = Package(
         .watchOS(.v10)
     ],
     products: [
+        .library(name: "SwiftFileStore", targets: ["SwiftFileStore"]),
         .executable(name: "swiftstore", targets: ["SwiftStoreStandaloneCLI"]),
         // Keep the plugin tool in its own product with the same target name. Sharing
         // its target with the standalone product can omit Xcode's host-tool build edge.
@@ -63,6 +64,8 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax", from: "600.0.0"),
     ],
     targets: [
+        .target(name: "SwiftFileStore", path: "SwiftFileStore/Sources/SwiftFileStore"),
+        .testTarget(name: "SwiftFileStoreTests", dependencies: ["SwiftFileStore"], path: "SwiftFileStore/Tests/SwiftFileStoreTests"),
         // MARK: - Protocols Layer (no dependencies)
         .target(
             name: "SwiftStoreProtocols",

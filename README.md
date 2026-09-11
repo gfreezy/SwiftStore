@@ -20,9 +20,13 @@ select a version from [Releases](https://github.com/gfreezy/SwiftStore/releases)
 | `SwiftStoreConnectionQueue` | Serialized writes, pooled reads and sync coordination |
 | `SwiftStoreMacros` | Macro declarations |
 | `SwiftStoreSyncCloudTransport` | CloudKit sync client |
+| `SwiftFileStore` | Independent local attachments with iCloud Drive synchronization (4.1.0+) |
 | `SwiftStoreServer` | Development web interface and HTTP API |
 | `SwiftStoreMigrationCheck` | Build plugin for migration checks |
 | `swiftstore` | Migration CLI |
+
+See [SwiftFileStore](SwiftFileStore/README.md) for its standalone package, stable local
+URLs, offline saves, and reader lifetime handling. It does not require a SwiftStore database.
 
 ## Quick Start
 
