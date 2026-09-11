@@ -319,3 +319,25 @@ The example uses the public plugin directly, with no schema tool target. The ext
 independent histories, and checks configuration, Entity ownership and snapshot input changes.
 
 CLI packaging is defined in the [release workflow](../.github/workflows/release-cli.yml).
+
+## Database setup after migration
+
+Override the synchronous connection-taking hook to insert initial or default data:
+
+```swift
+final class AppConnectionManager: ConnectionManager, @unchecked Sendable {
+    override func performAdditionalSetup(connection conn: SQLiteConnection) throws {
+        if try User.count(conn) == 0 {
+            try conn.insert(User(name: "Default", email: "default@example.com", age: 0))
+        }
+    }
+}
+```
+
+The order is: committed migrations → start change tracking → `performAdditionalSetup(connection:)` in a writer transaction → `performAdditionalSetup()` for asynchronous work → release waiting callers. Both automatic and explicit migration use this sequence.
+
+With `syncConfig`, writes to registered entities through this connection create normal changelog entries. They share the setup transaction with the business changes. If the connection-taking hook throws, its writes and changelog roll back together; already completed migrations remain committed. Without sync configuration, local writes work but no sync changelog is generated. A failure from the later asynchronous hook does not roll back the earlier committed database setup transaction.
+
+This is a per-manager setup hook, not a versioned migration body: it runs again after reopening the database. Use existence checks or another business rule to make seeding idempotent. Keep one-time historical data transformations in migration files.
+
+Use only the supplied connection inside this callback. Do not retain it, use it from another task, manually commit/roll back its transaction, or call the manager's public read/write/sync/wait methods: those wait for setup completion. The existing asynchronous no-argument hook remains available for work that does not access the manager's database. `waitForMigration()` and normal database access wait until both hooks succeed.

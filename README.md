@@ -273,6 +273,8 @@ let users = try await manager.read { connection in
 
 Passing `migrations:` automatically starts migration from the synchronous initializer. Reads, writes and sync wait for migrations and additional setup, and propagate any failure. You can optionally call `try await manager.waitForMigration()` to wait explicitly; it is not required before accessing the database. For a migration preview, use the initializer without `migrations:` and call `previewMigrations` followed by `migrate` explicitly.
 
+Subclass `ConnectionManager` and override `performAdditionalSetup(connection:) throws` to seed data using the supplied writer connection. It runs in a transaction after change tracking starts, so writes to registered entities and their changelog commit or roll back together when sync is configured. Make seeds idempotent: this hook also runs when reopening an already migrated database. See [database setup](docs/versioned-migrations.md#database-setup-after-migration).
+
 Use `ConnectionOptions` to configure the reader count, cache size and SQLite synchronous mode.
 A raw `SQLiteConnection` must not be used concurrently.
 

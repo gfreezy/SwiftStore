@@ -263,6 +263,9 @@ open class ConnectionManager: @unchecked Sendable {
                 try runner.migrate()
             }
             try await writer?.startTracking()
+            try await _write { connection in
+                try self.performAdditionalSetup(connection: connection)
+            }
             try await performAdditionalSetup()
             await setupSignal.signal()
         } catch {
@@ -278,8 +281,19 @@ open class ConnectionManager: @unchecked Sendable {
         }, transaction: false)
     }
 
-    /// Subclasses can override this method to add additional initialization logic.
-    /// This method is called after migration completes but before migration completion is signaled.
+    /// Database setup runs on the serialized writer, in a transaction after tracking starts.
+    /// With sync configured, changes to registered entities and their changelog commit together;
+    /// throwing rolls back this setup transaction, but not already committed migrations.
+    /// Runs once per manager setup, including reopening a migrated database; make seeds idempotent.
+    /// Do not retain the connection, manually finish its transaction, or call manager read/write/sync
+    /// from this hook. Use the supplied connection directly; public operations still wait for setup.
+    open func performAdditionalSetup(connection: SQLiteConnection) throws {
+        // Default implementation is empty, subclasses can override.
+    }
+
+    /// Additional asynchronous initialization after database setup has committed.
+    /// Completion is signaled only after this hook returns. Use the connection-taking overload
+    /// for database writes; public manager operations would wait for this hook and deadlock.
     open func performAdditionalSetup() async throws {
         // Default implementation is empty, subclasses can override
     }
