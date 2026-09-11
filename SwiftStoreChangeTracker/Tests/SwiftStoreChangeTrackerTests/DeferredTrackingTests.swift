@@ -10,7 +10,7 @@ struct DeferredTrackingTests {
     private func fixture() throws -> (SQLiteConnection, ChangeTracker) {
         let db = try SQLiteConnection(path: ":memory:")
         try migrateTestEntities([TestEntity.self], on: db)
-        let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:",
+        let tracker = try ChangeTracker(connection: db,
             deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })
         try tracker.start()
@@ -18,7 +18,7 @@ struct DeferredTrackingTests {
     }
 
     private func logs(_ tracker: ChangeTracker) throws -> [ChangeLog] {
-        try ChangeLog.all(tracker.connection).sorted { $0.logicalClock < $1.logicalClock }
+        try ChangeLog.all(tracker.connection).sorted { $0.seq < $1.seq }
     }
 
     @Test("RETURNING is logged only at DONE; reset rolls back an unfinished write")
@@ -79,7 +79,29 @@ struct DeferredTrackingTests {
         #expect(try JSONDecoder().decode(TestEntity.self, from: Data(update.utf8)).name == "last")
     }
 
-    @Test("Remote writes never enter the outbox and source is restored after errors")
+    @Test("Timestamp correction captures business trigger side effects in the same statement")
+    func timestampSideEffects() throws {
+        let (db, tracker) = try fixture()
+        try db.insert(TestEntity(name: "mirror", value: 0))
+        try db.execute("""
+            CREATE TRIGGER mirror_update AFTER UPDATE ON test_entity WHEN NEW.name = 'source' BEGIN
+                UPDATE test_entity SET value = NEW.value WHERE name = 'mirror';
+            END
+            """)
+        try db.insert(TestEntity(name: "source", value: 42))
+        let events = try logs(tracker)
+        #expect(events.count == 3)
+        for row in try TestEntity.all(db) {
+            let event = try #require(events.last { $0.syncKey == SyncKeyEncoder.encode([.blob(row.id.data)]) })
+            let payload = try #require(event.payload)
+            let captured = try JSONDecoder().decode(TestEntity.self, from: Data(payload.utf8))
+            #expect(captured.value == row.value)
+            #expect(captured.updatedAt == row.updatedAt)
+            #expect(row.value == 42)
+        }
+    }
+
+    @Test("Remote writes never enter the changelog and source is restored after errors")
     func source() throws {
         let (db, tracker) = try fixture()
         let entity = TestEntity(name: "download", value: 1)
@@ -94,7 +116,7 @@ struct DeferredTrackingTests {
         #expect(try logs(tracker).isEmpty)
         try db.execute("UPDATE test_entity SET name = 'local edit'")
         #expect(try logs(tracker).count == 1)
-        try db.withWriteSource(.remote) { try db.execute("DELETE FROM test_entity") }
+        _ = try db.withWriteSource(.remote) { try db.execute("DELETE FROM test_entity") }
         #expect(try logs(tracker).count == 1)
         try db.insert(TestEntity(name: "local insert", value: 2))
         #expect(try logs(tracker).count == 2)
@@ -165,7 +187,7 @@ struct DeferredTrackingTests {
         }
         #expect(try logs(tracker).count == 1)
         try tracker.connection.execute("""
-            CREATE TRIGGER reject_log BEFORE INSERT ON change_log BEGIN
+            CREATE TRIGGER reject_log BEFORE INSERT ON __swiftstore_change_log BEGIN
                 SELECT RAISE(ABORT, 'test log failure');
             END
             """)

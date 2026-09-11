@@ -1,14 +1,14 @@
 import Foundation
 import CryptoKit
+import SwiftStoreSync
 
-/// Shared opaque wire representation. Only the client decodes the payload;
-/// backends identify records by key and arbitrate using Unix milliseconds.
-public struct SyncRecordEnvelope: Codable, Sendable {
-    public let key: String
-    public let updatedAt: Int64
-    public let payload: Data
+/// CloudKit record encoding. Stable record names preserve existing iCloud data.
+package struct CloudRecordEnvelope: Codable, Sendable {
+    package let key: String
+    package let updatedAt: Int64
+    package let payload: Data
 
-    public init(change: SyncChange) throws {
+    package init(change: SyncChange) throws {
         guard !change.entityType.isEmpty, !change.syncKey.isEmpty else {
             throw SyncError.invalidPayload("Empty sync identity")
         }
@@ -19,13 +19,13 @@ public struct SyncRecordEnvelope: Codable, Sendable {
         payload = try encoder.encode(change)
     }
 
-    public init(key: String, updatedAt: Int64, payload: Data) {
+    package init(key: String, updatedAt: Int64, payload: Data) {
         self.key = key
         self.updatedAt = updatedAt
         self.payload = payload
     }
 
-    public func decodeChange() throws -> SyncChange {
+    package func decodeChange() throws -> SyncChange {
         let change = try JSONDecoder().decode(SyncChange.self, from: payload)
         guard !change.entityType.isEmpty, !change.syncKey.isEmpty,
               key == Self.key(for: change), updatedAt == (try Self.timestamp(for: change)),
@@ -35,11 +35,11 @@ public struct SyncRecordEnvelope: Codable, Sendable {
         return change
     }
 
-    public static func key(for change: SyncChange) -> String {
+    package static func key(for change: SyncChange) -> String {
         key(entityType: change.entityType, syncKey: change.syncKey)
     }
 
-    public static func key(entityType: String, syncKey: Data) -> String {
+    package static func key(entityType: String, syncKey: Data) -> String {
         let name = Data(entityType.utf8)
         var length = UInt64(name.count).bigEndian
         var identity = withUnsafeBytes(of: &length) { Data($0) }

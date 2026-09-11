@@ -10,20 +10,20 @@ extension SyncChange {
         static let payloadAsset = "payloadAsset"
     }
 
-    /// The same opaque SHA-256 key as HTTP, used as CloudKit's native record ID.
-    public static func recordName(entityType: String, syncKey: Data) -> String {
-        SyncRecordEnvelope.key(entityType: entityType, syncKey: syncKey)
+    /// Stable SHA-256 identity used as CloudKit’s native record ID.
+    package static func recordName(entityType: String, syncKey: Data) -> String {
+        CloudRecordEnvelope.key(entityType: entityType, syncKey: syncKey)
     }
 
     /// CloudKit adds only its native record ID and conditional-save system fields
-    /// to the shared key / updatedAt / payload representation.
-    public func makeCKRecord(
+    /// to the key / updatedAt / payload representation.
+    package func makeCKRecord(
         zoneID: CKRecordZone.ID,
         recordType: CKRecord.RecordType,
         assetThreshold: Int,
         systemFields: Data? = nil
     ) throws -> CKRecord {
-        let envelope = try SyncRecordEnvelope(change: self)
+        let envelope = try CloudRecordEnvelope(change: self)
         let recordID = CKRecord.ID(recordName: envelope.key, zoneID: zoneID)
         let record: CKRecord
         if let systemFields {
@@ -52,8 +52,8 @@ extension SyncChange {
     }
 
     /// Decode opaque inline/asset bytes, then validate identity and time against
-    /// the same shared envelope used by HTTP. Tombstones also require a payload.
-    public init?(ckRecord record: CKRecord) {
+    /// the CloudKit record envelope. Tombstones also require a payload.
+    package init?(ckRecord record: CKRecord) {
         guard let updatedAt = record[RecordField.updatedAt] as? Int64 else { return nil }
         let payload: Data
         if let inline = record[RecordField.payload] as? String,
@@ -67,7 +67,7 @@ extension SyncChange {
         } else {
             return nil
         }
-        let envelope = SyncRecordEnvelope(key: record.recordID.recordName, updatedAt: updatedAt, payload: payload)
+        let envelope = CloudRecordEnvelope(key: record.recordID.recordName, updatedAt: updatedAt, payload: payload)
         guard let change = try? envelope.decodeChange() else { return nil }
         self = change
     }

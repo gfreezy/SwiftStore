@@ -8,7 +8,8 @@ ChangeTracker 使用 `sqlite3_preupdate_hook` 捕获每次行修改的新旧值�
 2. 原生 hook 只处理已注册实体的本地写入，通过 `sqlite3_preupdate_old/new` 复制旧值和新值；不查询或修改数据库。
 3. 每个事件保存自己的值数组、来源和发生时间，不保存 SQLite 的临时指针。远端事件在进入缓冲区前被过滤。
 4. 等语句执行到 `SQLITE_DONE` 后，按实体和同步键整理事件。自动更新时间等触发器产生的同一键事件会合并为最终版本。
-5. 使用现有实体 Codable 编码生成日志；删除时间使用事件捕获时间，而不是延后处理时间。
+5. 真实业务修改的时间为 `max(当前时间, 已知版本 + 1ms)`；仅更新自动时间戳的无效编辑不产生日志。修正时间戳引发的业务触发器修改也被捕获，合并最终快照；不收敛的触发器会使原语句回滚。
+6. 使用实体 Codable 编码最终快照，在原语句 savepoint 内追加日志及版本元数据，再释放 savepoint。删除也获得递增版本，保留无 payload 的事件。
 
 同一语句中的同步键更新会产生旧键删除和新键写入。`REPLACE` 隐含删除、外键级联和触发器删除均通过原生事件捕获。复合 `SyncKey` 的身份由值快照提取。
 
@@ -20,7 +21,9 @@ ChangeTracker 使用 `sqlite3_preupdate_hook` 捕获每次行修改的新旧值�
 
 带 `RETURNING` 的写入必须执行到 `step()` 返回 false 才会完成日志处理。提前 `reset()` 或释放语句会撤销该语句的业务修改和待处理事件。捕获、编码或日志写入失败也会回滚该语句。使用 `SQLiteConnection.transaction` / `ConnectionManager.write` 时，嵌套事务和整个事务的回滚会同步撤销日志，包括远端作用域中显式嵌套的本地写入。
 
-业务库与日志库是两个 SQLite 文件。正常错误会回滚，但不提供跨文件的崩溃原子提交保证。
+业务行、`__swiftstore_change_log` 和同步元数据使用同一个 SQLite 文件、同一个 writer 连接和同一个事务。日志写入失败会回滚业务行；外层事务未提交时，日志也未提交。ConnectionManager 启用同步时强制 writer 使用 `synchronous=FULL`。
+
+原始 `BEGIN/COMMIT/ROLLBACK` 和 SAVEPOINT 同样生效。同步会等待原始事务结束后再读取或确认进度；不要在尚未结束的原始事务内等待 `sync()`。同步上传的批次合并只发生在已提交日志上，原日志禁止 UPDATE/DELETE/REPLACE，当前不做自动清理。
 
 ## 迁移和接入
 

@@ -26,6 +26,7 @@ public struct SQLiteUpdateInfo: Sendable {
 public enum SQLiteWriteSource: Sendable {
     case local
     case remote
+    case internalMaintenance
 }
 
 /// Receives changes after the originating statement finishes, outside SQLite's hook.
@@ -34,16 +35,12 @@ public protocol SQLiteUpdateHookHandler: AnyObject {
     func tracksTable(_ tableName: String) -> Bool
     func handleUpdate(_ info: SQLiteUpdateInfo)
     func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws
-    func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T
 }
 
 public extension SQLiteUpdateHookHandler {
     func tracksTable(_ tableName: String) -> Bool { true }
     func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws {
         for update in updates { handleUpdate(update) }
-    }
-    func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T {
-        try block()
     }
 }
 
@@ -57,6 +54,10 @@ public final class SQLiteConnection {
     private var updateHookContext: UnsafeMutableRawPointer?
     private var steppingStatement: SQLiteStatementImpl?
     private weak var activeWriteStatement: SQLiteStatementImpl?
+    private var deliveringUpdates = false
+    private var capturingMaintenance = false
+    private var maintenanceUpdates: [SQLiteUpdateInfo] = []
+    private var completedChanges: Int?
     public private(set) var writeSource: SQLiteWriteSource = .local
 
     /// Default origin for statements starting in this synchronous scope. Each
@@ -67,6 +68,18 @@ public final class SQLiteConnection {
         writeSource = source
         defer { writeSource = previous }
         return try block()
+    }
+
+    /// Capture trigger side effects of a tracker-owned timestamp correction, without
+    /// recursive delivery. The caller folds them into the originating statement.
+    package func captureTrackedMaintenance(_ block: () throws -> Void) throws -> [SQLiteUpdateInfo] {
+        guard deliveringUpdates, !capturingMaintenance else {
+            throw StoreError.queryFailed("Maintenance capture requires a pending tracked statement")
+        }
+        capturingMaintenance = true
+        defer { capturingMaintenance = false; maintenanceUpdates.removeAll() }
+        try block()
+        return maintenanceUpdates
     }
 
     // Transaction nesting support
@@ -178,7 +191,8 @@ public final class SQLiteConnection {
             guard let contextPtr, let tableName else { return }
             let connection = contextPtr.assumingMemoryBound(to: Unmanaged<SQLiteConnection>.self).pointee.takeUnretainedValue()
             guard let statement = connection.steppingStatement,
-                  let source = statement.executionSource, source == .local,
+                  let source = statement.executionSource,
+                  source == .local || (source == .internalMaintenance && connection.capturingMaintenance),
                   dbName.map({ String(cString: $0) }) == "main",
                   let op = SQLiteUpdateOperation(rawValue: operation),
                   statement.captureError == nil else { return }
@@ -250,7 +264,7 @@ public final class SQLiteConnection {
                 }
             }
         }
-        return Int(sqlite3_changes(db))
+        return changes
     }
 
     /// Internal transaction control; these statements cannot produce row hooks.
@@ -268,11 +282,11 @@ public final class SQLiteConnection {
 
     func step(_ statement: SQLiteStatementImpl, pointer: OpaquePointer) throws -> Bool {
         let command = statement.command
-        if let active = activeWriteStatement, active !== statement,
+        if !deliveringUpdates, let active = activeWriteStatement, active !== statement,
            sqlite3_stmt_readonly(pointer) == 0 || ["BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE"].contains(command) {
             throw StoreError.queryFailed("Finish or reset the active RETURNING statement before another write")
         }
-        if statement.trackingSavepoint == nil, let handler = updateHookHandler,
+        if !deliveringUpdates, statement.trackingSavepoint == nil, let handler = updateHookHandler,
            sqlite3_stmt_readonly(pointer) == 0,
            ["INSERT", "UPDATE", "DELETE", "REPLACE", "WITH"].contains(command) {
             savepointCounter += 1
@@ -282,6 +296,7 @@ public final class SQLiteConnection {
             statement.trackingHandler = handler
             activeWriteStatement = statement
         }
+        if capturingMaintenance { statement.trackingHandler = updateHookHandler }
         if statement.executionSource == nil { statement.executionSource = writeSource }
         steppingStatement = statement
         let result = sqlite3_step(pointer)
@@ -296,22 +311,29 @@ public final class SQLiteConnection {
             statement.reset()
             throw StoreError.queryFailed("Step failed: \(message)")
         }
+        let rowID = sqlite3_last_insert_rowid(db)
+        let affected = Int(sqlite3_changes(db))
         do {
             if let name = statement.trackingSavepoint, let handler = statement.trackingHandler {
                 if statement.pendingUpdates.isEmpty {
                     try executeControl("RELEASE SAVEPOINT \(name)")
                 } else {
-                    try handler.withTrackingTransaction {
+                    deliveringUpdates = true
+                    defer { deliveringUpdates = false }
+                    try withWriteSource(.internalMaintenance) {
                         try handler.handleUpdates(statement.pendingUpdates)
                         try executeControl("RELEASE SAVEPOINT \(name)")
                     }
                 }
             }
+            if capturingMaintenance { maintenanceUpdates.append(contentsOf: statement.pendingUpdates) }
             statement.pendingUpdates.removeAll()
             statement.executionSource = nil
             statement.trackingSavepoint = nil
             statement.trackingHandler = nil
             if activeWriteStatement === statement { activeWriteStatement = nil }
+            sqlite3_set_last_insert_rowid(db, rowID)
+            completedChanges = affected
             return false
         } catch {
             statement.reset()
@@ -356,7 +378,7 @@ public final class SQLiteConnection {
 
     /// Get the number of changes from the last statement
     public var changes: Int {
-        return Int(sqlite3_changes(db))
+        return completedChanges ?? Int(sqlite3_changes(db))
     }
 
     /// Begin a transaction
@@ -378,14 +400,11 @@ public final class SQLiteConnection {
     /// Execute a block within a transaction
     /// Uses SAVEPOINT for nested transactions
     public func transaction<T>(_ block: () throws -> T) throws -> T {
-        if let handler = updateHookHandler {
-            return try handler.withTrackingTransaction { try databaseTransaction(block) }
-        }
         return try databaseTransaction(block)
     }
 
     private func databaseTransaction<T>(_ block: () throws -> T) throws -> T {
-        if transactionDepth > 0 {
+        if sqlite3_get_autocommit(db) == 0 {
             // Already in a transaction, use SAVEPOINT
             return try savepoint(block)
         }
@@ -439,7 +458,28 @@ public final class SQLiteConnection {
 
     /// Check if currently in a transaction
     public var isInTransaction: Bool {
-        transactionDepth > 0
+        sqlite3_get_autocommit(db) == 0
+    }
+
+    /// A consistent backup including committed WAL contents. Never overwrites a file.
+    public func backup(to destination: String) throws {
+        guard !isInTransaction, !FileManager.default.fileExists(atPath: destination) else {
+            throw StoreError.queryFailed("Backup requires an unused destination and no active transaction")
+        }
+        var target: OpaquePointer?
+        guard sqlite3_open(destination, &target) == SQLITE_OK else {
+            sqlite3_close(target)
+            throw StoreError.queryFailed("Cannot open database backup")
+        }
+        defer { sqlite3_close(target) }
+        guard let backup = sqlite3_backup_init(target, "main", db, "main") else {
+            throw StoreError.queryFailed("Cannot initialize database backup")
+        }
+        let result = sqlite3_backup_step(backup, -1)
+        let finish = sqlite3_backup_finish(backup)
+        guard result == SQLITE_DONE, finish == SQLITE_OK else {
+            throw StoreError.queryFailed("Database backup failed (\(result), \(finish))")
+        }
     }
 
     /// Check if a table exists

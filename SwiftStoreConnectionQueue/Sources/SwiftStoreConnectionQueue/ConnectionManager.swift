@@ -1,6 +1,8 @@
 import Foundation
 import SwiftStoreCore
 import SwiftStoreSync
+import SwiftStoreSyncCloudTransport
+import CloudKit
 import os.log
 
 // MARK: - Errors
@@ -25,95 +27,25 @@ public typealias SyncState = SwiftStoreSync.SyncState
 public typealias SyncResult = SwiftStoreSync.SyncResult
 public typealias SyncConfiguration = SwiftStoreSync.SyncConfiguration
 
-/// Sync configuration for ConnectionManager
-/// A simplified wrapper that doesn't require registeredEntities (uses entities from ConnectionManager)
+public typealias CloudKitSyncConfiguration = SwiftStoreSyncCloudTransport.CloudKitSyncConfiguration
+public typealias LegacySyncMigration = SwiftStoreSync.LegacySyncMigration
+
+/// CloudKit-only synchronization. All durable state resides in the business database.
 public struct SyncOptions: Sendable {
-    /// Path to the changelog database file (nil to auto-generate from main database path)
-    public let changeLogDbPath: String?
-    /// Device ID for identifying the source of changes
     public let deviceId: UUIDV7
-    /// Remote sync transport
-    public let transport: any SyncTransport
-    /// Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
     public let schemaVersion: Int
-    /// Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
-    public let tickClock: @Sendable () -> Int64
-    /// Sync configuration including batch size settings
+    public let cloudKit: CloudKitSyncConfiguration
     public let syncConfiguration: SyncConfiguration
-    /// Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
-    public let ntpToleranceMs: Int64
+    public let migration: LegacySyncMigration?
 
-    /// Initialize sync configuration.
-    ///
-    /// Sync state (`lastLocalClock` watermark) is persisted automatically
-    /// inside the changelog database, so no initial state parameter is needed.
-    /// Inspect the current state via `ConnectionManager.syncState`.
-    ///
-    /// - Parameters:
-    ///   - deviceId: Unique device identifier to distinguish change sources from different devices
-    ///   - transport: Sync transport layer responsible for communicating with the remote server
-    ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
-    ///   - changeLogDbPath: Path to the change log database file, nil to auto-generate from main database path (e.g., db.sqlite -> db_changelog.sqlite)
-    ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
-    ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
-    public init(
-        deviceId: UUIDV7,
-        transport: any SyncTransport,
-        schemaVersion: Int,
-        changeLogDbPath: String? = nil,
-        tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-        syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        ntpToleranceMs: Int64 = 5000
-    ) {
-        self.changeLogDbPath = changeLogDbPath
-        self.deviceId = deviceId
-        self.transport = transport
-        self.schemaVersion = schemaVersion
-        self.tickClock = tickClock
-        self.syncConfiguration = syncConfiguration
-        self.ntpToleranceMs = ntpToleranceMs
+    public init(deviceId: UUIDV7, schemaVersion: Int, cloudKit: CloudKitSyncConfiguration,
+                syncConfiguration: SyncConfiguration = .init(), migration: LegacySyncMigration? = nil) {
+        self.deviceId = deviceId; self.schemaVersion = schemaVersion; self.cloudKit = cloudKit
+        self.syncConfiguration = syncConfiguration; self.migration = migration
     }
 
-    /// Convert to SwiftStoreSync.SyncConfig with registered entities
-    /// - Parameters:
-    ///   - entities: Entity types to sync
-    ///   - dbPath: Main database path (used to generate changelog path if not specified)
-    func toSyncManagerConfig(entities: [any EntityProtocol.Type], dbPath: String)
-        -> SwiftStoreSync.SyncConfig
-    {
-        let resolvedChangeLogPath = changeLogDbPath ?? Self.defaultChangeLogPath(from: dbPath)
-        return SwiftStoreSync.SyncConfig(
-            changeLogDbPath: resolvedChangeLogPath,
-            deviceId: deviceId,
-            registeredEntities: entities,
-            transport: transport,
-            schemaVersion: schemaVersion,
-            tickClock: tickClock,
-            syncConfiguration: syncConfiguration,
-            ntpToleranceMs: ntpToleranceMs
-        )
-    }
-
-    /// Get the resolved changelog database path
-    /// - Parameter dbPath: Main database path (used if changeLogDbPath is nil)
-    /// - Returns: The resolved changelog database path
-    func resolvedChangeLogPath(dbPath: String) -> String {
-        changeLogDbPath ?? Self.defaultChangeLogPath(from: dbPath)
-    }
-
-    /// Generate default changelog database path from main database path
-    /// e.g., /path/to/db.sqlite -> /path/to/db_changelog.sqlite
-    private static func defaultChangeLogPath(from dbPath: String) -> String {
-        let nsPath = dbPath as NSString
-        let directory = nsPath.deletingLastPathComponent
-        let filename = nsPath.lastPathComponent as NSString
-        let ext = filename.pathExtension
-        let name = filename.deletingPathExtension
-
-        let changeLogFilename = ext.isEmpty ? "\(name)_changelog" : "\(name)_changelog.\(ext)"
-        return directory.isEmpty
-            ? changeLogFilename : (directory as NSString).appendingPathComponent(changeLogFilename)
+    var scope: String {
+        [cloudKit.containerIdentifier, cloudKit.zoneName, cloudKit.recordType].joined(separator: "/")
     }
 }
 
@@ -162,6 +94,7 @@ open class ConnectionManager: @unchecked Sendable {
     private let migrationStarted = Lock<Bool>(false)
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
+    private let cloudSubscriptionID: String?
 
     private let writer: WritableConnectionActor?
     private let readers: [ReaderEntry]
@@ -209,6 +142,7 @@ open class ConnectionManager: @unchecked Sendable {
         self.options = options
         self.entities = entities
         self.syncEnabled = syncConfig != nil
+        self.cloudSubscriptionID = syncConfig?.cloudKit.subscriptionID
 
         // Compute WAL mode: enabled when not readonly or when sync is enabled
         // WAL provides better concurrent read performance even in write mode
@@ -228,23 +162,23 @@ open class ConnectionManager: @unchecked Sendable {
         if options.readonly {
             self.writer = nil
         } else {
-            // Ensure directory exists for changelog database
-            if let syncConfig {
-                let changeLogPath = syncConfig.resolvedChangeLogPath(dbPath: path)
-                let changeLogDir = (changeLogPath as NSString).deletingLastPathComponent
-                if !changeLogDir.isEmpty {
-                    try FileManager.default.createDirectory(
-                        atPath: changeLogDir,
-                        withIntermediateDirectories: true,
-                        attributes: nil
-                    )
+            var writeOptions = options.toSQLiteOptions(walMode: walMode)
+            // Sync acknowledgement durability must include the business write and its log.
+            if syncConfig != nil { writeOptions.synchronous = 2 }
+            let writerConn = try SQLiteConnection(path: path, options: writeOptions)
+            if let syncConfig, syncConfig.migration == nil {
+                let imported: Int64 = try writerConn.tableExists("__swiftstore_cloud_state")
+                    ? writerConn.queryScalar("SELECT legacy_imported FROM __swiftstore_cloud_state WHERE singleton=1") ?? 0 : 0
+                let url = URL(fileURLWithPath: path)
+                let ext = url.pathExtension
+                let oldName = url.deletingPathExtension().lastPathComponent + "_changelog" + (ext.isEmpty ? "" : "." + ext)
+                let oldPath = url.deletingLastPathComponent().appendingPathComponent(oldName).path
+                let hasOldTombstones = try writerConn.tableExists("__swiftstore_sync_tombstones")
+                if imported == 0 && (FileManager.default.fileExists(atPath: oldPath) || hasOldTombstones) {
+                    throw ConnectionManagerError.invalidConfiguration("Legacy sync data found; supply LegacySyncMigration with the original changelog and CloudKit journal paths")
                 }
             }
-
-            let writeOptions = options.toSQLiteOptions(walMode: walMode)
-            let writerConn = try SQLiteConnection(path: path, options: writeOptions)
-            let managerConfig = syncConfig?.toSyncManagerConfig(entities: entities, dbPath: path)
-            self.writer = try WritableConnectionActor(connection: writerConn, syncConfig: managerConfig)
+            self.writer = try WritableConnectionActor(connection: writerConn, entities: entities, syncConfig: syncConfig)
         }
 
         // Create reader connections
@@ -391,7 +325,7 @@ open class ConnectionManager: @unchecked Sendable {
         options.readonly
     }
 
-    /// Perform a full sync (pull then push)
+    /// Send a bounded changelog batch sequence, then fetch CloudKit changes.
     /// - Returns: Sync result with statistics
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func sync() async throws -> SyncResult {
@@ -408,6 +342,18 @@ open class ConnectionManager: @unchecked Sendable {
             await writer?.syncState
         }
     }
+
+    /// Forward CloudKit silent notifications. On iOS 16 this wakes the Operations driver.
+    @discardableResult
+    public func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) -> Bool {
+        guard let id = CKNotification(fromRemoteNotificationDictionary: userInfo)?.subscriptionID,
+              id == cloudSubscriptionID, let writer else { return false }
+        // Parse the non-Sendable UIKit dictionary on the caller's executor.
+        Task { [weak writer] in _ = await writer?.handleCloudNotification(id) }
+        return true
+    }
+
+    public var lastSyncError: Error? { get async { await writer?.lastSyncError } }
 
     /// Suspend automatic syncing while continuing to track local writes.
     public func stopSync() async {
@@ -428,109 +374,139 @@ actor ConnectionActor {
     }
 }
 
-/// Actor for writable connection with optional sync support
+/// Owns both the business writer and the synchronous CloudKit persistence core.
 public actor WritableConnectionActor {
     private let connection: SQLiteConnection
     private let syncManager: SyncManager?
-    private var isSyncing: Bool = false
-    private var remoteObserver: Task<Void, Never>?
-    private var resyncRequested = false
-    private var syncGeneration = UUID()
+    private let syncOptions: SyncOptions?
+    private var controller: CloudKitSyncController?
+    private var session = UUID()
+    private var trackingReady = false
+    private var automaticSyncStopped = false
+    private var lastSignaledSequence: Int64 = 0
+    package var cloudSessionID: UUID { session }
+    private var transactionWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(connection: SQLiteConnection, syncConfig: SwiftStoreSync.SyncConfig? = nil) throws {
-        self.connection = connection
+    init(connection: SQLiteConnection, entities: [any EntityProtocol.Type], syncConfig: SyncOptions?) throws {
+        self.connection = connection; syncOptions = syncConfig
         if let config = syncConfig {
-            self.syncManager = try SyncManager(connection: connection, config: config)
-        } else {
-            self.syncManager = nil
-        }
+            guard (1...200).contains(config.syncConfiguration.batchSize), config.cloudKit.ntpToleranceMs > 0,
+                  config.cloudKit.assetThreshold > 0 else { throw ConnectionManagerError.invalidConfiguration("Invalid CloudKit sync limits") }
+            syncManager = try SyncManager(connection: connection, deviceID: config.deviceId, entities: entities,
+                schemaVersion: config.schemaVersion, migration: config.migration, scope: config.scope)
+        } else { syncManager = nil }
     }
 
-    deinit {
-        remoteObserver?.cancel()
-    }
-
-    /// Execute a block with the connection
-    /// To ensure connection is not used concurrently, block must not be async, it will be executed in sequence.
     func run<T>(_ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true) throws -> T {
-        let previousClock = try syncManager?.latestClock()
-        let result: T
-        if transaction {
-            // The connection coordinates changelog transactions, including nested rollback.
-            result = try connection.transaction { try block(connection) }
-        } else {
-            result = try block(connection)
-        }
-        if remoteObserver != nil, try syncManager?.latestClock() != previousClock {
-            let generation = syncGeneration
-            Task { [weak self] in await self?.syncAfterSignal(generation: generation) }
-        }
-        return result
+        defer { writerDidFinish() }
+        return try transaction ? connection.transaction { try block(connection) } : block(connection)
     }
 
-    // MARK: - Sync Operations
-
-    func startTracking() throws { try syncManager?.startTracking() }
-
-    var hasSyncEnabled: Bool {
-        syncManager != nil
+    private func writerDidFinish() {
+        guard !connection.isInTransaction else { return }
+        let waiters = transactionWaiters; transactionWaiters = []
+        for waiter in waiters { waiter.resume() }
+        guard trackingReady, !automaticSyncStopped, syncOptions?.cloudKit.automaticallySync == true,
+              let latest = try? syncManager?.latestSequence(), latest != lastSignaledSequence else { return }
+        lastSignaledSequence = latest
+        let generation = session
+        Task { [weak self] in await self?.schedule(generation: generation) }
     }
 
-    func sync() async throws -> SyncResult {
-        guard let manager = syncManager else {
-            throw SyncError.notConfigured(
-                "SyncManager not initialized. Provide syncConfig when creating ConnectionManager.")
+    func startTracking() throws {
+        try syncManager?.startTracking(); trackingReady = true
+        if syncOptions?.cloudKit.automaticallySync == true {
+            let generation = session
+            Task { [weak self] in await self?.schedule(generation: generation) }
         }
-        guard !isSyncing else {
-            throw SyncError.syncAlreadyInProgress("Sync is already in progress.")
-        }
-        isSyncing = true
-        let generation = syncGeneration
-        defer { isSyncing = false }
-        // Also retries account availability after a previous start failed.
-        try await manager.startTransport()
-        guard generation == syncGeneration else {
-            await manager.stopTransport()
-            throw CancellationError()
-        }
-        if remoteObserver == nil {
-            let stream = manager.remoteChanges
-            remoteObserver = Task { [weak self] in
-                for await _ in stream {
-                    guard !Task.isCancelled else { return }
-                    await self?.syncAfterSignal(generation: generation)
-                }
-            }
-        }
-        var result: SyncResult
-        repeat {
-            resyncRequested = false
-            result = try await manager.sync()
-        } while resyncRequested && generation == syncGeneration
-        return result
     }
 
-    private func syncAfterSignal(generation: UUID) async {
-        guard generation == syncGeneration, remoteObserver != nil else { return }
-        if isSyncing {
-            // A signal during local application belongs to the *next* round.
-            resyncRequested = true
-            return
+    private func cloudController() throws -> CloudKitSyncController {
+        guard trackingReady, let options = syncOptions else { throw SyncError.notConfigured("CloudKit sync is not configured or migration is incomplete") }
+        if let controller { return controller }
+        let controller = CloudKitSyncController(configuration: options.cloudKit, store: WeakCloudWriter(self),
+            session: session, batchSize: options.syncConfiguration.batchSize)
+        self.controller = controller
+        return controller
+    }
+
+    private func schedule(generation: UUID) async {
+        guard !automaticSyncStopped, session == generation, let controller = try? cloudController() else { return }
+        await controller.localChangesAvailable()
+    }
+
+    func sync() async throws -> SyncResult { automaticSyncStopped = false; return try await cloudController().sync() }
+    var syncState: SyncState? { try? syncManager?.state() }
+    var lastSyncError: Error? { get async { await controller?.lastError } }
+
+    func handleCloudNotification(_ id: String) async -> Bool {
+        guard !automaticSyncStopped, let controller = try? cloudController() else { return false }
+        return await controller.handleRemoteNotification(subscriptionID: id)
+    }
+
+    func stopSync() async {
+        automaticSyncStopped = true
+        session = UUID()
+        let previous = controller; controller = nil
+        syncManager?.abandonBatch()
+        let waiters = transactionWaiters; transactionWaiters = []
+        for waiter in waiters { waiter.resume() }
+        await previous?.stop()
+    }
+
+    private func committedWriter(_ generation: UUID) async throws -> SyncManager {
+        while connection.isInTransaction && generation == session {
+            await withCheckedContinuation { transactionWaiters.append($0) }
         }
-        do { _ = try await sync() }
-        catch { SwiftStoreLogger.error("Error syncing: \(error)") }
+        guard generation == session, trackingReady, let syncManager else { throw CancellationError() }
+        return syncManager
     }
+}
 
-    /// Stop synchronization. Local changes continue to accumulate in the changelog.
-    public func stopSync() async {
-        syncGeneration = UUID()
-        resyncRequested = false
-        remoteObserver?.cancel()
-        remoteObserver = nil
-        if let manager = syncManager { await manager.stopTransport() }
+extension WritableConnectionActor: CloudSyncStore {
+    package func bindCloudAccount(_ accountID: String, scope: String, driver: CloudDriverKind, session: UUID) async throws -> CloudStoreState {
+        try await committedWriter(session).bind(accountID: accountID, scope: scope, driver: driver)
     }
+    package func nextCloudBatch(limit: Int, session: UUID) async throws -> CloudUploadBatch? {
+        try await committedWriter(session).nextBatch(limit: limit)
+    }
+    package func commitCloudBatch(_ batch: CloudUploadBatch, decisions: [CloudUploadDecision], session: UUID) async throws -> CloudCommitCounts {
+        try await committedWriter(session).commit(batch, incoming: decisions)
+    }
+    package func applyCloudRecords(_ records: [CloudRecord], checkpoint: CloudCheckpoint?, session: UUID) async throws -> Int {
+        try await committedWriter(session).receive(records, checkpoint: checkpoint)
+    }
+    package func saveCloudCheckpoint(_ checkpoint: CloudCheckpoint, session: UUID) async throws {
+        try await committedWriter(session).saveCheckpoint(checkpoint)
+    }
+    package func markCloudZoneCreated(session: UUID) async throws { try await committedWriter(session).markZoneCreated() }
+    package func cloudSyncState(session: UUID) async throws -> SyncState { try await committedWriter(session).state() }
+}
 
-    var syncState: SyncState? {
-        syncManager?.syncState
+/// The driver must not keep the database owner alive through its store callbacks.
+/// The weak reference is assigned only during initialization; ARC synchronizes loads.
+private final class WeakCloudWriter: CloudSyncStore, @unchecked Sendable {
+    private weak var writer: WritableConnectionActor?
+    init(_ writer: WritableConnectionActor) { self.writer = writer }
+    private func owner() throws -> WritableConnectionActor {
+        guard let writer else { throw CancellationError() }
+        return writer
     }
+    func bindCloudAccount(_ accountID: String, scope: String, driver: CloudDriverKind, session: UUID) async throws -> CloudStoreState {
+        try await owner().bindCloudAccount(accountID, scope: scope, driver: driver, session: session)
+    }
+    func nextCloudBatch(limit: Int, session: UUID) async throws -> CloudUploadBatch? {
+        try await owner().nextCloudBatch(limit: limit, session: session)
+    }
+    func commitCloudBatch(_ batch: CloudUploadBatch, decisions: [CloudUploadDecision], session: UUID) async throws -> CloudCommitCounts {
+        try await owner().commitCloudBatch(batch, decisions: decisions, session: session)
+    }
+    func applyCloudRecords(_ records: [CloudRecord], checkpoint: CloudCheckpoint?, session: UUID) async throws -> Int {
+        try await owner().applyCloudRecords(records, checkpoint: checkpoint, session: session)
+    }
+    func saveCloudCheckpoint(_ checkpoint: CloudCheckpoint, session: UUID) async throws {
+        try await owner().saveCloudCheckpoint(checkpoint, session: session)
+    }
+    func markCloudZoneCreated(session: UUID) async throws { try await owner().markCloudZoneCreated(session: session) }
+    func cloudSyncState(session: UUID) async throws -> SyncState { try await owner().cloudSyncState(session: session) }
 }

@@ -22,9 +22,9 @@ struct FullTextSyncTests {
         for db in [a, b] {
             for sql in snapshot.creationStatements { try db.execute(sql) }
         }
-        let trackerA = try ChangeTracker(connection: a, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let trackerA = try ChangeTracker(connection: a, deviceId: UUIDV7(),
             registeredEntities: [FTSSyncedNote.self], tickClock: { 1 })
-        let trackerB = try ChangeTracker(connection: b, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let trackerB = try ChangeTracker(connection: b, deviceId: UUIDV7(),
             registeredEntities: [FTSSyncedNote.self], tickClock: { 1 })
         try trackerA.start()
         try trackerB.start()

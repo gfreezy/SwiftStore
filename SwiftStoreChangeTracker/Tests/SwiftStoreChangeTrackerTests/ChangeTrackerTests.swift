@@ -63,12 +63,12 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker captures INSERT operation")
     func testCaptureInsert() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -89,21 +89,21 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
         #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity.id))
         #expect(changes[0].operation == .insert)
         #expect(changes[0].deviceId == testDeviceId)
-        #expect(changes[0].logicalClock == 1)
+        #expect(changes[0].seq == 1)
         #expect(changes[0].payload != nil)
     }
 
     @Test("ChangeTracker captures UPDATE operation")
     func testCaptureUpdate() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         // Insert entity before starting tracker
         var entity = TestEntity(
@@ -118,7 +118,7 @@ struct ChangeTrackerTests {
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -134,8 +134,8 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
@@ -154,7 +154,7 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker captures DELETE")
     func testCaptureDelete() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         // Insert entity before starting tracker
         let entity = TestEntity(
@@ -169,7 +169,7 @@ struct ChangeTrackerTests {
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -184,8 +184,8 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify change log
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
@@ -196,12 +196,12 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker captures multiple operations in sequence")
     func testCaptureMultipleOperations() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -231,22 +231,22 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify all changes captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 3)
 
         // Check operations in order (by logical clock)
-        let sortedChanges = changes.sorted { $0.logicalClock < $1.logicalClock }
+        let sortedChanges = changes.sorted { $0.seq < $1.seq }
 
         #expect(sortedChanges[0].operation == .insert)
-        #expect(sortedChanges[0].logicalClock == 1)
+        #expect(sortedChanges[0].seq == 1)
 
         #expect(sortedChanges[1].operation == .update)
-        #expect(sortedChanges[1].logicalClock == 2)
+        #expect(sortedChanges[1].seq == 2)
 
         #expect(sortedChanges[2].operation == .delete)
-        #expect(sortedChanges[2].logicalClock == 3)
+        #expect(sortedChanges[2].seq == 3)
 
         // All changes for same entity
         for change in changes {
@@ -257,7 +257,7 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker ignores unregistered entities")
     func testIgnoreUnregisteredEntities() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         // Create another table that is not registered
         try connection.execute("""
@@ -270,7 +270,7 @@ struct ChangeTrackerTests {
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self], // Only TestEntity registered
             tickClock: { clockValue += 1; return clockValue }
@@ -295,8 +295,8 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify only registered entity change is captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
         #expect(changes[0].entityType == "test_entity")
@@ -304,12 +304,12 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker payload contains correct entity data")
     func testPayloadContainsCorrectData() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -329,8 +329,8 @@ struct ChangeTrackerTests {
         changeTracker.stop()
 
         // Verify payload
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
 
@@ -350,12 +350,12 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker stops capturing after stop()")
     func testStopsCaptureAfterStop() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -386,8 +386,8 @@ struct ChangeTrackerTests {
         try connection.insert(entity2)
 
         // Verify only first insert captured
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
-        let changes = try reader.changesSince(clock: 0)
+        let reader = ChangeTrackerReader(connection: connection)
+        let changes = try reader.changes(after: 0)
 
         #expect(changes.count == 1)
         #expect(verifySyncKeyContainsId(changes[0].syncKey, expectedId: entity1.id))
@@ -395,12 +395,12 @@ struct ChangeTrackerTests {
 
     @Test("ChangeTracker changesSince returns changes after clock value")
     func testChangesSinceFilter() throws {
-        let (connection, dbPath) = try createAndMigrateTestDatabase()
+        let (connection, _) = try createAndMigrateTestDatabase()
 
         var clockValue: Int64 = 0
         let changeTracker = try ChangeTracker(
             connection: connection,
-            changeLogDbPath: dbPath + ".changelog",
+
             deviceId: testDeviceId,
             registeredEntities: [TestEntity.self],
             tickClock: { clockValue += 1; return clockValue }
@@ -422,22 +422,22 @@ struct ChangeTrackerTests {
 
         changeTracker.stop()
 
-        let reader = try ChangeTrackerReader(changeLogDbPath: dbPath + ".changelog", deviceId: testDeviceId)
+        let reader = ChangeTrackerReader(connection: connection)
 
         // Get all changes
-        let allChanges = try reader.changesSince(clock: 0)
+        let allChanges = try reader.changes(after: 0)
         #expect(allChanges.count == 3)
 
         // Get changes since clock 1 (should get 2 changes: clock 2 and 3)
-        let changesAfter1 = try reader.changesSince(clock: 1)
+        let changesAfter1 = try reader.changes(after: 1)
         #expect(changesAfter1.count == 2)
 
         // Get changes since clock 2 (should get 1 change: clock 3)
-        let changesAfter2 = try reader.changesSince(clock: 2)
+        let changesAfter2 = try reader.changes(after: 2)
         #expect(changesAfter2.count == 1)
 
         // Get changes since clock 3 (should get 0 changes)
-        let changesAfter3 = try reader.changesSince(clock: 3)
+        let changesAfter3 = try reader.changes(after: 3)
         #expect(changesAfter3.count == 0)
     }
 }

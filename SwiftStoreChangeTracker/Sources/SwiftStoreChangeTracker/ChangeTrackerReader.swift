@@ -1,50 +1,22 @@
 import Foundation
 import SwiftStoreCore
 
-/// Reads local changes from the changelog database
+/// Bounded reads of immutable local events, using the owning writer connection.
 public final class ChangeTrackerReader {
     private let connection: SQLiteConnection
-    private let deviceId: UUIDV7
 
-    /// Initialize with changelog database path and device ID
-    /// Only changes from this device will be returned
-    /// - Parameters:
-    ///   - changeLogDbPath: Path to the changelog database
-    ///   - deviceId: The device ID to filter changes by
-    public init(changeLogDbPath: String, deviceId: UUIDV7) throws {
-        var options = SQLiteConnection.Options()
-        options.readonly = true
-        self.connection = try SQLiteConnection(path: changeLogDbPath, options: options)
-        self.deviceId = deviceId
+    public init(connection: SQLiteConnection) { self.connection = connection }
+
+    public func changes(after seq: Int64, limit: Int = 200) throws -> [ChangeLog] {
+        guard seq >= 0, limit > 0 else { throw StoreError.invalidPayload("Invalid changelog read bounds") }
+        return try ChangeLog.filter(\.seq > seq).order(by: \.seq).limit(limit).all(connection)
     }
 
-    /// Get local changes since a given clock value
-    public func changesSince(clock: Int64) throws -> [ChangeLog] {
-        return try ChangeLog
-            .filter(\.deviceId == deviceId && \.logicalClock > clock)
-            .order(by: \.logicalClock)
-            .all(connection)
+    public func latestSequence() throws -> Int64 {
+        try connection.queryScalar("SELECT MAX(seq) FROM __swiftstore_change_log") ?? 0
     }
 
-    /// Get all local changes (for initial sync)
-    public func allChanges() throws -> [ChangeLog] {
-        return try ChangeLog
-            .filter(\.deviceId == deviceId)
-            .order(by: \.logicalClock)
-            .all(connection)
-    }
-
-    /// Get the latest clock value in the local changelog
-    public func latestClock() throws -> Int64 {
-        return try ChangeLog
-            .filter(\.deviceId == deviceId)
-            .max(\.logicalClock, connection) ?? 0
-    }
-
-    /// Count local changes since a given clock value
-    public func countChangesSince(clock: Int64) throws -> Int {
-        return try ChangeLog
-            .filter(\.deviceId == deviceId && \.logicalClock > clock)
-            .count(connection)
+    public func count(after seq: Int64) throws -> Int {
+        try connection.queryScalar("SELECT COUNT(*) FROM __swiftstore_change_log WHERE seq > ?", values: [.integer(seq)]) ?? 0
     }
 }

@@ -1,10 +1,11 @@
 import Foundation
 import CloudKit
 
-/// Static configuration for a `CloudKitSyncTransport`.
-public struct CloudKitTransportConfig: Sendable {
+/// Static configuration for a CloudKit synchronization.
+public struct CloudKitSyncConfiguration: Sendable {
     /// The CloudKit container to sync with.
-    public let container: CKContainer
+    public let containerIdentifier: String
+    package var container: CKContainer { CKContainer(identifier: containerIdentifier) }
     /// Name of the CloudKit record zone used to hold sync changes.
     /// Defaults to `"SwiftStoreSyncChanges"`.
     public let zoneName: String
@@ -16,16 +17,16 @@ public struct CloudKitTransportConfig: Sendable {
     /// CloudKit's 1 MB per-record limit).
     public let assetThreshold: Int
     /// Required clock accuracy in milliseconds for direct CloudKit use.
-    /// ConnectionManager supplies SyncOptions.ntpToleranceMs when managing this transport.
+    /// Network failure permits sync; a measured excessive offset still blocks it.
     public let ntpToleranceMs: Int64
-    /// Enable CKSyncEngine scheduling on iOS 17+, or foreground poll signals on iOS 16.
+    /// Enable CKSyncEngine scheduling on iOS 17+, or the Operations scheduler on iOS 16.
     /// iOS 16 background pushes must be forwarded via handleRemoteNotification.
     public let automaticallySync: Bool
     /// Identifier of the database subscription used for push notifications.
     public let subscriptionID: String
 
     public init(
-        container: CKContainer,
+        containerIdentifier: String,
         zoneName: String = "SwiftStoreSyncChanges",
         recordType: CKRecord.RecordType = "SwiftStoreSyncChange",
         assetThreshold: Int = 700_000,
@@ -35,7 +36,7 @@ public struct CloudKitTransportConfig: Sendable {
     ) {
         self.ntpToleranceMs = ntpToleranceMs
         self.automaticallySync = automaticallySync
-        self.container = container
+        self.containerIdentifier = containerIdentifier
         self.zoneName = zoneName
         self.recordType = recordType
         self.assetThreshold = assetThreshold

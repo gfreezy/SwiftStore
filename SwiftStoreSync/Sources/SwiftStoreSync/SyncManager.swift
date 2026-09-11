@@ -1,341 +1,194 @@
 import Foundation
-import os.log
 import SwiftStoreCore
 import SwiftStoreChangeTracker
 
-// MARK: - Sync Types
-
-/// Sync state tracking.
-///
-/// Only tracks the local push watermark. Remote watermark (if any) is
-/// owned by the `SyncTransport` implementation.
-public struct SyncState: Codable, Sendable {
-    /// Last logical clock value of a local change that has been handed to the transport.
-    public var lastLocalClock: Int64
-
-    public init(lastLocalClock: Int64) {
-        self.lastLocalClock = lastLocalClock
-    }
-}
-
-/// Configuration for sync batch processing
-public struct SyncConfiguration: Sendable {
-    /// Number of changes to process per batch during pull
-    public var batchSize: Int
-
-    /// Whether to yield between batches to avoid blocking
-    public var yieldBetweenBatches: Bool
-
-    public init(batchSize: Int = 50, yieldBetweenBatches: Bool = true) {
-        self.batchSize = batchSize
-        self.yieldBetweenBatches = yieldBetweenBatches
-    }
-}
-
-/// Result of a sync operation
-public struct SyncResult: Sendable {
-    /// Number of changes pulled from remote
-    public let pulledCount: Int
-    /// Number of changes pushed to remote
-    public let pushedCount: Int
-    /// Number of conflicts encountered
-    public let conflictCount: Int
-    /// Updated sync state
-    public let state: SyncState
-
-    public init(pulledCount: Int, pushedCount: Int, conflictCount: Int, state: SyncState) {
-        self.pulledCount = pulledCount
-        self.pushedCount = pushedCount
-        self.conflictCount = conflictCount
-        self.state = state
-    }
-}
-
-// MARK: - Sync Config
-
-/// Configuration for sync operations (includes change tracking config)
-public struct SyncConfig: Sendable {
-    // MARK: - Change Tracker Config
-    /// Path to the changelog database file
-    public let changeLogDbPath: String
-    /// Device ID for identifying the source of changes
-    public let deviceId: UUIDV7
-    /// Entity types to track changes for
-    public let registeredEntities: [any EntityProtocol.Type]
-    /// Function to tick the logical clock
-    public let tickClock: @Sendable () -> Int64
-
-    // MARK: - Sync Config
-    /// Remote sync transport
-    public let transport: any SyncTransport
-    /// Sync configuration (batch size, etc.)
-    public let syncConfiguration: SyncConfiguration
-    /// Current schema version for migration compatibility
-    /// Higher versions can process lower version data, lower versions ignore higher version data
-    public let schemaVersion: Int
-    /// Maximum acceptable time offset in milliseconds for NTP verification (required)
-    public let ntpToleranceMs: Int64
-
-    /// Initialize sync manager configuration
-    /// - Parameters:
-    ///   - changeLogDbPath: Path to the change log database file for storing local change records
-    ///   - deviceId: Unique device identifier to distinguish change sources from different devices
-    ///   - registeredEntities: List of entity types to be synchronized
-    ///   - tickClock: Logical clock function that generates incrementing timestamps, defaults to current timestamp in milliseconds
-    ///   - transport: Sync transport layer responsible for communicating with the remote server
-    ///   - schemaVersion: Data schema version number. Lower versions cannot accept higher version data, higher versions can accept lower version data
-    ///   - syncConfiguration: Sync configuration including batch size settings
-    ///   - ntpToleranceMs: Startup NTP offset tolerance in milliseconds; must be positive. Network failure permits sync.
-    public init(
-        changeLogDbPath: String,
-        deviceId: UUIDV7,
-        registeredEntities: [any EntityProtocol.Type],
-        transport: any SyncTransport,
-        schemaVersion: Int,
-        tickClock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-        syncConfiguration: SyncConfiguration = SyncConfiguration(),
-        ntpToleranceMs: Int64 = 5000
-    ) {
-        self.changeLogDbPath = changeLogDbPath
-        self.deviceId = deviceId
-        self.registeredEntities = registeredEntities
-        self.tickClock = tickClock
-        self.transport = transport
-        self.syncConfiguration = syncConfiguration
-        self.schemaVersion = schemaVersion
-        self.ntpToleranceMs = ntpToleranceMs
-    }
-}
-
-/// Class that manages change tracking and synchronization
-/// Combines ChangeTracker and sync logic
-/// Thread-safety is provided by the containing WritableConnectionActor
-public final class SyncManager {
+/// Synchronous database half of CloudKit sync. Owned by the same actor as the business writer.
+/// Drivers await this actor, never hold its SQLite connection across network operations.
+package final class SyncManager {
     private let connection: SQLiteConnection
-    private let changeTracker: ChangeTracker
-    private let changeLogReader: ChangeTrackerReader
-    private let statePersistence: SyncStatePersistence
-    private let transport: any SyncTransport
-    private let deviceId: UUIDV7
-    private let changeLogDbPath: String
-    private let applierRegistry: EntityApplierRegistry
-    private let configuration: SyncConfiguration
+    private let tracker: ChangeTracker
+    private let reader: ChangeTrackerReader
+    private let persistence: SyncStatePersistence
+    private let registry: EntityApplierRegistry
     private let schemaVersion: Int
-    private let ntpToleranceMs: Int64
-    private var state: SyncState
-    private let tombstones: SyncTombstoneStore
+    private let legacyImport: LegacySyncImport?
+    private var activeBatch: CloudUploadBatch?
+    private var decisions: [UUIDV7: CloudUploadDecision] = [:]
 
-    /// Initialize with database connection and sync configuration
-    /// - Parameters:
-    ///   - connection: The main database connection (used for writes)
-    ///   - config: Sync configuration
-    public init(connection: SQLiteConnection, config: SyncConfig) throws {
+    package init(connection: SQLiteConnection, deviceID: UUIDV7, entities: [any EntityProtocol.Type],
+                 schemaVersion: Int, migration: LegacySyncMigration? = nil, scope: String = "", now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+        legacyImport = try LegacySyncImport(connection: connection, migration: migration, scope: scope)
         self.connection = connection
-        self.transport = config.transport
-        self.deviceId = config.deviceId
-        self.changeLogDbPath = config.changeLogDbPath
-        self.configuration = config.syncConfiguration
-        self.schemaVersion = config.schemaVersion
-        self.ntpToleranceMs = config.ntpToleranceMs
-
-        self.tombstones = try SyncTombstoneStore(connection: connection)
-
-        // Create ChangeTracker
-        self.changeTracker = try ChangeTracker(
-            connection: connection,
-            changeLogDbPath: config.changeLogDbPath,
-            deviceId: config.deviceId,
-            registeredEntities: config.registeredEntities,
-            tickClock: config.tickClock,
-            schemaVersion: config.schemaVersion
-        )
-
-        // Create EntityApplierRegistry from entity types
-        self.applierRegistry = EntityApplierRegistry(entityTypes: config.registeredEntities)
-
-        // Create ChangeTrackerReader
-        self.changeLogReader = try ChangeTrackerReader(
-            changeLogDbPath: config.changeLogDbPath,
-            deviceId: config.deviceId
-        )
-
-        // Load persisted sync state (reusing the changelog DB's writable connection).
-        self.statePersistence = try SyncStatePersistence(
-            connection: self.changeTracker.connection)
-        self.state = try statePersistence.load()
+        self.schemaVersion = schemaVersion
+        tracker = try ChangeTracker(connection: connection, deviceId: deviceID, registeredEntities: entities,
+            tickClock: now, schemaVersion: schemaVersion)
+        reader = ChangeTrackerReader(connection: connection)
+        persistence = try SyncStatePersistence(connection: connection)
+        registry = EntityApplierRegistry(entityTypes: entities)
     }
 
-    /// Roll back captured log rows when a local write transaction fails.
-    public func withChangeLogTransaction<T>(_ block: () throws -> T) throws -> T {
-        try changeTracker.connection.transaction(block)
-    }
-
-    /// Call after schema migration, before exposing the writable connection.
-    public func startTracking() throws {
-        try changeTracker.captureExistingRows()
-        try changeTracker.start()
-    }
-
-    // MARK: - Sync State
-
-    /// Get current sync state
-    public var syncState: SyncState {
-        state
-    }
-
-    // MARK: - Transport Lifecycle
-
-    /// Activate the underlying transport. Idempotent; safe to call multiple times.
-    /// Typically invoked by the containing `WritableConnectionActor` before the first sync.
-    nonisolated(nonsending)
-    public func startTransport() async throws {
-        try await transport.configureTimeValidation(toleranceMs: ntpToleranceMs)
-        try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
-        try await transport.start(deviceId: deviceId)
-    }
-
-    /// Deactivate the underlying transport.
-    nonisolated(nonsending)
-    public func stopTransport() async {
-        await transport.stop()
-    }
-
-    /// Stream of remote-activity signals from the transport. Consumers may
-    /// observe it to auto-trigger a sync when remote changes are detected.
-    public var remoteChanges: AsyncStream<Void> {
-        transport.remoteChanges
-    }
-
-    // MARK: - Sync Operations
-
-    /// Perform a full sync cycle: enqueue local changes, run a fetch+send round
-    /// through the transport, and apply any pulled remote changes locally.
-    /// - Returns: Sync result with statistics
-    nonisolated(nonsending)
-    public func sync() async throws -> SyncResult {
-        try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
-
-        let localChanges = try changeLogReader.changesSince(clock: state.lastLocalClock)
-        try Task.checkCancellation()
-
-        if !localChanges.isEmpty {
-            try await transport.enqueue(localChanges.map { SyncChange(from: $0) })
-            let nextState = SyncState(lastLocalClock: localChanges.last!.logicalClock)
-            try statePersistence.save(nextState)
-            state = nextState
+    package func startTracking() throws {
+        if let legacyImport { try legacyImport.run(connection: connection) { _ = try receive($0, checkpoint: nil) } }
+        try tracker.captureExistingRows { entity, key, time in
+            guard let known = try persistence.version(for: CloudIdentity(entity: entity, key: key)) else { return false }
+            return known.updatedMs == time && !known.deleted
         }
+        try tracker.start()
+    }
+    package func latestSequence() throws -> Int64 { try reader.latestSequence() }
+    package func state() throws -> SyncState { try persistence.load() }
+    package func abandonBatch() { activeBatch = nil; decisions = [:] }
 
-        let cycle = try await transport.syncNow()
-
-        try Task.checkCancellation()
-
-        // Future-schema changes stay in the transport inbox for a newer app.
-        let remoteChanges = cycle.pulled.filter {
-            $0.schemaVersion <= schemaVersion
-        }
-        var acknowledged: [SyncChange] = []
-        var applied = 0
-        var applyConflicts = 0
-        for batch in remoteChanges.chunked(into: configuration.batchSize) {
-            try Task.checkCancellation()
-            try await NTPClient.requireAccurateTime(toleranceMs: ntpToleranceMs)
-            let result = try applyBatch(batch, pendingChanges: cycle.pendingChanges)
-            applied += result.applied
-            applyConflicts += result.conflicts
-            acknowledged.append(contentsOf: result.acknowledged)
-            if configuration.yieldBetweenBatches { await Task.yield() }
-        }
-        try await transport.acknowledge(SyncCycleResult(
-            pulled: acknowledged, pushed: cycle.pushed, conflicts: cycle.conflicts,
-            rejectedKeys: cycle.rejectedKeys
-        ))
-
-        return SyncResult(
-            pulledCount: applied,
-            pushedCount: cycle.pushed.count,
-            conflictCount: cycle.conflicts.count + applyConflicts,
-            state: state
-        )
+    package func bind(accountID: String, scope: String, driver: CloudDriverKind) throws -> CloudStoreState {
+        try persistence.bind(account: accountID, scope: scope, driver: driver)
     }
 
-    // MARK: - Private Helpers
+    package func nextBatch(limit: Int) throws -> CloudUploadBatch? {
+        if let activeBatch { return activeBatch }
+        guard (1...200).contains(limit) else { throw SyncError.invalidPayload("CloudKit batch size must be between 1 and 200") }
+        let cursor = try state().pushCursor
+        let candidates = try reader.changes(after: cursor, limit: limit)
+        var events: [ChangeLog] = []
+        var latest: [CloudIdentity: SyncChange] = [:]
+        var covered: [CloudIdentity: [Int64]] = [:]
+        var order: [CloudIdentity] = []
+        for event in candidates {
+            let change = SyncChange(from: event)
+            do { try validate(change) }
+            catch {
+                if events.isEmpty { throw error }
+                break // Confirm the valid prefix before reporting this blocked event.
+            }
+            let identity = CloudIdentity(change)
+            // Imported histories may predate monotonic timestamps. Split the batch
+            // before an inversion instead of coalescing away the newer event.
+            if let previous = latest[identity], !change.isNewer(than: previous) { break }
+            if latest[identity] == nil { order.append(identity) }
+            latest[identity] = change
+            covered[identity, default: []].append(event.seq)
+            events.append(event)
+        }
+        guard !events.isEmpty else { return nil }
+        let items = try order.map {
+            CloudUploadItem(change: latest[$0]!, coveredSequences: covered[$0]!, serverVersion: try persistence.version(for: $0))
+        }
+        let batch = CloudUploadBatch(afterSequence: cursor, events: events, items: items)
+        activeBatch = batch
+        decisions = [:]
+        return batch
+    }
 
-    /// Apply backend decisions with any deletion marker atomically, without resolving again.
-    private func applyBatch(_ changes: [SyncChange], pendingChanges: [SyncChange]) throws -> (applied: Int, conflicts: Int, acknowledged: [SyncChange]) {
-        var applied = 0
-        var conflicts = 0
-        var acknowledged: [SyncChange] = []
-        let unsubmitted = try changeLogReader.changesSince(clock: state.lastLocalClock).map(SyncChange.init(from:))
-        let protectedKeys = Set((pendingChanges + unsubmitted).map(SyncTombstoneStore.key))
-        for change in changes {
-            do {
-                let key = SyncTombstoneStore.key(change)
-                // This is write protection, not conflict resolution: the server
-                // must first receive these edits. Leave the download unacknowledged.
-                if protectedKeys.contains(key) { continue }
-                let row = try applierRegistry.currentChange(for: change, in: connection)
-                try connection.withWriteSource(.remote) {
-                    try connection.transaction {
-                        // An equal-time tie must preserve the incoming timestamp. The
-                        // library's automatic timestamp trigger cannot distinguish it
-                        // from a local UPDATE that omitted updated_at. Suspend only
-                        // that trigger, transactionally, for this rare tie case.
-                        let triggerName = "__swiftstore_update_" + change.entityType
-                        let equalTime = row.map { ($0.updatedAt.timeIntervalSince1970 * 1000).rounded() == (change.updatedAt.timeIntervalSince1970 * 1000).rounded() } ?? false
-                        let triggerSQL: String? = equalTime
-                            ? try connection.queryScalar("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-                                values: [.text(triggerName)]) : nil
-                        if triggerSQL != nil {
-                            let quoted = triggerName.replacingOccurrences(of: "\"", with: "\"\"")
-                            try connection.execute("DROP TRIGGER \"\(quoted)\"")
-                        }
-                        try applierRegistry.apply(change: change, to: connection)
-                        if let triggerSQL { try connection.execute(triggerSQL) }
-                        try tombstones.save(change)
-                    }
+    package func commit(_ batch: CloudUploadBatch, incoming: [CloudUploadDecision]) throws -> CloudCommitCounts {
+        guard activeBatch?.id == batch.id else { throw CancellationError() }
+        let items = Dictionary(uniqueKeysWithValues: batch.items.map { ($0.change.id, $0) })
+        var updated = decisions
+        for decision in incoming {
+            guard let item = items[decision.changeID] else { throw SyncError.invalidPayload("Receipt does not belong to this upload batch") }
+            if let record = decision.record {
+                try validate(record.change)
+                guard CloudIdentity(record.change) == CloudIdentity(item.change) else { throw SyncError.invalidPayload("Receipt key mismatch") }
+                let expected = try SyncLogStorage.timestamp(item.change.updatedAt.timeIntervalSince1970)
+                let actual = try SyncLogStorage.timestamp(record.change.updatedAt.timeIntervalSince1970)
+                guard actual >= expected else { throw SyncError.invalidPayload("Receipt contains an older server version") }
+                if decision.outcome == .committed, record.change.id != item.change.id {
+                    throw SyncError.invalidPayload("Commit receipt change ID mismatch")
                 }
-                acknowledged.append(change)
-                applied += 1
-            } catch {
-                // Leave this change unacknowledged so it can be retried after repair.
-                SwiftStoreLogger.error("Failed to apply change \(change.id): \(error)")
-                conflicts += 1
+            } else {
+                guard let known = try persistence.version(for: CloudIdentity(item.change)),
+                      known.updatedMs >= (try SyncLogStorage.timestamp(item.change.updatedAt.timeIntervalSince1970)),
+                      decision.outcome == .superseded || known.changeID == item.change.id else {
+                    throw SyncError.invalidPayload("Missing authoritative upload result")
+                }
+            }
+            if updated[decision.changeID] == nil { updated[decision.changeID] = decision }
+        }
+        var counts = CloudCommitCounts()
+        try connection.withWriteSource(.remote) {
+            try connection.transaction {
+                for (id, decision) in updated where decisions[id] == nil {
+                    if let record = decision.record { counts.applied += try apply(record) }
+                    if decision.outcome == .committed { counts.pushed += 1 } else { counts.conflicts += 1 }
+                }
+                let finished = Set(batch.items.filter { updated[$0.change.id] != nil }.flatMap(\.coveredSequences))
+                var cursor = try state().pushCursor
+                for event in batch.events where event.seq > cursor {
+                    guard finished.contains(event.seq) else { break }
+                    cursor = event.seq
+                }
+                try persistence.saveCursor(cursor)
             }
         }
-        return (applied, conflicts, acknowledged)
+        decisions = updated
+        if try state().pushCursor >= (batch.events.last?.seq ?? 0) { counts.batchComplete = true; abandonBatch() }
+        return counts
     }
 
-    // MARK: - Change Log Reading
-
-    /// Get changes since a given clock value
-    public func changesSince(clock: Int64) throws -> [ChangeLog] {
-        try changeLogReader.changesSince(clock: clock)
-    }
-
-    /// Get all changes (for initial sync)
-    public func allChanges() throws -> [ChangeLog] {
-        try changeLogReader.allChanges()
-    }
-
-    /// Get the latest clock value in the changelog
-    public func latestClock() throws -> Int64 {
-        try changeLogReader.latestClock()
-    }
-
-    /// Count changes since a given clock value
-    public func countChangesSince(clock: Int64) throws -> Int {
-        try changeLogReader.countChangesSince(clock: clock)
-    }
-}
-
-// MARK: - Array Extension
-
-extension Array {
-    /// Split array into chunks of specified size
-    func chunked(into size: Int) -> [[Element]] {
-        guard size > 0 else { return [self] }
-        return stride(from: 0, to: count, by: size).map {
-            Array(self[$0..<Swift.min($0 + size, count)])
+    package func receive(_ records: [CloudRecord], checkpoint: CloudCheckpoint?) throws -> Int {
+        // Validate the whole page before applying any of it. Future schemas and bad
+        // payloads never disappear behind an advanced download checkpoint.
+        for record in records { try validate(record.change) }
+        return try connection.withWriteSource(.remote) {
+            try connection.transaction {
+                var applied = 0
+                for record in records { applied += try apply(record) }
+                if let checkpoint { try persistence.saveCheckpoint(checkpoint) }
+                return applied
+            }
         }
+    }
+
+    package func saveCheckpoint(_ value: CloudCheckpoint) throws { try persistence.saveCheckpoint(value) }
+    package func markZoneCreated() throws {
+        try connection.execute("UPDATE __swiftstore_cloud_state SET zone_created=1 WHERE singleton=1")
+    }
+
+    private func validate(_ change: SyncChange) throws {
+        guard change.schemaVersion > 0, change.schemaVersion <= schemaVersion else {
+            throw SyncError.invalidPayload("Unsupported schema version \(change.schemaVersion); update the app before continuing sync")
+        }
+        _ = try SyncLogStorage.timestamp(change.updatedAt.timeIntervalSince1970)
+        if change.operation != .delete {
+            struct Timestamp: Decodable { let updatedAt: Date }
+            guard let payload = change.payload else { throw SyncError.invalidPayload("Missing record payload") }
+            _ = try JSONDecoder().decode(Timestamp.self, from: Data(payload.utf8))
+        } else if change.payload != nil { throw SyncError.invalidPayload("Deletion must not contain a live payload") }
+        try registry.validate(change)
+    }
+
+    private func apply(_ record: CloudRecord) throws -> Int {
+        let change = record.change
+        let version = try CloudRecordVersion(record: record)
+        if let previous = try persistence.version(for: version.identity), previous.updatedMs > version.updatedMs { return 0 }
+        let row = try registry.currentChange(for: change, in: connection)
+        let rowTime = try row.map { try SyncLogStorage.timestamp($0.updatedAt.timeIntervalSince1970) }
+        let remembered = try SyncLogStorage.knownTime(entity: change.entityType, key: change.syncKey, in: connection)
+        let localTime = max(rowTime ?? Int64.min, remembered ?? Int64.min)
+        var applied = 0
+        if version.updatedMs >= localTime {
+            let unchanged = row.map { sameContent($0, change) } ?? (change.operation == .delete)
+            if !unchanged {
+                // Preserve equal-time authoritative values despite historical automatic
+                // timestamp triggers. Drop/restore only this trigger inside this transaction.
+                let name = "__swiftstore_update_" + change.entityType
+                let trigger: String? = rowTime == version.updatedMs
+                    ? try connection.queryScalar("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", values: [.text(name)]) : nil
+                if trigger != nil { try connection.execute("DROP TRIGGER \"\(name.replacingOccurrences(of: "\"", with: "\"\""))\"") }
+                try registry.apply(change: change, to: connection)
+                if let trigger { try connection.execute(trigger) }
+                applied = 1
+            }
+            try SyncLogStorage.remember(entity: change.entityType, key: change.syncKey,
+                time: version.updatedMs, deleted: version.deleted, in: connection)
+        }
+        try persistence.saveVersion(version)
+        return applied
+    }
+
+    private func sameContent(_ lhs: SyncChange, _ rhs: SyncChange) -> Bool {
+        if lhs.operation == .delete || rhs.operation == .delete { return lhs.operation == rhs.operation }
+        guard let a = lhs.payload, let b = rhs.payload,
+              let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
+              let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
+        return left.isEqual(right)
     }
 }

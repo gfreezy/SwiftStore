@@ -3,14 +3,14 @@ import SwiftStoreCore
 import SwiftStoreChangeTracker
 
 /// Extension to add makeApplier() to all EntityProtocol types
-public extension EntityProtocol {
+package extension EntityProtocol {
     static func makeApplier() -> any EntityApplier {
         DefaultEntityApplier<Self>()
     }
 }
 
 /// Protocol for applying sync changes to local entities
-public protocol EntityApplier: Sendable {
+package protocol EntityApplier: Sendable {
     /// The entity type this applier handles
     static var entityType: String { get }
 
@@ -19,18 +19,34 @@ public protocol EntityApplier: Sendable {
     ///   - change: The change to apply
     ///   - connection: The database connection
     /// - Throws: If the change cannot be applied
+    func validate(_ change: SyncChange) throws
     func apply(change: SyncChange, to connection: SQLiteConnection) throws
     /// Snapshot of the current business row for timestamp/content comparison.
     func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange?
 }
 
 /// Default entity applier that uses JSON payload to decode and apply changes
-public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable>: EntityApplier {
-    public static var entityType: String { T.tableName }
+package struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable>: EntityApplier {
+    package static var entityType: String { T.tableName }
 
-    public init() {}
+    package init() {}
 
-    public func apply(change: SyncChange, to connection: SQLiteConnection) throws {
+    package func validate(_ change: SyncChange) throws {
+        let key = SyncKeyEncoder.decode(change.syncKey)
+        guard key.count == T.syncKeyColumns.count, !key.contains(.null), !key.isEmpty else {
+            throw SyncError.invalidPayload("Invalid record sync key")
+        }
+        if change.operation != .delete {
+            guard let payload = change.payload else { throw SyncError.invalidPayload("Missing payload") }
+            let entity = try JSONDecoder().decode(T.self, from: Data(payload.utf8))
+            let values = try entity.sqliteEncode()
+            guard SyncKeyEncoder.encode(T.syncKeyColumns.map { values[$0] ?? .null }) == change.syncKey else {
+                throw SyncError.invalidPayload("Payload sync key does not match its record")
+            }
+        }
+    }
+
+    package func apply(change: SyncChange, to connection: SQLiteConnection) throws {
         switch change.operation {
         case .insert, .update:
             guard let payload = change.payload,
@@ -66,7 +82,7 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
         }
     }
 
-    public func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
+    package func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
         guard let entity = try findBySyncKey(syncKeyCols: T.syncKeyColumns,
             syncKeyValues: SyncKeyEncoder.decode(change.syncKey), connection: connection) else { return nil }
         return SyncChange(id: change.id, entityType: change.entityType, syncKey: change.syncKey,
@@ -187,19 +203,24 @@ public struct DefaultEntityApplier<T: EntityProtocol & SQLiteCodable & Decodable
 }
 
 /// Registry for entity appliers
-public final class EntityApplierRegistry: Sendable {
+package final class EntityApplierRegistry: Sendable {
     private let appliers: [String: any EntityApplier]
 
-    public init(_ appliers: [any EntityApplier] = []) {
+    package init(_ appliers: [any EntityApplier] = []) {
         self.appliers = Dictionary(uniqueKeysWithValues: appliers.map { (type(of: $0).entityType, $0) })
     }
 
+    package func validate(_ change: SyncChange) throws {
+        guard let applier = appliers[change.entityType] else { throw SyncError.unknownEntityType(change.entityType) }
+        try applier.validate(change)
+    }
+
     /// Number of registered appliers
-    public var count: Int { appliers.count }
+    package var count: Int { appliers.count }
 
     /// Create a registry from entity types
     /// Automatically generates DefaultEntityApplier for each type
-    public convenience init(entityTypes: [any EntityProtocol.Type]) {
+    package convenience init(entityTypes: [any EntityProtocol.Type]) {
         let appliers = entityTypes.map { $0.makeApplier() }
         self.init(appliers)
     }
@@ -209,7 +230,7 @@ public final class EntityApplierRegistry: Sendable {
         return appliers[entityType]
     }
 
-    public func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
+    package func currentChange(for change: SyncChange, in connection: SQLiteConnection) throws -> SyncChange? {
         guard let applier = applier(for: change.entityType) else {
             throw SyncError.unknownEntityType(change.entityType)
         }
@@ -217,7 +238,7 @@ public final class EntityApplierRegistry: Sendable {
     }
 
     /// Apply a change using the appropriate applier
-    public func apply(change: SyncChange, to connection: SQLiteConnection) throws {
+    package func apply(change: SyncChange, to connection: SQLiteConnection) throws {
         guard let applier = applier(for: change.entityType) else {
             throw SyncError.unknownEntityType(change.entityType)
         }

@@ -16,10 +16,10 @@ struct CloudKitOperationsSettings: Sendable {
         self.namespace = namespace
     }
 
-    init(_ config: CloudKitTransportConfig) {
+    init(_ config: CloudKitSyncConfiguration) {
         zoneID = config.zoneID
         recordType = config.recordType
-        namespace = [config.container.containerIdentifier ?? "default", config.zoneName, config.recordType].joined(separator: "/")
+        namespace = [config.containerIdentifier, config.zoneName, config.recordType].joined(separator: "/")
         assetThreshold = config.assetThreshold
         toleranceMs = config.ntpToleranceMs
         automaticallySync = config.automaticallySync
@@ -42,7 +42,7 @@ protocol CloudKitOperationsClient: Sendable {
 }
 
 struct SystemCloudKitOperationsClient: CloudKitOperationsClient {
-    let config: CloudKitTransportConfig
+    let config: CloudKitSyncConfiguration
 
     func accountID() async throws -> String {
         let status = try await config.container.accountStatus()

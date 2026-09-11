@@ -6,7 +6,7 @@ import CompilerPluginSupport
 ///
 /// Usage:
 /// ```swift
-/// .package(url: "https://github.com/gfreezy/SwiftStore", from: "3.0.0")
+/// .package(url: "https://github.com/gfreezy/SwiftStore", from: "4.0.0")
 /// ```
 ///
 /// Products:
@@ -27,7 +27,6 @@ let package = Package(
         // its target with the standalone product can omit Xcode's host-tool build edge.
         .executable(name: "SwiftStoreMigrationCLI", targets: ["SwiftStoreMigrationCLI"]),
         .plugin(name: "SwiftStoreMigrationCheck", targets: ["SwiftStoreMigrationCheck"]),
-        .library(name: "SwiftStoreSyncHTTPTransport", targets: ["SwiftStoreSyncHTTPTransport"]),
         // Main umbrella library - includes everything
         .library(
             name: "SwiftStore",
@@ -154,6 +153,7 @@ let package = Package(
             dependencies: [
                 "SwiftStoreCore",
                 "SwiftStoreSync",
+                "SwiftStoreSyncCloudTransport",
             ],
             path: "SwiftStoreConnectionQueue/Sources/SwiftStoreConnectionQueue"
         ),
@@ -167,12 +167,6 @@ let package = Package(
             path: "SwiftStoreSyncCloudTransport/Sources/SwiftStoreSyncCloudTransport"
         ),
 
-        // MARK: - HTTP Sync Transport
-        .target(
-            name: "SwiftStoreSyncHTTPTransport",
-            dependencies: ["SwiftStoreSync"],
-            path: "SwiftStoreSyncHTTPTransport/Sources/SwiftStoreSyncHTTPTransport"
-        ),
         // MARK: - Server Layer (Development HTTP Server)
         .target(
             name: "SwiftStoreServer",
@@ -231,11 +225,6 @@ let package = Package(
         ),
 
         // MARK: - Tests
-        .testTarget(
-            name: "SwiftStoreSyncHTTPTransportTests",
-            dependencies: ["SwiftStoreSyncHTTPTransport"],
-            path: "SwiftStoreSyncHTTPTransport/Tests/SwiftStoreSyncHTTPTransportTests"
-        ),
         .testTarget(
             name: "SwiftStoreMacroTests",
             dependencies: [

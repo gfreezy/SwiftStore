@@ -1,282 +1,218 @@
 import Foundation
 import SwiftStoreCore
-import os.log
 
-/// Captures pre-update row snapshots and persists completed statement changes.
+/// Captures complete local statements and appends their events on the SAME connection,
+/// before SQLiteConnection releases the statement savepoint. No second database commit.
 public final class ChangeTracker: SQLiteUpdateHookHandler {
     private let mainConnection: SQLiteConnection
-    private let changeLogConnection: SQLiteConnection
     private let registeredEntities: [String: any EntityProtocol.Type]
     private let deviceId: UUIDV7
-    private var columnOffsets: [String: [Int]] = [:]
-    private let tickClock: () -> Int64
+    private let nowMilliseconds: () -> Int64
     private let schemaVersion: Int
-    private var lastClock: Int64 = 0
+    private var columnOffsets: [String: [Int]] = [:]
 
-    /// Initialize the change tracker
-    /// - Parameters:
-    ///   - connection: The main database connection
-    ///   - changeLogDbPath: The path to the changelog database
-    ///   - deviceId: The device ID
-    ///   - registeredEntities: The registered entity types to track changes for
-    ///   - tickClock: A function to tick the clock
-    ///   - schemaVersion: The schema version for migration compatibility
-    /// - Throws: An error if the changelog table cannot be migrated
-    public init(
-        connection: SQLiteConnection,
-        changeLogDbPath: String,
-        deviceId: UUIDV7,
-        registeredEntities: [any EntityProtocol.Type],
-        tickClock: @escaping () -> Int64,
-        schemaVersion: Int = 1
-    ) throws {
+    public init(connection: SQLiteConnection, deviceId: UUIDV7,
+                registeredEntities: [any EntityProtocol.Type],
+                tickClock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                schemaVersion: Int = 1) throws {
         guard SQLiteConnection.supportsPreUpdateHook else {
             throw StoreError.queryFailed("Change tracking requires SQLite with SQLITE_ENABLE_PREUPDATE_HOOK")
         }
-        self.mainConnection = connection
-        self.deviceId = deviceId
-        // Build lookup dictionary from table name to entity type
-        self.registeredEntities = Dictionary(
-            uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
-        self.tickClock = tickClock
-        self.schemaVersion = schemaVersion
-
-        // Create separate connection for changelog database
-        self.changeLogConnection = try SQLiteConnection(path: changeLogDbPath)
-
-        // Apply the changelog database's frozen migration history.
-        try migrateChangeLogTable()
-        lastClock = try ChangeLog.filter(\.deviceId == deviceId).max(\.logicalClock, changeLogConnection) ?? 0
-    }
-
-    private func migrateChangeLogTable() throws {
-        let runner = VersionedMigrator(connection: changeLogConnection, migrations: try ChangeLogMigrations.all())
-        try changeLogConnection.transaction {
-            do {
-                _ = try runner.pendingMigrationIDs()
-            } catch VersionedMigrationError.baselineRequired {
-                // Earlier versions created this same schema without migration bookkeeping.
-                try runner.adoptBaseline(through: "001_initial")
-            }
-            try runner.migrate()
+        guard schemaVersion > 0, Set(registeredEntities.map { $0.tableName }).count == registeredEntities.count,
+              registeredEntities.allSatisfy({ !$0.tableName.hasPrefix("__swiftstore_") }) else {
+            throw StoreError.invalidPayload("Invalid tracked schema or reserved entity name")
         }
+        mainConnection = connection
+        self.deviceId = deviceId
+        self.registeredEntities = Dictionary(uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
+        nowMilliseconds = tickClock
+        self.schemaVersion = schemaVersion
+        try SyncLogStorage.create(in: connection)
     }
 
-    // MARK: - Lifecycle
+    public var connection: SQLiteConnection { mainConnection }
 
-    /// Call after migration. Resolve physical columns once; migrations may have
-    /// appended columns in an order different from the current Swift declaration.
     public func start() throws {
         var offsets: [String: [Int]] = [:]
         for entity in registeredEntities.values {
-            let name = entity.tableName.replacingOccurrences(of: "\"", with: "\"\"")
-            let stmt = try mainConnection.prepare("PRAGMA table_xinfo(\"\(name)\")")
-            var columns: [String: Int] = [:]
+            let stmt = try mainConnection.prepare("PRAGMA table_xinfo(\(quote(entity.tableName)))")
+            var physical: [String: Int] = [:]
             while try stmt.step() {
-                if let name = stmt.columnString(1) { columns[name] = Int(stmt.columnInt64(0)) }
+                if let name = stmt.columnString(1) { physical[name] = Int(stmt.columnInt64(0)) }
             }
-            offsets[entity.tableName] = try entity.columns.map { column in
-                guard let index = columns[column.name] else {
-                    throw StoreError.invalidPayload("Missing tracked column \(entity.tableName).\(column.name)")
+            offsets[entity.tableName] = try entity.columns.map {
+                guard let offset = physical[$0.name] else {
+                    throw StoreError.invalidPayload("Missing tracked column \(entity.tableName).\($0.name)")
                 }
-                return index
+                return offset
             }
         }
         columnOffsets = offsets
         try mainConnection.setPreUpdateHook(self)
     }
 
-    public func stop() {
-        // Removing a hook does not require optional API support when none exists.
-        try? mainConnection.setPreUpdateHook(nil)
-    }
-
-    // MARK: - Public Access
-
-    /// Get the changelog database connection for queries
-    public var connection: SQLiteConnection { changeLogConnection }
-
-    // MARK: - SQLiteUpdateHookHandler
-
-    /// Compatibility entry point. Connection delivery uses the throwing batch API.
+    public func stop() { try? mainConnection.setPreUpdateHook(nil) }
+    public func tracksTable(_ name: String) -> Bool { registeredEntities[name] != nil }
     public func handleUpdate(_ info: SQLiteUpdateInfo) {
-        do { try handleUpdates([info]) }
-        catch { SwiftStoreLogger.error("Failed to record change: \(error)") }
+        // SQLiteConnection uses the throwing batch method so failures roll back the write.
     }
 
-    public func withTrackingTransaction<T>(_ block: () throws -> T) throws -> T {
-        try changeLogConnection.transaction(block)
-    }
-
-    public func tracksTable(_ tableName: String) -> Bool { registeredEntities[tableName] != nil }
-
-    private struct Identity: Hashable {
-        let table: String
-        let key: Data
-    }
-    private struct CapturedChange {
+    private struct Identity: Hashable { let table: String; let key: Data }
+    private struct Captured {
         let identity: Identity
-        let operation: ChangeOperation
-        let row: SQLiteRowSnapshot?
-        let occurredAt: Date
+        var old: SQLiteRowSnapshot?
+        var row: SQLiteRowSnapshot?
+        var operation: ChangeOperation
     }
 
-    /// Runs at SQLITE_DONE. Only decodes owned snapshots: never re-queries a
-    /// business row that a later trigger may have deleted or replaced.
     public func handleUpdates(_ updates: [SQLiteUpdateInfo]) throws {
-        var changes: [CapturedChange] = []
+        var changes: [Captured] = []
         var positions: [Identity: Int] = [:]
-        func record(_ change: CapturedChange) {
-            if let index = positions[change.identity] {
-                let previous = changes[index]
-                // An AFTER UPDATE timestamp trigger extends the original insert.
-                let operation: ChangeOperation = previous.operation == .insert && change.operation == .update
-                    ? .insert : change.operation
-                changes[index] = CapturedChange(identity: change.identity, operation: operation,
-                    row: change.row, occurredAt: change.occurredAt)
+        func record(_ value: Captured) {
+            if let index = positions[value.identity] {
+                changes[index].row = value.row
+                changes[index].operation = changes[index].operation == .insert && value.operation == .update
+                    ? .insert : value.operation
             } else {
-                positions[change.identity] = changes.count
-                changes.append(change)
+                positions[value.identity] = changes.count
+                changes.append(value)
             }
         }
-        for info in updates where info.source == .local {
-            guard let entity = registeredEntities[info.tableName],
-                  let offsets = columnOffsets[info.tableName] else { continue }
-            func row(_ values: [SQLiteValue]?) throws -> SQLiteRowSnapshot? {
-                guard let values else { return nil }
-                let mapped = try offsets.map { index -> SQLiteValue in
-                    guard values.indices.contains(index) else {
-                        throw StoreError.invalidPayload("Tracked schema changed; restart tracking after migration")
-                    }
-                    return values[index]
+        func capture(_ updates: [SQLiteUpdateInfo]) throws {
+            for info in updates {
+                guard let entity = registeredEntities[info.tableName], let offsets = columnOffsets[info.tableName] else { continue }
+                func snapshot(_ values: [SQLiteValue]?) throws -> SQLiteRowSnapshot? {
+                    guard let values else { return nil }
+                    return SQLiteRowSnapshot(values: try offsets.map {
+                        guard values.indices.contains($0) else { throw StoreError.invalidPayload("Tracked schema changed; restart tracking") }
+                        return values[$0]
+                    })
                 }
-                return SQLiteRowSnapshot(values: mapped)
-            }
-            let old = try row(info.oldValues), new = try row(info.newValues)
-            func identity(_ row: SQLiteRowSnapshot) throws -> Identity {
-                let values = try entity.syncKeyColumns.map { name -> SQLiteValue in
-                    guard let index = entity.columns.firstIndex(where: { $0.name == name }) else {
-                        throw StoreError.invalidPayload("Unknown sync key column \(name)")
-                    }
-                    return row.columnValue(Int32(index), type: entity.columns[index].type)
+                let old = try snapshot(info.oldValues), row = try snapshot(info.newValues)
+                let oldID = try old.map { Identity(table: entity.tableName, key: try key($0, entity)) }
+                let newID = try row.map { Identity(table: entity.tableName, key: try key($0, entity)) }
+                if let oldID, info.operation == .delete || oldID != newID {
+                    record(Captured(identity: oldID, old: old, row: nil, operation: .delete))
                 }
-                return Identity(table: info.tableName, key: SyncKeyEncoder.encode(values))
+                if let newID {
+                    record(Captured(identity: newID, old: oldID == newID ? old : nil, row: row,
+                        operation: info.operation == .insert || oldID != newID ? .insert : .update))
+                }
             }
-            let oldID = try old.map(identity), newID = try new.map(identity)
-            // Updating a sync key removes the old identity and creates the new one.
-            if let oldID, info.operation == .delete || oldID != newID {
-                record(CapturedChange(identity: oldID, operation: .delete, row: nil, occurredAt: info.occurredAt))
+        }
+        try capture(updates.filter { $0.source == .local })
+        var assigned: [Identity: Int64] = [:]
+        // Timestamp UPDATEs may themselves fire business triggers. Capture every
+        // resulting row and settle timestamps before taking the final payloads.
+        // A non-converging trigger rolls back the entire originating statement.
+        for pass in 0..<32 {
+            var corrected = false
+            for change in changes {
+                guard let entity = registeredEntities[change.identity.table],
+                      let index = entity.columns.firstIndex(where: { $0.name == "updated_at" }) else {
+                    throw StoreError.invalidPayload("Synchronized entities require updated_at")
+                }
+                let noOp = change.old.map { old in change.row.map { row in
+                    old.values.enumerated().allSatisfy { $0.offset == index || $0.element == row.values[$0.offset] }
+                } ?? false } ?? false
+                let target: Double
+                if noOp {
+                    assigned[change.identity] = nil
+                    target = change.old!.columnDouble(Int32(index))
+                } else {
+                    if assigned[change.identity] == nil {
+                        let previous = try SyncLogStorage.knownTime(entity: entity.tableName, key: change.identity.key, in: mainConnection)
+                        let oldTime = try change.old.map { try SyncLogStorage.timestamp($0.columnDouble(Int32(index))) }
+                        let known = max(previous ?? Int64.min, oldTime ?? Int64.min)
+                        let now = nowMilliseconds()
+                        guard known < 9_007_199_254_740_990, abs(Double(now)) <= 9_007_199_254_740_990 else {
+                            throw StoreError.invalidPayload("Cannot advance the local version timestamp")
+                        }
+                        assigned[change.identity] = max(now, known + 1)
+                    }
+                    target = Double(assigned[change.identity]!) / 1000
+                }
+                if let row = change.row, row.columnDouble(Int32(index)) != target {
+                    let effects = try mainConnection.captureTrackedMaintenance {
+                        try setTime(target, identity: change.identity, entity: entity)
+                    }
+                    try capture(effects)
+                    corrected = true
+                }
             }
-            if let newID, let new {
-                record(CapturedChange(identity: newID, operation: info.operation == .insert ? .insert : .update,
-                    row: new, occurredAt: info.occurredAt))
-            }
+            if !corrected { break }
+            if pass == 31 { throw StoreError.invalidPayload("Timestamp triggers do not converge; local write rolled back") }
         }
         for change in changes {
-            guard let entity = registeredEntities[change.identity.table] else { continue }
-            lastClock = max(tickClock(), lastClock + 1)
-            let payload = try change.row.map { try serializeEntity(stmt: $0, entityType: entity) }
-            try insertChangeLog(entityType: change.identity.table, syncKey: change.identity.key,
-                operation: change.operation, payload: payload, clockValue: lastClock, occurredAt: change.occurredAt)
+            guard let time = assigned[change.identity], let entity = registeredEntities[change.identity.table] else { continue }
+            let date = Date(timeIntervalSince1970: Double(time) / 1000)
+            let payload = try change.row.map { String(decoding: try JSONEncoder().encode(entity.sqliteDecode(from: $0)), as: UTF8.self) }
+            try SyncLogStorage.append(ChangeLog(entityType: entity.tableName, syncKey: change.identity.key,
+                operation: change.operation, payload: payload, deviceId: deviceId, logicalClock: time,
+                schemaVersion: schemaVersion, createdAt: date, updatedAt: date), to: mainConnection)
+            try SyncLogStorage.remember(entity: entity.tableName, key: change.identity.key, time: time,
+                deleted: change.operation == .delete, in: mainConnection)
         }
     }
 
-    /// Extract sync key values from entity row and encode to binary
-    private func extractSyncKeyData(stmt: SQLiteStatementImpl, entityType: any EntityProtocol.Type)
-        throws -> Data
-    {
-        let syncKeyCols = entityType.syncKeyColumns
-        var values: [SQLiteValue] = []
-
-        for colName in syncKeyCols {
-            // Find the column index by name
-            guard let column = entityType.columns.first(where: { $0.name == colName }),
-                  let columnIndex = (0..<stmt.columnCount).first(where: { stmt.columnName($0) == colName }) else {
-                throw StoreError.invalidPayload("Sync key column '\(colName)' not found in entity")
-            }
-
-
-            switch column.type {
-            case .text:
-                if let value = stmt.columnString(columnIndex) {
-                    values.append(.text(value))
-                } else {
-                    values.append(.null)
-                }
-            case .integer:
-                values.append(.integer(stmt.columnInt64(columnIndex)))
-            case .real:
-                values.append(.real(stmt.columnDouble(columnIndex)))
-            case .blob:
-                if let data = stmt.columnData(columnIndex) {
-                    values.append(.blob(data))
-                } else {
-                    values.append(.null)
-                }
-            }
-        }
-
-        return SyncKeyEncoder.encode(values)
-    }
-
-    /// Serialize entity row to JSON string
-    private func serializeEntity(stmt: any SQLiteStatementProtocol, entityType: any EntityProtocol.Type)
-        throws -> String
-    {
-        let entity = try entityType.sqliteDecode(from: stmt)
-        return String(decoding: try JSONEncoder().encode(entity), as: UTF8.self)
-    }
-
-    /// Capture rows that existed before synchronization was enabled. Remote
-    /// rows are protected by a per-entity bootstrap marker on subsequent launches.
+    /// Run after business migration and legacy import, before exposing the writer.
+    /// Existing timestamps are preserved. Each entity's capture and marker commit together.
     public func captureExistingRows() throws {
-        try changeLogConnection.execute("CREATE TABLE IF NOT EXISTS __swiftstore_sync_bootstrap (entity_type TEXT PRIMARY KEY)")
-        for entity in registeredEntities.values {
-            let captured: Int64 = try changeLogConnection.queryScalar(
-                "SELECT COUNT(*) FROM __swiftstore_sync_bootstrap WHERE entity_type = ?",
-                values: [.text(entity.tableName)]) ?? 0
-            if captured > 0 { continue }
-            try changeLogConnection.transaction {
-                let table = entity.tableName.replacingOccurrences(of: "\"", with: "\"\"")
-                let columns = entity.columns.map { "\"" + $0.name.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }.joined(separator: ", ")
-                let stmt = try mainConnection.prepare("SELECT \(columns) FROM \"\(table)\"")
+        try captureExistingRows(coveredRemotely: { _, _, _ in false })
+    }
+
+    package func captureExistingRows(coveredRemotely: (String, Data, Int64) throws -> Bool) throws {
+        try mainConnection.transaction {
+            for entity in registeredEntities.values.sorted(by: { $0.tableName < $1.tableName }) {
+                let captured: Int64 = try mainConnection.queryScalar(
+                    "SELECT COUNT(*) FROM __swiftstore_sync_bootstrap WHERE entity_type = ?", values: [.text(entity.tableName)]) ?? 0
+                guard captured == 0 else { continue }
+                let columns = entity.columns.map { quote($0.name) }.joined(separator: ",")
+                let stmt = try mainConnection.prepare("SELECT \(columns) FROM \(quote(entity.tableName))")
                 while try stmt.step() {
-                    let key = try extractSyncKeyData(stmt: stmt, entityType: entity)
-                    let tracked: Int64 = try changeLogConnection.queryScalar(
-                        "SELECT COUNT(*) FROM change_log WHERE entity_type = ? AND sync_key = ?",
-                        values: [.text(entity.tableName), .blob(key)]) ?? 0
-                    if tracked > 0 { continue }
-                    lastClock = max(tickClock(), lastClock + 1)
-                    try insertChangeLog(entityType: entity.tableName, syncKey: key,
-                        operation: .insert, payload: try serializeEntity(stmt: stmt, entityType: entity),
-                        clockValue: lastClock)
+                    let row = SQLiteRowSnapshot(values: entity.columns.enumerated().map {
+                        stmt.columnValue(Int32($0.offset), type: $0.element.type)
+                    })
+                    let syncKey = try key(row, entity)
+                    guard let index = entity.columns.firstIndex(where: { $0.name == "updated_at" }) else {
+                        throw StoreError.invalidPayload("Synchronized entities require updated_at")
+                    }
+                    let time = try SyncLogStorage.timestamp(row.columnDouble(Int32(index)))
+                    let date = Date(timeIntervalSince1970: Double(time) / 1000)
+                    let payload = String(decoding: try JSONEncoder().encode(entity.sqliteDecode(from: row)), as: UTF8.self)
+                    if try coveredRemotely(entity.tableName, syncKey, time) { continue }
+                    let previous: String? = try mainConnection.queryScalar(
+                        "SELECT payload FROM __swiftstore_change_log WHERE entity_type=? AND sync_key=? ORDER BY seq DESC LIMIT 1",
+                        values: [.text(entity.tableName), .blob(syncKey)])
+                    if let previous,
+                       let a = try JSONSerialization.jsonObject(with: Data(previous.utf8)) as? NSDictionary,
+                       let b = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? NSDictionary, a.isEqual(b) { continue }
+                    try SyncLogStorage.append(ChangeLog(entityType: entity.tableName, syncKey: syncKey, operation: .insert,
+                        payload: payload, deviceId: deviceId, logicalClock: time, schemaVersion: schemaVersion,
+                        createdAt: date, updatedAt: date), to: mainConnection)
+                    try SyncLogStorage.remember(entity: entity.tableName, key: syncKey, time: time, deleted: false, in: mainConnection)
                 }
-                try changeLogConnection.execute("INSERT INTO __swiftstore_sync_bootstrap (entity_type) VALUES (?)",
-                    values: [.text(entity.tableName)])
+                try mainConnection.execute("INSERT INTO __swiftstore_sync_bootstrap(entity_type) VALUES(?)", values: [.text(entity.tableName)])
             }
         }
     }
 
-    /// Insert a change log entry into the changelog database
-    private func insertChangeLog(
-        entityType: String,
-        syncKey: Data,
-        operation: ChangeOperation,
-        payload: String?,
-        clockValue: Int64,
-        occurredAt: Date = Date()
-    ) throws {
-        let log = ChangeLog(
-            entityType: entityType,
-            syncKey: syncKey,
-            operation: operation,
-            payload: payload,
-            deviceId: deviceId,
-            logicalClock: clockValue,
-            schemaVersion: schemaVersion,
-            createdAt: occurredAt,
-            updatedAt: occurredAt
-        )
-        try changeLogConnection.insert(log)
+    private func key(_ row: SQLiteRowSnapshot, _ entity: any EntityProtocol.Type) throws -> Data {
+        try SyncKeyEncoder.encode(entity.syncKeyColumns.map { name in
+            guard let index = entity.columns.firstIndex(where: { $0.name == name }) else {
+                throw StoreError.invalidPayload("Unknown sync key column \(name)")
+            }
+            return row.values[index]
+        })
     }
+
+    private func setTime(_ value: Double, identity: Identity, entity: any EntityProtocol.Type) throws {
+        let values = SyncKeyEncoder.decode(identity.key)
+        guard values.count == entity.syncKeyColumns.count else { throw StoreError.invalidPayload("Invalid sync key") }
+        let predicate = entity.syncKeyColumns.map { "\(quote($0)) = ?" }.joined(separator: " AND ")
+        try mainConnection.execute("UPDATE \(quote(entity.tableName)) SET updated_at = ? WHERE \(predicate) AND updated_at != ?",
+            values: [.real(value)] + values + [.real(value)])
+    }
+
+    private func quote(_ name: String) -> String { "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
 }

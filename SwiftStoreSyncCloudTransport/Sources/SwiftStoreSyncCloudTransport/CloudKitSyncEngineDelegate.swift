@@ -32,27 +32,3 @@ final class CloudKitSyncEngineDelegate: NSObject, CKSyncEngineDelegate, Sendable
         await transport?.nextBatch(context, engine: syncEngine)
     }
 }
-
-/// The protocol exposes the stream synchronously, including across stop/start.
-final class CloudKitSyncSignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-    private var finished = false
-
-    var stream: AsyncStream<Void> { lock.withLock { pair.stream } }
-    func start() {
-        lock.withLock {
-            if finished {
-                pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-                finished = false
-            }
-        }
-    }
-    func yield() { lock.withLock { _ = pair.continuation.yield(()) } }
-    func finish() {
-        lock.withLock {
-            finished = true
-            pair.continuation.finish()
-        }
-    }
-}

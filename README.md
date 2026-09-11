@@ -1,7 +1,7 @@
 # SwiftStore
 
 SQLite persistence for Swift, with macro-defined models, type-safe queries, FTS5 search,
-versioned migrations, and multi-device synchronization through HTTP or CloudKit.
+versioned migrations, and multi-device synchronization through CloudKit.
 
 ## Requirements
 
@@ -19,7 +19,6 @@ select a version from [Releases](https://github.com/gfreezy/SwiftStore/releases)
 | `SwiftStoreCore` | Models, queries, SQLite connections and migrations |
 | `SwiftStoreConnectionQueue` | Serialized writes, pooled reads and sync coordination |
 | `SwiftStoreMacros` | Macro declarations |
-| `SwiftStoreSyncHTTPTransport` | HTTP sync client |
 | `SwiftStoreSyncCloudTransport` | CloudKit sync client |
 | `SwiftStoreServer` | Development web interface and HTTP API |
 | `SwiftStoreMigrationCheck` | Build plugin for migration checks |
@@ -270,42 +269,38 @@ A raw `SQLiteConnection` must not be used concurrently.
 
 ## Multi-device Sync
 
-Pass a transport and a stable, installation-local device ID to `SyncOptions`.
-This example assumes `deviceId` was loaded from local application storage and `bearerToken`
-was obtained from your backend:
+Configure CloudKit and a stable, installation-local device ID. All sync state and the
+append-only change log live in the business SQLite database, on its writer connection.
 
 ```swift
 import SwiftStore
-import SwiftStoreSyncHTTPTransport
 
-let transport = try HTTPSyncTransport(configuration: HTTPSyncConfiguration(
-    serverURL: URL(string: "https://sync.example.com")!,
-    namespace: "account-123",
-    bearerToken: bearerToken,
-    stateURL: URL.applicationSupportDirectory.appendingPathComponent("http-sync-state.json")
-))
 let manager = try ConnectionManager(
     path: "app.sqlite",
     entities: [User.self],
-    syncConfig: SyncOptions(deviceId: deviceId, transport: transport, schemaVersion: 1)
+    syncConfig: SyncOptions(
+        deviceId: deviceId,
+        schemaVersion: 1,
+        cloudKit: CloudKitSyncConfiguration(containerIdentifier: "iCloud.com.example.app")
+    )
 )
 try await manager.migrate(migrations: try StoreMigrations.all(bundle: .module))
-try await manager.sync()
+let result = try await manager.sync()
 ```
 
-Migration starts change tracking and captures existing rows. After the first `sync()`, local
-writes and transport signals request further sync cycles. `stopSync()` pauses networking;
-local changes remain tracked. Calling `sync()` resumes it.
+Migration captures existing rows once without changing their timestamps. Local changes
+schedule synchronization by default. Set `automaticallySync: false` for manual control;
+`stopSync()` pauses networking while local changes remain tracked. `sync()` resumes it.
 
-Newer `updatedAt` wins; equal timestamps retain the committed remote version. Deletes use
-persistent tombstones. Clock validation is mandatory, with a default tolerance of ±5 seconds.
-Keep business databases, changelogs and transport state together, with separate storage for
-each account/database/device. Remote writes do not produce upload echoes.
+The implementation uses CKSyncEngine on iOS 17+ and CloudKit Operations on iOS 16.
+Newer business `updatedAt` wins; equal timestamps retain the authoritative CloudKit version.
+Deletions are versioned tombstones. Remote writes never generate upload echoes.
+Only events inside each fixed upload batch are coalesced; retries replay the original IDs
+and payloads. A successful later item cannot advance the upload cursor past an unresolved item.
 
-- [HTTP server API](docs/http-sync-server-api.md): implement the three backend endpoints.
-- [CloudKit setup](SwiftStoreSyncCloudTransport/README.md): container, state storage and notifications.
-- [Custom transport contract](docs/sync-backend-contract.md): lifecycle, conflict rules and acknowledgements.
-- [Change tracking](docs/preupdate-change-tracking.md): transaction behavior and platform requirements.
+- [CloudKit setup and legacy migration](SwiftStoreSyncCloudTransport/README.md).
+- [Sync architecture and recovery](docs/sync-architecture.md).
+- [Change tracking and transaction behavior](docs/preupdate-change-tracking.md).
 
 ## Development Server
 
@@ -326,7 +321,7 @@ try await server.start()
 
 Open [the admin UI](http://127.0.0.1:8080/admin) to browse tables, inspect schemas, run SQL and
 export results as CSV. Configure `fileServerRoot` to enable `/files` and file API routes.
-Use this server only for development; it is not the HTTP synchronization backend.
+Use this server only for development and SQL inspection.
 
 | Method | Endpoint | Use |
 | --- | --- | --- |
@@ -347,8 +342,8 @@ swift test
 swift run MigrationExample
 ```
 
-See [two-device integration tests](IntegrationTests/TwoDeviceSync/README.md) for simulator setup
-and the distinction between fixture tests and real CloudKit testing.
+CloudKit driver tests use a simulated network service with real SQLite persistence. See
+[CloudKit verification](SwiftStoreSyncCloudTransport/README.md#验证范围) for device testing requirements.
 
 ## License
 

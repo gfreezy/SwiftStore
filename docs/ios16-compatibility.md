@@ -1,6 +1,6 @@
 # iOS 16 支持
 
-SwiftStore 的最低 iOS 版本为 16。数据库、宏、变更追踪、HTTP 同步和 CloudKit 同步均可使用。其他平台要求见 [README](../README.md#requirements)。
+SwiftStore 的最低 iOS 版本为 16。数据库、宏、变更追踪和 CloudKit 同步均可使用。其他平台要求见 [README](../README.md#requirements)。
 
 ## 时间字段
 
@@ -20,52 +20,25 @@ COALESCE(
 
 ## CloudKit
 
-调用入口为 `CloudKitSyncTransport`，应用无需按系统版本选择类型：
+调用入口为 `ConnectionManager` 的 `SyncOptions(cloudKit:)`，应用无需按系统版本选择驱动：
 
-| 系统 | 执行方式 | 状态 |
+| 系统 | 执行方式 | 下载状态 |
 |---|---|---|
-| iOS 17+ | CKSyncEngine | journal 中保存不透明的 engineState |
-| iOS 16 | CloudKit 条件保存与 zone 增量拉取 | journal 中保存 zoneChangeToken |
+| iOS 17+ | CKSyncEngine 原生调度 | SQLite 中保存不透明的 State.Serialization |
+| iOS 16 | CloudKit 条件保存与 zone 增量拉取 | SQLite 中保存 CKServerChangeToken |
 
-两者共用 `CloudKitSyncJournal`、冲突规则、待上传队列、下载 inbox 和确认逻辑。iOS 16 的保存使用 `ifServerRecordUnchanged`：遇到 change-tag 冲突时读取服务端版本，再由相同的时间规则决定重试还是接受云端版本。先完成本轮上传裁决，再分页拉取；期间新增的本地修改留到下一轮。
+两者共用同一份追加日志、固定批次合并、时间冲突规则和连续上传游标。没有持久化的 payload outbox / inbox 副本。iOS 16 每页数据与 token 在同一事务提交；iOS 17+ 等待下载数据提交后才返回 delegate，随后保存 SDK 状态。下载失败时丢弃当前引擎后续回调，保留旧检查点用于重放。
 
-每页下载内容与游标在同一次 journal 写入中保存。解析或持久化失败不推进游标；游标过期会从头拉取并保留尚未确认的内容。账号变化和已存在的 zone 被删除会报错，不自动把旧账号数据传到新账号，也不把已删除的 zone 当作空白新库重建。
+iOS 16 升级到 iOS 17 时保留业务数据、日志和 pushCursor，只清空下载状态并全量重拉；不能把 Operations token 当作 CKSyncEngine serialization。
 
-### iOS 16 远端通知
+两条路径都利用 CloudKit change tag 条件保存。较新的业务修改才能替换云端记录，时间相等采用云端版本。账号变化、已有 zone 被删除会保留本地数据并报错；普通 token 过期会全量重拉，不把云端缺失行当成删除。
 
-开启 iCloud / CloudKit、Push Notifications 和 Background Modes → Remote notifications，并调用 `registerForRemoteNotifications()`。
+### 通知和前台恢复
 
-在宿主应用的远端通知处理方法中，将通知转交给保存的 `transport` 实例。匹配本订阅时，等待 `manager.sync()` 完成再调用后台完成回调：
+iOS 16 通过 CKDatabaseSubscription 接收变更信号。宿主转发 `manager.handleRemoteNotification(userInfo)`，匹配订阅后等待 `manager.sync()` 再结束后台回调。进入前台时也调用 `sync()` 补偿未送达通知；没有常驻轮询。完整接入代码见 [CloudKit 接入](../SwiftStoreSyncCloudTransport/README.md#ios-16-通知与前台恢复)。
 
-```swift
-func application(
-    _ application: UIApplication,
-    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-) {
-    guard transport.handleRemoteNotification(userInfo) else {
-        completionHandler(.noData)
-        return
-    }
-    Task {
-        do {
-            _ = try await manager.sync()
-            completionHandler(.newData)
-        } catch {
-            completionHandler(.failed)
-        }
-    }
-}
-```
+### 验证范围
 
-`handleRemoteNotification` 只接受配置中的 subscriptionID。iOS 16 在 `automaticallySync` 开启时每 60 秒发出一次前台同步信号，交给 SyncManager 执行，用于补偿遗漏的推送；应用被系统挂起后不会依赖这个计时器，后台同步由宿主通知回调触发。`stop()` 会停止计时器、结束通知流，并隔离之前尚未返回的请求结果。重新启动会恢复持久化的队列。
-
-## 验证范围
-
-[双设备测试记录](../IntegrationTests/TwoDeviceSync/RESULTS.md)包含 iOS 16.4 系统 SQLite 的
-时间回退、迁移、pre-update 追踪和 HTTP 同步结果。记录中的版本与运行环境不代表当前代码已重新验证。
-
-CloudKit 的自动测试使用注入网络实现，真实 iCloud 同步、APNs 和后台运行需要带签名与容器授权的
-宿主应用验证，见 [CloudKit 接入](../SwiftStoreSyncCloudTransport/README.md#验证)。
+最低部署版本 16.0 的 iOS 目标编译验证 API 可用性。自动测试以真实 SQLite 和模拟 CloudKit 网络接口验证 Operations 路径及共享逻辑；不代表已经在 iOS 16 真机上完成 iCloud、APNs 和后台运行验证。
 
 参考：[CloudKit zone 增量拉取](https://developer.apple.com/documentation/cloudkit/ckfetchrecordzonechangesoperation)、[条件保存策略](https://developer.apple.com/documentation/cloudkit/ckmodifyrecordsoperation/recordsavepolicy/ifserverrecordunchanged)。

@@ -21,7 +21,7 @@ struct SyncChangeCKRecordTests {
     @Test("CloudKit exposes only an opaque record key, Unix milliseconds and full Base64 payload")
     func inlineEnvelope() throws {
         let original = change()
-        let envelope = try SyncRecordEnvelope(change: original)
+        let envelope = try CloudRecordEnvelope(change: original)
         let record = try original.makeCKRecord(zoneID: zoneID, recordType: recordType, assetThreshold: 1_000_000)
         #expect(Set(record.allKeys()) == ["updatedAt", "payload"])
         #expect(record.recordID.recordName == envelope.key)
@@ -40,7 +40,7 @@ struct SyncChangeCKRecordTests {
     @Test("Opaque keys are stable across edits and bounded even for long composite identities")
     func opaqueIdentity() throws {
         let first = change(), second = change()
-        #expect(try SyncRecordEnvelope(change: first).key == SyncRecordEnvelope(change: second).key)
+        #expect(try CloudRecordEnvelope(change: first).key == CloudRecordEnvelope(change: second).key)
         let long = SyncChange.recordName(entityType: String(repeating: "实体:", count: 300),
             syncKey: Data(repeating: 255, count: 1000))
         #expect(long.count == 64)
@@ -56,7 +56,7 @@ struct SyncChangeCKRecordTests {
         let url = try #require((record["payloadAsset"] as? CKAsset)?.fileURL)
         defer { try? FileManager.default.removeItem(at: url) }
         #expect(Set(record.allKeys()) == ["updatedAt", "payloadAsset"])
-        #expect(try Data(contentsOf: url) == SyncRecordEnvelope(change: original).payload)
+        #expect(try Data(contentsOf: url) == CloudRecordEnvelope(change: original).payload)
         #expect(SyncChange(ckRecord: record)?.payload == original.payload)
         let small = try change().makeCKRecord(zoneID: zoneID, recordType: recordType,
             assetThreshold: 1_000_000, systemFields: record.syncSystemFields())

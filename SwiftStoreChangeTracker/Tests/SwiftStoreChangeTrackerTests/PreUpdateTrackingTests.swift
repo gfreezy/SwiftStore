@@ -19,14 +19,14 @@ struct PreUpdateTrackingTests {
     private func setup(updateTrigger: Bool = false) throws -> (SQLiteConnection, ChangeTracker) {
         let db = try SQLiteConnection(path: ":memory:")
         try migrateTestEntities([TestEntity.self], on: db, includeFixtureTriggers: updateTrigger)
-        let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let tracker = try ChangeTracker(connection: db, deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })
         try tracker.start()
         return (db, tracker)
     }
 
     private func logs(_ tracker: ChangeTracker) throws -> [ChangeLog] {
-        try ChangeLog.all(tracker.connection).sorted { $0.logicalClock < $1.logicalClock }
+        try ChangeLog.all(tracker.connection).sorted { $0.seq < $1.seq }
     }
 
     @Test("Deletion needs no trigger or intermediate table, including DELETE without a WHERE clause")
@@ -36,7 +36,7 @@ struct PreUpdateTrackingTests {
         try db.insert(one)
         try db.insert(two)
         #expect(try !db.tableExists("__swiftstore_pending_deletes"))
-        let before = Date()
+        let before = try #require(logs(tracker).first?.createdAt)
         try db.execute("DELETE FROM test_entity")
         let deleted = try logs(tracker).filter { $0.operation == .delete }
         #expect(deleted.count == 2)
@@ -51,6 +51,7 @@ struct PreUpdateTrackingTests {
         var entity = TestEntity(name: "before", value: 1)
         entity.updatedAt = Date(timeIntervalSince1970: 1)
         try db.insert(entity)
+        let insertedTime = try #require(TestEntity.all(db).first?.updatedAt)
         try db.execute("UPDATE test_entity SET name = 'after'")
         let changes = try logs(tracker)
         #expect(changes.count == 2)
@@ -58,7 +59,7 @@ struct PreUpdateTrackingTests {
         let row = try JSONDecoder().decode(TestEntity.self, from: Data(payload.utf8))
         #expect(row.name == "after")
         #expect(try row.updatedAt == TestEntity.all(db).first?.updatedAt)
-        #expect(row.updatedAt > entity.updatedAt)
+        #expect(row.updatedAt > insertedTime)
     }
 
     @Test("REPLACE captures the implicit deletion even with recursive triggers disabled")
@@ -138,7 +139,7 @@ struct PreUpdateTrackingTests {
             CREATE TABLE test_entity (value INTEGER, unused TEXT, updated_at REAL,
                 id BLOB PRIMARY KEY, name TEXT, created_at REAL)
             """)
-        let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let tracker = try ChangeTracker(connection: db, deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })
         try tracker.start()
         let id = UUIDV7()
@@ -146,13 +147,13 @@ struct PreUpdateTrackingTests {
         let change = try #require(logs(tracker).last)
         let row = try JSONDecoder().decode(TestEntity.self, from: Data(try #require(change.payload).utf8))
         #expect(row.id == id && row.name == "correct" && row.value == 42)
-        #expect(row.updatedAt.timeIntervalSince1970 == 100.125)
+        #expect(try row.updatedAt == TestEntity.all(db).first?.updatedAt)
     }
     @Test("Composite sync keys work without declaring a PRIMARY KEY")
     func compositeKey() throws {
         let db = try SQLiteConnection(path: ":memory:")
         try migrateTestEntities([SnapshotMembership.self], on: db, includeFixtureTriggers: true)
-        let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let tracker = try ChangeTracker(connection: db, deviceId: UUIDV7(),
             registeredEntities: [SnapshotMembership.self], tickClock: { 1 })
         try tracker.start()
         try db.insert(SnapshotMembership(team: "one", member: "alice"))
@@ -174,7 +175,7 @@ struct PreUpdateTrackingTests {
                 value INTEGER REFERENCES parent(id) ON DELETE CASCADE,
                 created_at REAL DEFAULT 1, updated_at REAL DEFAULT 1);
             """)
-        let tracker = try ChangeTracker(connection: db, changeLogDbPath: ":memory:", deviceId: UUIDV7(),
+        let tracker = try ChangeTracker(connection: db, deviceId: UUIDV7(),
             registeredEntities: [TestEntity.self], tickClock: { 1 })
         try tracker.start()
         try db.insert(TestEntity(name: "child", value: 1))
