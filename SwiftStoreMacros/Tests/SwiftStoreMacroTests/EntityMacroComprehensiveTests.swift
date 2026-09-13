@@ -137,6 +137,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     false
                 }
 
+                public static var isSyncEnabled: Bool {
+                    true
+                }
+
                 public init(
                     id: UUIDV7,
                     name: String,
@@ -326,6 +330,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     false
                 }
 
+                public static var isSyncEnabled: Bool {
+                    true
+                }
+
                 public init(
                     email: String,
                     name: String,
@@ -482,6 +490,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     false
                 }
 
+                public static var isSyncEnabled: Bool {
+                    true
+                }
+
                 public init(
                     id: UUIDV7 = UUIDV7(),
                     sku: String,
@@ -614,6 +626,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     true
                 }
 
+                public static var isSyncEnabled: Bool {
+                    false
+                }
+
                 public init(
                     id: Int,
                     key: String,
@@ -713,6 +729,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
 
                 public static var isReadonly: Bool {
                     true
+                }
+
+                public static var isSyncEnabled: Bool {
+                    false
                 }
 
                 public init(
@@ -819,6 +839,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
 
                 public static var isReadonly: Bool {
                     true
+                }
+
+                public static var isSyncEnabled: Bool {
+                    false
                 }
 
                 public init(
@@ -936,6 +960,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
 
                 public static var isReadonly: Bool {
                     true
+                }
+
+                public static var isSyncEnabled: Bool {
+                    false
                 }
 
                 public init(
@@ -1066,6 +1094,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
 
                 public static var isReadonly: Bool {
                     false
+                }
+
+                public static var isSyncEnabled: Bool {
+                    true
                 }
 
                 public init(

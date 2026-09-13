@@ -13,6 +13,14 @@ struct ConnectionSyncNote {
     var updatedAt: Date = Date()
 }
 
+@Entity(sync: false)
+struct ConnectionLocalCache {
+    var id: UUIDV7 = UUIDV7()
+    var title: String
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
 private final class SeededConnectionManager: ConnectionManager, @unchecked Sendable {
     override func performAdditionalSetup(connection: SQLiteConnection) throws {
         if try ConnectionSyncNote.count(connection) == 0 {
@@ -36,6 +44,42 @@ struct ConnectionSyncTests {
             cloudKit: .init(containerIdentifier: "iCloud.com.swiftstore.tests", automaticallySync: false))
     }
     private var snapshot: SchemaSnapshot { SchemaSnapshot(entities: [ConnectionSyncNote.self]) }
+
+    @Test("Local-only entities share migrations and atomic writes without generating sync logs")
+    func localEntitiesShareBusinessTransactions() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let entities: [any EntityProtocol.Type] = [ConnectionSyncNote.self, ConnectionLocalCache.self]
+        let schema = SchemaSnapshot(entities: entities)
+        let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: entities, migrations: [.init(id: "001", target: schema) { db in
+                for sql in schema.creationStatements { try db.execute(sql) }
+                try db.insert(ConnectionLocalCache(title: "seed"))
+            }], syncConfig: options())
+        try await manager.waitForMigration()
+        try await manager.write { db in
+            try db.transaction {
+                try db.insert(ConnectionSyncNote(title: "synced"))
+                try db.insert(ConnectionLocalCache(title: "local"))
+            }
+        }
+        enum Failure: Error { case intentional }
+        await #expect(throws: Failure.self) {
+            try await manager.write { db in
+                try db.transaction {
+                    try db.insert(ConnectionSyncNote(title: "rolled back"))
+                    try db.insert(ConnectionLocalCache(title: "rolled back"))
+                    throw Failure.intentional
+                }
+            }
+        }
+        try await manager.read { db in
+            #expect(try ConnectionSyncNote.count(db) == 1)
+            #expect(try ConnectionLocalCache.count(db) == 2)
+            let events = try ChangeTrackerReader(connection: db).changes(after: 0)
+            #expect(events.count == 1 && events.first?.entityType == ConnectionSyncNote.tableName)
+        }
+    }
 
     @Test("Database setup inserts are tracked before access is released and seeds survive reopening",
           arguments: [false, true])

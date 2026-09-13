@@ -49,8 +49,16 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             isReadonly = false
         }
 
-        // syncEnabled is the inverse of readonly
+        // Writable-field requirements are independent of CloudKit participation.
         let syncEnabled = !isReadonly
+        var participatesInSync = !isReadonly
+        if let arguments = node.arguments?.as(LabeledExprListSyntax.self),
+           let argument = arguments.first(where: { $0.label?.text == "sync" }) {
+            guard let literal = argument.expression.as(BooleanLiteralExprSyntax.self) else {
+                throw MacroError.message("@Entity sync must be a Boolean literal")
+            }
+            participatesInSync = !isReadonly && literal.literal.text == "true"
+        }
 
         let properties = structDecl.extractProperties()
 
@@ -163,11 +171,15 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             public static var isReadonly: Bool { \(raw: isReadonly ? "true" : "false") }
             """
 
+        let isSyncEnabledDecl: DeclSyntax = """
+            public static var isSyncEnabled: Bool { \(raw: participatesInSync ? "true" : "false") }
+            """
+
         // Generate memberwise init with default values
         let memberwiseInitDecl = EmbeddedMacro.generateMemberWiseInit(properties: properties)
 
         var result: [DeclSyntax] = [
-            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, isReadonlyDecl,
+            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, isReadonlyDecl, isSyncEnabledDecl,
             memberwiseInitDecl,
         ]
 

@@ -42,6 +42,27 @@ struct RawStorageSchemaTests {
         #expect(schema.tables[0].columns.map(\.type) == ["INTEGER", "INTEGER", "REAL", "TEXT", "BLOB", "TEXT"])
     }
 
+    @Test func syncOptOutDoesNotChangeSourceSchema() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("Row.swift")
+        let source = """
+            @Entity(sync: false) struct Row {
+                var id: UUIDV7
+                var title: String
+                var createdAt: Date = Date()
+                var updatedAt: Date = Date()
+            }
+            """
+        try source.write(to: file, atomically: true, encoding: .utf8)
+        let local = try EntitySourceSchema.extract(files: [file])
+        try source.replacingOccurrences(of: "sync: false", with: "sync: true")
+            .write(to: file, atomically: true, encoding: .utf8)
+        #expect(local == (try EntitySourceSchema.extract(files: [file])))
+        #expect(local.tables.map(\.name) == ["row"])
+    }
+
     @Test func resolvesAliasesAcrossFilesAndRejectsUnknownOrCyclicTypes() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

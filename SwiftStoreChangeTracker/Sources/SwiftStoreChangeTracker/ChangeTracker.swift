@@ -24,7 +24,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         }
         mainConnection = connection
         self.deviceId = deviceId
-        self.registeredEntities = Dictionary(uniqueKeysWithValues: registeredEntities.map { ($0.tableName, $0) })
+        self.registeredEntities = Dictionary(uniqueKeysWithValues: registeredEntities.filter { $0.isSyncEnabled }.map { ($0.tableName, $0) })
         nowMilliseconds = tickClock
         self.schemaVersion = schemaVersion
         try SyncLogStorage.create(in: connection)
@@ -155,7 +155,7 @@ public final class ChangeTracker: SQLiteUpdateHookHandler {
         }
     }
 
-    /// Run after business migration and legacy import, before exposing the writer.
+    /// Run after business migration, before exposing the writer.
     /// Existing timestamps are preserved. Each entity's capture and marker commit together.
     public func captureExistingRows() throws {
         try captureExistingRows(coveredRemotely: { _, _, _ in false })

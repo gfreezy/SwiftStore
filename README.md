@@ -331,6 +331,28 @@ Migration captures existing rows once without changing their timestamps. Local c
 schedule synchronization by default. Set `automaticallySync: false` for manual control;
 `stopSync()` pauses networking while local changes remain tracked. `sync()` resumes it.
 
+Use `@Entity(sync: false)` for local-only tables, such as caches or device settings:
+
+```swift
+@Entity(sync: false)
+struct LocalCache {
+    var id: UUIDV7 = UUIDV7()
+    var value: String
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+```
+
+Register local-only types alongside synchronized types in `ConnectionManager.entities`.
+They still participate in schema migrations, CRUD and shared transactions, but do not
+produce sync logs or initial snapshots. Existing log entries and downloaded records for
+explicitly local-only entities are skipped. Upload cursors advance only through a
+continuous prefix of skipped or confirmed events; unknown entity types still block sync.
+`sync` defaults to true for writable entities; readonly entities never participate.
+This flag does not relax writable field requirements or change the SQL schema. Treat it
+as a fixed entity policy, not a runtime pause/resume switch. It does not delete existing
+cloud records or provide a resynchronization policy for later re-enabling an entity.
+
 The implementation uses CKSyncEngine on iOS 17+ and CloudKit Operations on iOS 16.
 Newer business `updatedAt` wins; equal timestamps retain the authoritative CloudKit version.
 Deletions are versioned tombstones. Remote writes never generate upload echoes.

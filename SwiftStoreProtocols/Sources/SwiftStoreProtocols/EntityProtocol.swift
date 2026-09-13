@@ -33,6 +33,8 @@ public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
     static var fullTextIndexes: [FullTextIndexDefinition] { get }
     static var syncKeyColumns: [String] { get }
     static var isReadonly: Bool { get }
+    /// Whether this entity participates in CloudKit synchronization. Fixed for a manager lifetime.
+    static var isSyncEnabled: Bool { get }
 }
 
 /// Default implementations
@@ -40,4 +42,5 @@ public extension EntityProtocol {
     static var indexes: [IndexDefinition] { [] }
     static var fullTextIndexes: [FullTextIndexDefinition] { [] }
     static var isReadonly: Bool { false }
+    static var isSyncEnabled: Bool { !isReadonly }
 }

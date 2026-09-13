@@ -11,6 +11,7 @@ package final class SyncManager {
     private let persistence: SyncStatePersistence
     private let registry: EntityApplierRegistry
     private let schemaVersion: Int
+    private let localEntityNames: Set<String>
     private var activeBatch: CloudUploadBatch?
     private var decisions: [UUIDV7: CloudUploadDecision] = [:]
 
@@ -18,11 +19,12 @@ package final class SyncManager {
                  schemaVersion: Int, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
         self.connection = connection
         self.schemaVersion = schemaVersion
+        localEntityNames = Set(entities.filter { !$0.isSyncEnabled }.map { $0.tableName })
         tracker = try ChangeTracker(connection: connection, deviceId: deviceID, registeredEntities: entities,
             tickClock: now, schemaVersion: schemaVersion)
         reader = ChangeTrackerReader(connection: connection)
         persistence = try SyncStatePersistence(connection: connection)
-        registry = EntityApplierRegistry(entityTypes: entities)
+        registry = EntityApplierRegistry(entityTypes: entities.filter { $0.isSyncEnabled })
     }
 
     package func startTracking() throws {
@@ -43,6 +45,22 @@ package final class SyncManager {
     package func nextBatch(limit: Int) throws -> CloudUploadBatch? {
         if let activeBatch { return activeBatch }
         guard (1...200).contains(limit) else { throw SyncError.invalidPayload("CloudKit batch size must be between 1 and 200") }
+        while let batch = try prepareBatch(limit: limit) {
+            activeBatch = batch
+            decisions = [:]
+            if !batch.items.isEmpty { return batch }
+            // Entirely local windows need no CloudKit request. Commit their cursor
+            // durably and keep scanning, without unbounded recursion or memory use.
+            do { _ = try commit(batch, incoming: []) }
+            catch {
+                abandonBatch()
+                throw error
+            }
+        }
+        return nil
+    }
+
+    private func prepareBatch(limit: Int) throws -> CloudUploadBatch? {
         let cursor = try state().pushCursor
         let candidates = try reader.changes(after: cursor, limit: limit)
         var events: [ChangeLog] = []
@@ -50,6 +68,10 @@ package final class SyncManager {
         var covered: [CloudIdentity: [Int64]] = [:]
         var order: [CloudIdentity] = []
         for event in candidates {
+            if localEntityNames.contains(event.entityType) {
+                events.append(event)
+                continue
+            }
             let change = SyncChange(from: event)
             do { try validate(change) }
             catch {
@@ -69,10 +91,7 @@ package final class SyncManager {
         let items = try order.map {
             CloudUploadItem(change: latest[$0]!, coveredSequences: covered[$0]!, serverVersion: try persistence.version(for: $0))
         }
-        let batch = CloudUploadBatch(afterSequence: cursor, events: events, items: items)
-        activeBatch = batch
-        decisions = [:]
-        return batch
+        return CloudUploadBatch(afterSequence: cursor, events: events, items: items)
     }
 
     package func commit(_ batch: CloudUploadBatch, incoming: [CloudUploadDecision]) throws -> CloudCommitCounts {
@@ -109,7 +128,7 @@ package final class SyncManager {
                 let finished = Set(batch.items.filter { updated[$0.change.id] != nil }.flatMap(\.coveredSequences))
                 var cursor = try state().pushCursor
                 for event in batch.events where event.seq > cursor {
-                    guard finished.contains(event.seq) else { break }
+                    guard localEntityNames.contains(event.entityType) || finished.contains(event.seq) else { break }
                     cursor = event.seq
                 }
                 try persistence.saveCursor(cursor)
@@ -121,8 +140,9 @@ package final class SyncManager {
     }
 
     package func receive(_ records: [CloudRecord], checkpoint: CloudCheckpoint?) throws -> Int {
-        // Validate the whole page before applying any of it. Future schemas and bad
-        // payloads never disappear behind an advanced download checkpoint.
+        // Only explicitly local entities are ignored. Unknown entities and invalid
+        // synchronized records still fail the page before its checkpoint advances.
+        let records = records.filter { !localEntityNames.contains($0.change.entityType) }
         for record in records { try validate(record.change) }
         return try connection.withWriteSource(.remote) {
             try connection.transaction {
