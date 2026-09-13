@@ -77,10 +77,10 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             } else {
                 isPrimaryKey = prop.name == "id"
             }
-            let colType = prop.sqliteType
+            let colType = prop.isPrimitive ? ".\(prop.sqliteType)" : "\(prop.type.replacingOccurrences(of: "?", with: "")).sqliteType"
             let isJSON = !prop.isPrimitive
 
-            var def = "ColumnDefinition(name: \"\(prop.columnName)\", type: .\(colType)"
+            var def = "ColumnDefinition(name: \"\(prop.columnName)\", type: \(colType)"
             if nullable {
                 def += ", nullable: true"
             }
@@ -89,10 +89,14 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             }
             // Generate SQL DEFAULT from Swift default value (must be before isJSONEncoded)
             if let sqlDefault = convertToSQLDefault(prop: prop) {
-                def += ", defaultValue: \"\(sqlDefault)\""
+                if prop.isPrimitive {
+                    def += ", defaultValue: \"\(sqlDefault)\""
+                } else {
+                    def += ", defaultValue: ColumnDefinition.jsonDefaultValue(\(prop.type).self, fallback: \"\(sqlDefault)\")"
+                }
             }
             if isJSON {
-                def += ", isJSONEncoded: true"
+                def += ", isJSONEncoded: ColumnDefinition.isJSONEncoded(\(prop.type).self)"
             }
             def += ")"
             columnDefs.append(def)
@@ -294,11 +298,11 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         for prop: PropertyInfo, varName: String, index: Int, typeName: String
     ) -> String {
         let baseType = prop.type.replacingOccurrences(of: "?", with: "")
-        let sqliteType = prop.sqliteType  // "text", "integer", "real", "blob"
+        let sqliteType = prop.isPrimitive ? ".\(prop.sqliteType)" : "\(baseType).sqliteType"
         let decodeExpr =
-            "\(baseType)(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+            "\(baseType)(from: statement.columnValue(Int32(\(index)), type: \(sqliteType)))"
         let decodeOptionalExpr =
-            "Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: .\(sqliteType)))"
+            "Optional<\(baseType)>(from: statement.columnValue(Int32(\(index)), type: \(sqliteType)))"
 
         if let defaultVal = prop.defaultValue {
             var tryExpr: String

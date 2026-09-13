@@ -587,17 +587,17 @@ struct MacroCompilationTests {
         #expect(profileColumns[2].name == "settings")
         #expect(profileColumns[2].isJSONEncoded == true)
 
-        // MacroTask with Codable enum (stored as JSON)
+        // MacroTask with String raw-value enum (scalar TEXT)
         let taskColumns = MacroTask.columns
         #expect(taskColumns[2].name == "status")
         #expect(taskColumns[2].type == .text)
-        #expect(taskColumns[2].isJSONEncoded == true)
+        #expect(taskColumns[2].isJSONEncoded == false)
 
-        // MacroItem with Codable enum (stored as JSON)
+        // MacroItem with integer raw-value enum (INTEGER)
         let itemColumns = MacroItem.columns
         #expect(itemColumns[2].name == "priority")
-        #expect(itemColumns[2].type == .text)
-        #expect(itemColumns[2].isJSONEncoded == true)
+        #expect(itemColumns[2].type == .integer)
+        #expect(itemColumns[2].isJSONEncoded == false)
     }
 
     @Test("Virtual columns for nested index are generated correctly")

@@ -141,6 +141,34 @@ A decoding error falls back to a declared default; without a default, invalid va
 For JSON, missing or null optional fields decode as `nil`, even with a non-nil default.
 Required fields without defaults must be present. Nested structs must conform to `Embedded`.
 
+### Enum storage and queries
+
+```swift
+@Embedded
+enum Status: String {
+    case pending, completed
+}
+
+// For an @Entity Task with a Status property:
+let pending = try Task.filter { $0.status == .pending }.all(connection)
+```
+
+`@Embedded` raw-value types delegate to `RawValue: SQLiteValueCodable`: String uses TEXT without JSON quotes, integers use INTEGER, floating-point values use REAL, and custom raw values use their declared codec. Type aliases follow the same rule. Structs, collections, and enums without raw values use JSON by default. Codable inside JSON documents is unchanged.
+
+Queries accept raw-value types when `RawValue: SQLiteValueComparable`, including optional comparisons and SQL interpolation. Ordered predicates use the raw value's ordering. Swift does not support conditional protocol conformances on non-generic enums, so the macro does not guess or synthesize `SQLiteValueComparable` from a type-name list. If another generic API requires that conformance, declare it explicitly; its default `sqliteValue` implementation delegates to `rawValue`.
+
+`SQLiteValueEncodable.sqliteIsJSONEncoded` declares JSON storage independently of queryability. Scalar codecs default to false; Embedded JSON codecs and collections use true; optionals and raw-value types forward the wrapped codec's flag. For custom codecs, declare `sqliteType` and this flag consistently with `sqliteEncode()`. Swift enum defaults are still applied by the generated Swift initializer; they do not produce an invented JSON-object SQL default for scalar columns.
+
+Older JSON enum storage must be converted by a versioned migration **before** reading/writing with the new codec. There is no legacy-format fallback in the generic decoder. For a known historical String enum column:
+
+```sql
+UPDATE tasks
+SET status = json_extract(status, '$')
+WHERE CASE WHEN json_valid(status) THEN json_type(status) = 'text' ELSE 0 END;
+```
+
+Use your actual table and column names. Integer/real enum columns also need a schema migration from TEXT to INTEGER/REAL, with validated conversion of historical values. Keep published schema snapshots immutable and add a new migration. Do not apply scalar conversion to nested JSON documents. Sync changelog entries use `sqliteEncode()` like entity fields. Legacy sync storage is not migrated.
+
 ### Full-text search (FTS5)
 
 Use `#FullTextIndex` for `String` or `String?` fields, including nested `@Embedded` properties:
@@ -309,7 +337,7 @@ Deletions are versioned tombstones. Remote writes never generate upload echoes.
 Only events inside each fixed upload batch are coalesced; retries replay the original IDs
 and payloads. A successful later item cannot advance the upload cursor past an unresolved item.
 
-- [CloudKit setup and legacy migration](SwiftStoreSyncCloudTransport/README.md).
+- [CloudKit setup](SwiftStoreSyncCloudTransport/README.md).
 - [Sync architecture and recovery](docs/sync-architecture.md).
 - [Change tracking and transaction behavior](docs/preupdate-change-tracking.md).
 

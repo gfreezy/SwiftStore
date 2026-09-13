@@ -58,32 +58,6 @@ func application(
 
 通知只是一条“可能有变化”的信号，匹配配置的 subscriptionID 后按 zone token 增量拉取。iOS 16 没有常驻轮询计时器；宿主在进入前台、用户刷新时也调用 `sync()`，补偿丢失或合并的后台通知。后台通知不保证送达，也不保证应用始终有运行时间。iOS 17+ 由 CKSyncEngine 安排自动收发。
 
-## 旧版迁移
-
-4.0.0 的同步 API 已调整：移除了 HTTP / 自定义 `SyncTransport`、独立状态存储、enqueue / acknowledge 和手动清除拒绝项等入口。使用上面的 `SyncOptions(cloudKit:)`。业务实体、已发布的业务迁移、云端 recordName 和 payload 格式保持可读。
-
-**已有 CloudKit 安装必须指定旧文件路径。** 暂停旧同步实例，再打开新 manager：
-
-```swift
-let migration = LegacySyncMigration(
-    changeLogDatabase: oldChangeLogURL,
-    cloudKitJournal: oldStateDirectory.appendingPathComponent("journal.plist"),
-    backupDirectory: backupDirectory
-)
-let options = SyncOptions(
-    deviceId: deviceId,
-    schemaVersion: schemaVersion,
-    cloudKit: CloudKitSyncConfiguration(containerIdentifier: containerIdentifier),
-    migration: migration
-)
-```
-
-旧日志默认路径为 `app_changelog.sqlite`（业务库 `app.sqlite`）；自定义路径必须传原值。迁移核对 journal 中原账号及 container/zone/recordType，先为业务库、旧日志（包括 WAL 内容）和 journal 创建一致备份，再导入日志、待上传记录、拒绝候选、下载 inbox、已确认版本和删除时间。完整迁移在一个业务库事务内完成，成功标记和数据一起提交；再次启动不会重复导入。
-
-原 change ID、payload、时间不修改。旧“已入队”水位和旧下载 token 不作为新确认状态使用：保守重放保留的日志，重新拉取 zone。业务库中未被日志或已应用云端版本覆盖的现存行会补一条原时间快照。旧版本跨两个数据库提交时已经丢失、且所有旧文件均无记录的删除，无法凭现存行恢复。
-
-原文件和备份不会自动删除。检测到默认旧日志或旧删除元数据却未提供迁移参数时，初始化报错；使用过自定义日志路径的应用必须主动传入迁移参数。HTTP 后端历史不支持自动转入某个 iCloud 账号。
-
 ## 数据与恢复
 
 业务行、追加日志、上传游标、云端版本元数据及下载检查点都在同一个 SQLite 文件。启用同步的 writer 使用 WAL + synchronous=FULL。禁止单独删除内部同步表或更新日志；应整体备份/恢复该数据库。

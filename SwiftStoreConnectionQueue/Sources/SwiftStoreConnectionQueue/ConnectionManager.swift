@@ -28,7 +28,6 @@ public typealias SyncResult = SwiftStoreSync.SyncResult
 public typealias SyncConfiguration = SwiftStoreSync.SyncConfiguration
 
 public typealias CloudKitSyncConfiguration = SwiftStoreSyncCloudTransport.CloudKitSyncConfiguration
-public typealias LegacySyncMigration = SwiftStoreSync.LegacySyncMigration
 
 /// CloudKit-only synchronization. All durable state resides in the business database.
 public struct SyncOptions: Sendable {
@@ -36,16 +35,11 @@ public struct SyncOptions: Sendable {
     public let schemaVersion: Int
     public let cloudKit: CloudKitSyncConfiguration
     public let syncConfiguration: SyncConfiguration
-    public let migration: LegacySyncMigration?
 
     public init(deviceId: UUIDV7, schemaVersion: Int, cloudKit: CloudKitSyncConfiguration,
-                syncConfiguration: SyncConfiguration = .init(), migration: LegacySyncMigration? = nil) {
+                syncConfiguration: SyncConfiguration = .init()) {
         self.deviceId = deviceId; self.schemaVersion = schemaVersion; self.cloudKit = cloudKit
-        self.syncConfiguration = syncConfiguration; self.migration = migration
-    }
-
-    var scope: String {
-        [cloudKit.containerIdentifier, cloudKit.zoneName, cloudKit.recordType].joined(separator: "/")
+        self.syncConfiguration = syncConfiguration
     }
 }
 
@@ -167,18 +161,6 @@ open class ConnectionManager: @unchecked Sendable {
             // Sync acknowledgement durability must include the business write and its log.
             if syncConfig != nil { writeOptions.synchronous = 2 }
             let writerConn = try SQLiteConnection(path: path, options: writeOptions)
-            if let syncConfig, syncConfig.migration == nil {
-                let imported: Int64 = try writerConn.tableExists("__swiftstore_cloud_state")
-                    ? writerConn.queryScalar("SELECT legacy_imported FROM __swiftstore_cloud_state WHERE singleton=1") ?? 0 : 0
-                let url = URL(fileURLWithPath: path)
-                let ext = url.pathExtension
-                let oldName = url.deletingPathExtension().lastPathComponent + "_changelog" + (ext.isEmpty ? "" : "." + ext)
-                let oldPath = url.deletingLastPathComponent().appendingPathComponent(oldName).path
-                let hasOldTombstones = try writerConn.tableExists("__swiftstore_sync_tombstones")
-                if imported == 0 && (FileManager.default.fileExists(atPath: oldPath) || hasOldTombstones) {
-                    throw ConnectionManagerError.invalidConfiguration("Legacy sync data found; supply LegacySyncMigration with the original changelog and CloudKit journal paths")
-                }
-            }
             self.writer = try WritableConnectionActor(connection: writerConn, entities: entities, syncConfig: syncConfig)
         }
 
@@ -439,7 +421,7 @@ public actor WritableConnectionActor {
             guard (1...200).contains(config.syncConfiguration.batchSize), config.cloudKit.ntpToleranceMs > 0,
                   config.cloudKit.assetThreshold > 0 else { throw ConnectionManagerError.invalidConfiguration("Invalid CloudKit sync limits") }
             syncManager = try SyncManager(connection: connection, deviceID: config.deviceId, entities: entities,
-                schemaVersion: config.schemaVersion, migration: config.migration, scope: config.scope)
+                schemaVersion: config.schemaVersion)
         } else { syncManager = nil }
     }
 

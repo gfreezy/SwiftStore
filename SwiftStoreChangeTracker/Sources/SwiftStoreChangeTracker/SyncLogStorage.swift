@@ -38,20 +38,15 @@ package enum SyncLogStorage {
     }
 
     package static func append(_ event: ChangeLog, to db: SQLiteConnection) throws {
-        let operation = String(decoding: try JSONEncoder().encode(event.operation), as: UTF8.self)
+        let operation = try event.operation.sqliteEncode()
         try db.execute("""
             INSERT INTO __swiftstore_change_log
             (id,entity_type,sync_key,operation,payload,device_id,logical_clock,schema_version,created_at,updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, values: [.blob(event.id.data), .text(event.entityType), .blob(event.syncKey), .text(operation),
+            """, values: [.blob(event.id.data), .text(event.entityType), .blob(event.syncKey), operation,
                 event.payload.map(SQLiteValue.text) ?? .null, .blob(event.deviceId.data), .integer(event.logicalClock),
                 .integer(Int64(event.schemaVersion)), .real(event.createdAt.timeIntervalSince1970),
                 .real(event.updatedAt.timeIntervalSince1970)])
-    }
-
-    package static func contains(_ id: UUIDV7, in db: SQLiteConnection) throws -> Bool {
-        let count: Int64 = try db.queryScalar("SELECT COUNT(*) FROM __swiftstore_change_log WHERE id = ?", values: [.blob(id.data)]) ?? 0
-        return count > 0
     }
 
     package static func timestamp(_ seconds: Double) throws -> Int64 {

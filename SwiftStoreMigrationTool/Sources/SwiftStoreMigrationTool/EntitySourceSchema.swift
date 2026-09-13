@@ -19,10 +19,13 @@ public enum EntitySourceSchema {
 
     public static func extract(files: [URL]) throws -> SchemaSnapshot {
         var tables: [TableSchema] = []
-        for file in files.sorted(by: { $0.path < $1.path }) {
-            let source = try String(contentsOf: file, encoding: .utf8)
-            let syntax = Parser.parse(source: source)
+        let sources = try files.sorted(by: { $0.path < $1.path }).map { file in
+            let syntax = Parser.parse(source: try String(contentsOf: file, encoding: .utf8))
             guard !syntax.hasError else { throw failure("Cannot parse Swift source: \(file.path)") }
+            return (file, syntax)
+        }
+        let types = SourceSQLiteTypes(trees: sources.map { $0.1 })
+        for (file, syntax) in sources {
             let visitor = EntityVisitor()
             visitor.walk(syntax)
             for (node, attribute) in visitor.entities {
@@ -41,7 +44,7 @@ public enum EntitySourceSchema {
                 let members = try EntityMacro.expansion(of: attribute, providingMembersOf: node,
                     conformingTo: [], in: context)
                 guard context.diagnostics.isEmpty else { throw failure("Entity macro diagnostics for \(node.name.text): \(context.diagnostics)") }
-                let metadata = MetadataVisitor()
+                let metadata = MetadataVisitor(types: types, scope: SourceSQLiteTypes.scope(of: node))
                 for member in members {
                     guard let property = member.as(VariableDeclSyntax.self),
                           let name = property.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
@@ -102,7 +105,12 @@ private final class MetadataVisitor: SyntaxVisitor {
     var indexes: [IndexSchema] = []
     var fullTextIndexes: [FullTextIndexDefinition] = []
     var error: Error?
-    init() { super.init(viewMode: .sourceAccurate) }
+    private let types: SourceSQLiteTypes
+    private let scope: [String]
+    init(types: SourceSQLiteTypes, scope: [String]) {
+        self.types = types; self.scope = scope
+        super.init(viewMode: .sourceAccurate)
+    }
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         let function = node.calledExpression.trimmedDescription
         guard ["ColumnDefinition", "IndexDefinition", "FullTextIndexDefinition"].contains(function) else { return .visitChildren }
@@ -134,13 +142,30 @@ private final class MetadataVisitor: SyntaxVisitor {
             }
             fullTextIndexes.append(FullTextIndexDefinition(name: name, columns: fields, keyColumns: keys, tokenizer: tokenizer))
         } else if function == "ColumnDefinition" {
-            guard let type = arguments["type"]?.as(MemberAccessExprSyntax.self)?.declName.baseName.text,
-                  ["text", "integer", "real", "blob"].contains(type) else {
-                error = VersionedMigrationError.invalidHistory("Unsupported generated column type: \(node)")
-                return .skipChildren
-            }
-            columns.append(ColumnSchema(name: name, type: type.uppercased(), isNullable: flag("nullable"),
-                isPrimaryKey: flag("primaryKey"), defaultValue: string("defaultValue"), generatedAs: string("generatedAs")))
+            do {
+                guard let member = arguments["type"]?.as(MemberAccessExprSyntax.self) else {
+                    throw VersionedMigrationError.invalidHistory("Unsupported generated column type: \(node)")
+                }
+                let field = member.declName.baseName.text
+                let type: SQLiteType
+                if field == "sqliteType", let base = member.base?.trimmedDescription {
+                    type = try types.resolve(base, scope: scope)
+                } else if let literal = SQLiteType(rawValue: field.uppercased()), member.base == nil {
+                    type = literal
+                } else { throw VersionedMigrationError.invalidHistory("Unsupported generated column type: \(node)") }
+                var defaultValue = string("defaultValue")
+                if let call = arguments["defaultValue"]?.as(FunctionCallExprSyntax.self),
+                   call.calledExpression.trimmedDescription == "ColumnDefinition.jsonDefaultValue" {
+                    guard let reference = call.arguments.first?.expression.as(MemberAccessExprSyntax.self),
+                          reference.declName.baseName.text == "self", let codec = reference.base?.trimmedDescription,
+                          let fallback = call.arguments.last?.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue else {
+                        throw VersionedMigrationError.invalidHistory("Unsupported JSON default metadata: \(call)")
+                    }
+                    defaultValue = try types.isJSONEncoded(codec, scope: scope) ? fallback : nil
+                }
+                columns.append(ColumnSchema(name: name, type: type.rawValue, isNullable: flag("nullable"),
+                    isPrimaryKey: flag("primaryKey"), defaultValue: defaultValue, generatedAs: string("generatedAs")))
+            } catch { self.error = error }
         } else {
             let array = arguments["columns"]?.as(ArrayExprSyntax.self)
             let names = array?.elements.compactMap { $0.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue } ?? []

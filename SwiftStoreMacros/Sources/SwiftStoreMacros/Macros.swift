@@ -75,7 +75,8 @@ public macro SyncKey<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>...) = #ext
 /// - `Equatable` and `Hashable` conformances
 ///
 /// Note: Do NOT declare Codable/Decodable on your type - the macro adds it automatically.
-/// Types marked with @Embedded are stored as JSON TEXT in SQLite.
+/// RawRepresentable values delegate SQLite storage and query values to RawValue.
+/// Structs and other enums use JSON TEXT unless they provide their own SQLite codec.
 ///
 /// Usage:
 /// ```swift

@@ -12,8 +12,7 @@ final class SyncStatePersistence {
                 database_id TEXT NOT NULL,
                 scope TEXT, account_id TEXT, driver TEXT,
                 checkpoint BLOB, zone_created INTEGER NOT NULL DEFAULT 0,
-                push_seq INTEGER NOT NULL DEFAULT 0 CHECK(push_seq>=0),
-                legacy_imported INTEGER NOT NULL DEFAULT 0
+                push_seq INTEGER NOT NULL DEFAULT 0 CHECK(push_seq>=0)
             );
             CREATE TABLE IF NOT EXISTS __swiftstore_cloud_versions (
                 entity_type TEXT NOT NULL, sync_key BLOB NOT NULL, version BLOB NOT NULL,

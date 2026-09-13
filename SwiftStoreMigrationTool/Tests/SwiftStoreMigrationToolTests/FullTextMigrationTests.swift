@@ -58,6 +58,7 @@ struct FullTextMigrationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("Model.swift")
         try #"""
+        @Embedded struct FTSMigrationBody { var text: String }
         @Entity(tableName: "fts_migration_article")
         struct FTSMigrationArticle {
             #FullTextIndex<Self>(\.title, \.body.text, name: "article_search", tokenizer: .porter)

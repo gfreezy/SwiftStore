@@ -19,6 +19,17 @@ public struct ColumnDefinition: Sendable {
     public let generatedAs: String?  // For virtual columns
     public let isJSONEncoded: Bool   // For nested Codable types stored as JSON
 
+    /// Resolve custom property storage after Swift has type-checked its conformances.
+    /// The codec owns this flag; comparability does not determine storage format.
+    public static func isJSONEncoded(_ type: any SQLiteValueEncodable.Type) -> Bool {
+        type.sqliteIsJSONEncoded
+    }
+
+    /// Preserve JSON defaults only for codecs that explicitly declare JSON storage.
+    public static func jsonDefaultValue(_ type: any SQLiteValueEncodable.Type, fallback: String) -> String? {
+        type.sqliteIsJSONEncoded ? fallback : nil
+    }
+
     public init(
         name: String,
         type: SQLiteType,

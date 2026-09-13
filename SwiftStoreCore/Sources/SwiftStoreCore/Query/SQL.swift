@@ -122,6 +122,20 @@ public struct SQL: ExpressibleByStringInterpolation, Sendable {
             }
         }
 
+        /// Bind RawRepresentable values using their stored RawValue codec.
+        public mutating func appendInterpolation<V: RawRepresentable & SQLiteValueCodable>(_ value: V?)
+            where V.RawValue: SQLiteValueComparable {
+            sql += "?"
+            values.append(value?.rawValue.sqliteValue ?? .null)
+        }
+
+        /// Prefer an explicit comparable conformance when a raw-value type supplies one.
+        public mutating func appendInterpolation<V: RawRepresentable & SQLiteValueComparable>(_ value: V?)
+            where V.RawValue: SQLiteValueComparable {
+            sql += "?"
+            values.append(value?.sqliteValue ?? .null)
+        }
+
         /// Interpolate SQLiteValue directly
         public mutating func appendInterpolation(_ value: SQLiteValue) {
             sql += "?"

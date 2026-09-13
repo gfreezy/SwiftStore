@@ -55,10 +55,10 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "name", type: .text),
                         ColumnDefinition(name: "count", type: .integer, defaultValue: "0"),
                         ColumnDefinition(name: "score", type: .real, nullable: true, defaultValue: "2.0"),
-                        ColumnDefinition(name: "tags", type: .text, defaultValue: "'[]'", isJSONEncoded: true),
-                        ColumnDefinition(name: "settings", type: .text, isJSONEncoded: true),
-                        ColumnDefinition(name: "profile", type: .text, nullable: true, isJSONEncoded: true),
-                        ColumnDefinition(name: "metadata", type: .text, defaultValue: "'{}'", isJSONEncoded: true),
+                        ColumnDefinition(name: "tags", type: [String].sqliteType, defaultValue: ColumnDefinition.jsonDefaultValue([String].self, fallback: "'[]'"), isJSONEncoded: ColumnDefinition.isJSONEncoded([String].self)),
+                        ColumnDefinition(name: "settings", type: UserSettings.sqliteType, isJSONEncoded: ColumnDefinition.isJSONEncoded(UserSettings.self)),
+                        ColumnDefinition(name: "profile", type: Profile.sqliteType, nullable: true, isJSONEncoded: ColumnDefinition.isJSONEncoded(Profile?.self)),
+                        ColumnDefinition(name: "metadata", type: Metadata.sqliteType, defaultValue: ColumnDefinition.jsonDefaultValue(Metadata.self, fallback: "'{}'"), isJSONEncoded: ColumnDefinition.isJSONEncoded(Metadata.self)),
                         ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
                         ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
@@ -98,16 +98,16 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     }
                     var _tags: [String]
                     do {
-                        _tags = try [String](from: statement.columnValue(Int32(4), type: .text))
+                        _tags = try [String](from: statement.columnValue(Int32(4), type: [String].sqliteType))
                     } catch {
                         SwiftStoreLogger.error("Failed to decode 'TestEntity.tags': \\(error)")
                         _tags = []
                     }
-                    let _settings = try UserSettings(from: statement.columnValue(Int32(5), type: .text))
-                    let _profile = try Optional<Profile>(from: statement.columnValue(Int32(6), type: .text))
+                    let _settings = try UserSettings(from: statement.columnValue(Int32(5), type: UserSettings.sqliteType))
+                    let _profile = try Optional<Profile>(from: statement.columnValue(Int32(6), type: Profile.sqliteType))
                     var _metadata: Metadata
                     do {
-                        _metadata = try Metadata(from: statement.columnValue(Int32(7), type: .text))
+                        _metadata = try Metadata(from: statement.columnValue(Int32(7), type: Metadata.sqliteType))
                     } catch {
                         SwiftStoreLogger.error("Failed to decode 'TestEntity.metadata': \\(error)")
                         _metadata = Metadata()

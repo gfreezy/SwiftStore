@@ -106,23 +106,6 @@ struct ConnectionSyncTests {
         #expect(try await manager.read { try ChangeLog.count($0) } == 2)
     }
 
-    @Test("An existing legacy log requires explicit migration instead of silently losing pending deletions")
-    func requiresLegacyMigration() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let old = try SQLiteConnection(path: directory.appendingPathComponent("business_changelog.sqlite").path)
-        try old.execute("CREATE TABLE pending_deletion(id INTEGER)")
-        try old.execute("INSERT INTO pending_deletion VALUES(1)")
-        let path = directory.appendingPathComponent("business.sqlite").path
-        #expect(throws: ConnectionManagerError.self) {
-            try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], syncConfig: options())
-        }
-        #expect(try old.queryScalar("SELECT COUNT(*) FROM pending_deletion", type: Int.self) == 1)
-        let untouched = try SQLiteConnection(path: path)
-        #expect(try !untouched.tableExists("__swiftstore_change_log"))
-    }
-
     @Test("An old driver session cannot update the checkpoint after stop")
     func sessionFence() async throws {
         let db = try SQLiteConnection(path: ":memory:")

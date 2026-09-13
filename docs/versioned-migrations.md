@@ -341,3 +341,11 @@ With `syncConfig`, writes to registered entities through this connection create 
 This is a per-manager setup hook, not a versioned migration body: it runs again after reopening the database. Use existence checks or another business rule to make seeding idempotent. Keep one-time historical data transformations in migration files.
 
 Use only the supplied connection inside this callback. Do not retain it, use it from another task, manually commit/roll back its transaction, or call the manager's public read/write/sync/wait methods: those wait for setup completion. The existing asynchronous no-argument hook remains available for work that does not access the manager's database. `waitForMigration()` and normal database access wait until both hooks succeed.
+
+## Codec-driven column types
+
+Custom Entity property columns and decoding use the property's `SQLiteValueEncodable.sqliteType`. Embedded RawRepresentable values delegate to their RawValue codec: e.g. a String enum is TEXT, an Int enum is INTEGER, and a Double enum is REAL. The `sqliteIsJSONEncoded` metadata flag is independent of `SQLiteValueComparable`; scalar enum defaults never receive a fallback `'{}'` SQL default.
+
+The source tool resolves the generated codec metadata using declarations across the selected Swift files, including type aliases, scoped raw enums, custom RawRepresentable types with explicit RawValue aliases, and codecs with literal `sqliteType` declarations or delegation to another codec. Include referenced Embedded/codec declarations in the selected source inputs. Unknown, cyclic, conditional, or dynamically computed storage metadata fails with a diagnostic instead of silently becoming TEXT. Arbitrary Swift computation and imported custom codecs without source are not evaluated.
+
+When upgrading from JSON enum storage, add a migration before using the new codec. String enums require conversion of JSON-quoted values; numeric enums also require changing the column affinity and converting the old data. Existing published migrations remain unchanged. The database schema checks still verify that the final migrated schema matches the new compiled metadata.

@@ -1,9 +1,9 @@
 import Foundation
 
-/// Protocol for types that can be embedded in @Entity structs as JSON.
+/// Protocol for types embedded in @Entity structs using a raw-value codec or JSON.
 ///
 /// Types conforming to this protocol:
-/// - Are stored as JSON TEXT in SQLite
+/// - Delegate raw-value storage to RawValue; other embedded values use JSON TEXT
 /// - Support fault-tolerant decoding (missing keys use defaults)
 /// - Conform to SQLiteValueCodable for unified encode/decode
 ///
@@ -42,6 +42,7 @@ extension Optional: Embedded where Wrapped: Embedded {
 extension Embedded {
     /// Embedded types are stored as TEXT (JSON)
     public static var sqliteType: SQLiteType { .text }
+    public static var sqliteIsJSONEncoded: Bool { true }
 
     /// Encode to JSON string
     public func sqliteEncode() throws -> SQLiteValue {
@@ -65,5 +66,21 @@ extension Embedded {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         self = try decoder.decode(Self.self, from: jsonData)
+    }
+}
+
+/// RawRepresentable storage follows the RawValue codec without type-specific branches.
+/// Codable inside a containing JSON document is unchanged. Historical formats belong in migrations.
+extension Embedded where Self: RawRepresentable, RawValue: SQLiteValueCodable {
+    public static var sqliteType: SQLiteType { RawValue.sqliteType }
+    public static var sqliteIsJSONEncoded: Bool { RawValue.sqliteIsJSONEncoded }
+    public func sqliteEncode() throws -> SQLiteValue { try rawValue.sqliteEncode() }
+
+    public init(from sqliteValue: SQLiteValue) throws {
+        let value = try RawValue(from: sqliteValue)
+        guard let decoded = Self(rawValue: value) else {
+            throw SQLiteValueError.decodingFailed("Invalid raw value for \(Self.self): \(value)")
+        }
+        self = decoded
     }
 }

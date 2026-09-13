@@ -17,6 +17,9 @@ public protocol SQLiteValueEncodable: Sendable {
     /// The SQLite column type for this Swift type
     static var sqliteType: SQLiteType { get }
 
+    /// Whether the stored value is a JSON document, independently of query support.
+    static var sqliteIsJSONEncoded: Bool { get }
+
     /// Encode this value to SQLiteValue for storage
     func sqliteEncode() throws -> SQLiteValue
 }
@@ -68,6 +71,15 @@ public protocol SQLiteValueComparable: SQLiteValueCodable {
     /// Non-optional SQLite value for use in predicates.
     /// Types conforming to SQLiteComparable must guarantee encoding never fails.
     var sqliteValue: SQLiteValue { get }
+}
+
+extension SQLiteValueEncodable {
+    public static var sqliteIsJSONEncoded: Bool { false }
+}
+
+/// Raw-value predicates and explicit SQLiteValueComparable conformances use this projection.
+extension RawRepresentable where RawValue: SQLiteValueComparable {
+    public var sqliteValue: SQLiteValue { rawValue.sqliteValue }
 }
 
 // MARK: - Errors
@@ -328,6 +340,7 @@ extension URL: SQLiteValueCodable {
 
 extension Optional: SQLiteValueEncodable where Wrapped: SQLiteValueEncodable {
     public static var sqliteType: SQLiteType { Wrapped.sqliteType }
+    public static var sqliteIsJSONEncoded: Bool { Wrapped.sqliteIsJSONEncoded }
     public func sqliteEncode() throws -> SQLiteValue {
         switch self {
         case .some(let value):
@@ -421,6 +434,7 @@ extension Optional: SQLiteValueComparable where Wrapped: SQLiteValueComparable {
 
 extension Array: SQLiteValueEncodable where Element: Encodable {
     public static var sqliteType: SQLiteType { .text }
+    public static var sqliteIsJSONEncoded: Bool { true }
     public func sqliteEncode() throws -> SQLiteValue {
         let encoder = JSONEncoder()
         let data = try encoder.encode(self)
@@ -448,6 +462,7 @@ extension Array: SQLiteValueDecodable where Element: Decodable {
 
 extension Set: SQLiteValueEncodable where Element: Encodable {
     public static var sqliteType: SQLiteType { .text }
+    public static var sqliteIsJSONEncoded: Bool { true }
     public func sqliteEncode() throws -> SQLiteValue {
         let encoder = JSONEncoder()
         let data = try encoder.encode(self)
@@ -475,6 +490,7 @@ extension Set: SQLiteValueDecodable where Element: Decodable {
 
 extension Dictionary: SQLiteValueEncodable where Key: Encodable, Value: Encodable {
     public static var sqliteType: SQLiteType { .text }
+    public static var sqliteIsJSONEncoded: Bool { true }
     public func sqliteEncode() throws -> SQLiteValue {
         let encoder = JSONEncoder()
         let data = try encoder.encode(self)

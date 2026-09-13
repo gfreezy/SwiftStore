@@ -11,13 +11,11 @@ package final class SyncManager {
     private let persistence: SyncStatePersistence
     private let registry: EntityApplierRegistry
     private let schemaVersion: Int
-    private let legacyImport: LegacySyncImport?
     private var activeBatch: CloudUploadBatch?
     private var decisions: [UUIDV7: CloudUploadDecision] = [:]
 
     package init(connection: SQLiteConnection, deviceID: UUIDV7, entities: [any EntityProtocol.Type],
-                 schemaVersion: Int, migration: LegacySyncMigration? = nil, scope: String = "", now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
-        legacyImport = try LegacySyncImport(connection: connection, migration: migration, scope: scope)
+                 schemaVersion: Int, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
         self.connection = connection
         self.schemaVersion = schemaVersion
         tracker = try ChangeTracker(connection: connection, deviceId: deviceID, registeredEntities: entities,
@@ -28,7 +26,6 @@ package final class SyncManager {
     }
 
     package func startTracking() throws {
-        if let legacyImport { try legacyImport.run(connection: connection) { _ = try receive($0, checkpoint: nil) } }
         try tracker.captureExistingRows { entity, key, time in
             guard let known = try persistence.version(for: CloudIdentity(entity: entity, key: key)) else { return false }
             return known.updatedMs == time && !known.deleted
@@ -60,8 +57,8 @@ package final class SyncManager {
                 break // Confirm the valid prefix before reporting this blocked event.
             }
             let identity = CloudIdentity(change)
-            // Imported histories may predate monotonic timestamps. Split the batch
-            // before an inversion instead of coalescing away the newer event.
+            // Split the batch before a timestamp inversion instead of coalescing
+            // away the newer event.
             if let previous = latest[identity], !change.isNewer(than: previous) { break }
             if latest[identity] == nil { order.append(identity) }
             latest[identity] = change
