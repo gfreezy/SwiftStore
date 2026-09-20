@@ -238,9 +238,10 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
                 return "FullTextIndexDefinition(name: \(String(reflecting: index.name)), columns: [\(fields)], keyColumns: [\(keys)], tokenizer: .\(index.tokenizer.rawValue))"
             }.joined(separator: ",\n")
             result.append("public static var fullTextIndexes: [FullTextIndexDefinition] { [\(raw: definitions)] }")
-            let checks = structDecl.memberBlock.members.compactMap { $0.decl.as(MacroExpansionDeclSyntax.self) }
-                .filter { $0.macroName.text == "FullTextIndex" }.flatMap { $0.arguments }
-                .filter { $0.label == nil }.map { argument in
+            let markers = structDecl.memberBlock.members.compactMap { $0.decl.as(MacroExpansionDeclSyntax.self) }
+                .filter { $0.macroName.text == "FullTextIndex" }
+            let arguments: [LabeledExprSyntax] = markers.flatMap { Array($0.arguments) }
+            let checks = arguments.filter { $0.label == nil }.map { argument -> String in
                     let path = argument.expression.trimmedDescription
                     let explicit = path.hasPrefix("\\.") ? "\\Self" + path.dropFirst() : path
                     return "_validateFullTextColumn(\(explicit))"
