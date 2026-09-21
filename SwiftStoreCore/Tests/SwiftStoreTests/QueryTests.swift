@@ -714,7 +714,7 @@ struct QueryBuilderTests {
         try store.migrate(entities: [TestUser.self])
 
         let userId = UUIDV7()
-        let user = TestUser(
+        var user = TestUser(
             id: userId,
             name: "Alice",
             email: "alice@example.com",
@@ -723,12 +723,15 @@ struct QueryBuilderTests {
             createdAt: Date(),
             updatedAt: Date()
         )
-        try store.connection.insert(user)
+        try user.save(store.connection)
+        user.name = "Updated"
+        try user.save(store.connection)
+        #expect(try TestUser.count(store.connection) == 1)
 
         // Test filter by id
         let result = try TestUser.filter(id: userId).first(store.connection)
         #expect(result != nil)
-        #expect(result?.name == "Alice")
+        #expect(result?.name == "Updated")
 
         // Test with non-existent id
         let nonExistent = try TestUser.filter(id: UUIDV7()).first(store.connection)
@@ -758,6 +761,7 @@ struct QueryBuilderTests {
         // Test filter by multiple ids
         let result = try TestUser.filter(ids: [id1, id3]).all(store.connection)
         #expect(result.count == 2)
+        #expect(try TestUser.filter(ids: []).count(store.connection) == 0)
         #expect(result.contains { $0.name == "Alice" })
         #expect(result.contains { $0.name == "Charlie" })
     }

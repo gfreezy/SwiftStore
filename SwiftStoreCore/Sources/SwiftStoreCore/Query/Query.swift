@@ -548,12 +548,15 @@ extension Query {
 extension Query where T: Identifiable, T.ID: SQLiteValueComparable {
     /// Filter by primary key (only available for entities with id field)
     public func filter(id: T.ID) -> Query<T> {
-        filter(\T.id == id)
+        // Protocol key paths can describe a computed accessor in optimized builds.
+        filter(Predicate(sql: "id = ?", values: [id.sqliteValue]))
     }
 
     /// Filter by multiple primary keys (only available for entities with id field)
     public func filter(ids: [T.ID]) -> Query<T> {
-        filter(\T.id ~= ids)
+        guard !ids.isEmpty else { return filter(Predicate(sql: "0 = 1")) }
+        let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
+        return filter(Predicate(sql: "id IN (\(placeholders))", values: ids.map { $0.sqliteValue }))
     }
 }
 
