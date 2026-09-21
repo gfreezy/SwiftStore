@@ -124,13 +124,15 @@ public extension EntityProtocol {
 public extension EntityProtocol {
     /// Search indexed text as a literal phrase, returning a composable query.
     /// With multiple full-text indexes, specify the declared index name.
-    static func search(_ text: String, index name: String? = nil) throws -> Query<Self> {
-        try Query(Self.self).search(text, index: name)
+    /// Set `orderByRank` to prioritize relevance, with ordinary ordering breaking ties.
+    static func search(_ text: String, index name: String? = nil, orderByRank: Bool = false) throws -> Query<Self> {
+        try Query(Self.self).search(text, index: name, orderByRank: orderByRank)
     }
 
     /// Search using explicit FTS5 syntax (operators, prefixes and column filters).
-    static func matching(_ expression: String, index name: String? = nil) throws -> Query<Self> {
-        try Query(Self.self).matching(expression, index: name)
+    /// Set `orderByRank` to prioritize relevance, with ordinary ordering breaking ties.
+    static func matching(_ expression: String, index name: String? = nil, orderByRank: Bool = false) throws -> Query<Self> {
+        try Query(Self.self).matching(expression, index: name, orderByRank: orderByRank)
     }
 
     /// Create a new Query for this entity type

@@ -4,7 +4,12 @@ import Foundation
 /// Inspired by GRDB's query interface
 public struct Query<T: EntityProtocol> {
     private var predicates: [Predicate<T>] = []
-    private var orderBys: [(column: String, ascending: Bool)] = []
+    private struct Ordering {
+        let sql: String
+        let ascending: Bool
+        var values: [SQLiteValue] = []
+    }
+    private var orderBys: [Ordering] = []
     private var limitValue: Int?
     private var offsetValue: Int?
     private var isDistinct: Bool = false
@@ -46,7 +51,7 @@ public struct Query<T: EntityProtocol> {
     /// Add ORDER BY clause
     public func order<V>(by keyPath: KeyPath<T, V>, ascending: Bool = true) -> Query<T> {
         var query = self
-        do { query.orderBys.append((try columnName(for: keyPath), ascending)) }
+        do { query.orderBys.append(Ordering(sql: try columnName(for: keyPath), ascending: ascending)) }
         catch { query.validationError = error as? StoreError ?? .invalidSchema(String(describing: error)) }
         return query
     }
@@ -54,7 +59,14 @@ public struct Query<T: EntityProtocol> {
     /// Add ORDER BY clause using column name
     public func order(by column: String, ascending: Bool = true) -> Query<T> {
         var query = self
-        query.orderBys.append((column, ascending))
+        query.orderBys.append(Ordering(sql: column, ascending: ascending))
+        return query
+    }
+
+    /// Internal expressions keep their bindings alongside the ordering that owns them.
+    func orderByRank(sql: String, values: [SQLiteValue]) -> Query<T> {
+        var query = self
+        query.orderBys.insert(Ordering(sql: sql, ascending: true, values: values), at: 0)
         return query
     }
 
@@ -101,9 +113,10 @@ public struct Query<T: EntityProtocol> {
         }
 
         if !orderBys.isEmpty {
-            let orderClause = orderBys.map { "\($0.column) \($0.ascending ? "ASC" : "DESC")" }
+            let orderClause = orderBys.map { "\($0.sql) \($0.ascending ? "ASC" : "DESC")" }
                 .joined(separator: ", ")
             sql += " ORDER BY \(orderClause)"
+            values += orderBys.flatMap { $0.values }
         }
 
         if let limit = limitValue {

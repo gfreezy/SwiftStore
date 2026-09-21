@@ -219,6 +219,31 @@ let matches = try Article.matching("title: swift OR content__body: index*")
     .all(connection)
 ```
 
+Pass `orderByRank: true` to `search` or `matching` on either an entity or an existing
+`Query` to put the most relevant matches first (FTS5 `rank` ascending):
+
+```swift
+let relevant = try Article.search("database indexing", orderByRank: true)
+    .order(by: \.createdAt, ascending: false) // Break relevance ties by newest first.
+    .limit(20)
+    .offset(20)
+    .all(connection)
+```
+
+The default is `false`, preserving existing ordering behavior. Rank takes precedence
+over both earlier and later `.order(by:)` calls; their relative order is preserved
+for ties. If several searches enable rank ordering, the last one's rank comes first,
+then earlier ranks, then ordinary ordering. All search predicates still apply.
+Use a unique key as the final tie-breaker when stable pagination is needed.
+Named indexes use the same option, for example
+`Article.matching("swift*", index: "name", orderByRank: true)`.
+Ordinary filters, bound search input, projections, and pagination work with rank ordering.
+`count`, `exists`, aggregates, and batch writes continue to use only the filters, ignoring
+ordering and pagination. The library resolves FTS IDs through its identity mapping,
+including composite keys; callers do not need SQL or access to internal FTS tables.
+Rank is evaluated for each matching candidate before the outer query sorts and paginates;
+this API does not use FTS5's direct `ORDER BY rank LIMIT` optimization.
+
 Array fields use `.each(arrayKeyPath, fields: ...)`. Swift infers the element type, so field
 key paths do not need explicit type names. Combine ordinary fields, multiple element fields
 and nested arrays in one index:
