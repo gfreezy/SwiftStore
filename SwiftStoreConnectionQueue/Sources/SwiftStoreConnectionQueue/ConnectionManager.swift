@@ -25,6 +25,8 @@ public enum ConnectionManagerError: Error, CustomStringConvertible {
 // Re-export commonly used types from SwiftStoreSync
 public typealias SyncState = SwiftStoreSync.SyncState
 public typealias SyncResult = SwiftStoreSync.SyncResult
+public typealias SyncProgress = SwiftStoreSync.SyncProgress
+public typealias SyncProgressHandler = SwiftStoreSync.SyncProgressHandler
 public typealias SyncConfiguration = SwiftStoreSync.SyncConfiguration
 
 public typealias CloudKitSyncConfiguration = SwiftStoreSyncCloudTransport.CloudKitSyncConfiguration
