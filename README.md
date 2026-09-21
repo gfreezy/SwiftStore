@@ -60,6 +60,9 @@ struct User {
 
 Table and column names default to snake_case. Override the table with
 `@Entity(tableName: "users")`. `#Index` supports multiple fields and nested JSON properties.
+Embedded JSON keys keep their Swift property names: `address.cityName` uses the SQL column
+`address__city_name`, extracting the JSON path `$.cityName`. Ordinary and full-text indexes
+share this naming rule.
 
 ### Database Operations
 
@@ -93,6 +96,22 @@ Queries also support nested fields, counts and bulk updates:
 let count = try User.filter(\.address.city == "Beijing").count(connection)
 let updated = try User.filter { $0.age == nil }.updateAll(connection, [\.age <- 18])
 ```
+
+`@Entity` generates the key-path-to-column mapping from the same declarations as the
+schema and SQLite codec. Queries, ordering, projections, aggregates, assignments, and SQL
+interpolation use this mapping in both Debug and Release; they never parse key path debug
+strings. Nested paths resolve to the virtual columns declared by `#Index`.
+
+The existing query syntax is unchanged. An unmapped property (for example, a computed
+property without a stored column) produces `StoreError.invalidSchema` when the query executes,
+before any SQL is sent to SQLite. Direct calls to `columnName(for:)` and `Column.name` now
+require `try`. Manually implemented `EntityProtocol` types must provide `columnName(for:)`
+to use key-path queries; a manual composite identity also needs `sqliteIdentityValues(for:)`
+in `syncKeyColumns` order.
+
+`save`, `find`, `get`, `reload`, `delete`, and `filter(id:)` use declared identity columns.
+A single `#SyncKey` maps its generated `id` alias to that field; composite keys bind every
+component. This metadata does not change the database schema or require a migration.
 
 For custom SQL, use interpolation to bind values:
 

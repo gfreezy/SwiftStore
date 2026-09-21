@@ -61,7 +61,7 @@ struct FullTextMarkerParser {
                 }
                 let names = components.map { MacroHelpers.camelToSnakeCase($0) }
                 fields.append(FullTextColumn(name: names.joined(separator: "__"), column: names[0],
-                    jsonPath: names.count > 1 ? "$." + names.dropFirst().joined(separator: ".") : nil))
+                    jsonPath: MacroHelpers.embeddedJSONPath(for: components)))
             }
             guard !fields.isEmpty else { throw MacroError.message("#FullTextIndex requires at least one text field") }
             result.append(FullTextIndexDefinition(name: name ?? "\(tableName)_fts", columns: fields,

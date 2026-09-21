@@ -33,9 +33,7 @@ struct IndexMarkerParser {
         var isNested: Bool { keypathComponents.count > 1 }
         /// The JSON path for extraction (e.g., "$.theme" for \.settings.theme)
         var jsonPath: String? {
-            guard isNested else { return nil }
-            let path = keypathComponents.dropFirst().map { MacroHelpers.camelToSnakeCase($0) }
-            return "$." + path.joined(separator: ".")
+            MacroHelpers.embeddedJSONPath(for: keypathComponents)
         }
         /// The base column that contains the JSON (e.g., "settings" for \.settings.theme)
         var jsonColumn: String? {

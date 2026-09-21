@@ -15,15 +15,15 @@ public extension EntityProtocol {
     }
 }
 
-public extension EntityProtocol where Self: Identifiable, Self.ID: SQLiteValueComparable {
-    /// Update this entity in the database (only available for entities with id field)
+public extension EntityProtocol where Self: Identifiable {
+    /// Update this entity in the database (using the declared identity columns)
     /// Timestamp (updated_at) is set automatically by trigger
     /// - Parameter connection: The database connection
     func update(_ connection: SQLiteConnection) throws {
         try connection.update(self)
     }
 
-    /// Delete this entity from the database (only available for entities with id field)
+    /// Delete this entity from the database (using the declared identity columns)
     /// - Parameter connection: The database connection
     func delete(_ connection: SQLiteConnection) throws {
         try connection.delete(self)
@@ -49,7 +49,7 @@ public extension EntityProtocol where Self: Identifiable, Self.ID: SQLiteValueCo
 
 // MARK: - Static CRUD Extensions for EntityProtocol
 
-public extension EntityProtocol where Self: Identifiable, Self.ID: SQLiteValueComparable {
+public extension EntityProtocol where Self: Identifiable {
     /// Get entity by ID
     /// - Parameters:
     ///   - id: The entity ID
@@ -67,7 +67,7 @@ public extension EntityProtocol where Self: Identifiable, Self.ID: SQLiteValueCo
     /// - Throws: StoreError.entityNotFound if not found
     static func get(_ id: Self.ID, _ connection: SQLiteConnection) throws -> Self {
         guard let entity = try find(id, connection) else {
-            throw StoreError.entityNotFound(try id.sqliteEncode())
+            throw StoreError.entityNotFound(try Self.sqliteIdentityValues(for: id).first ?? .null)
         }
         return entity
     }
@@ -152,13 +152,13 @@ public extension EntityProtocol {
 
 // MARK: - Identifiable Entity Extensions
 
-public extension EntityProtocol where Self: Identifiable, Self.ID: SQLiteValueComparable {
-    /// Filter by primary key (only available for entities with id field)
+public extension EntityProtocol where Self: Identifiable {
+    /// Filter by primary key (using the declared identity columns)
     static func filter(id: ID) -> Query<Self> {
         Query(Self.self).filter(id: id)
     }
 
-    /// Filter by multiple primary keys (only available for entities with id field)
+    /// Filter by multiple primary keys (using the declared identity columns)
     static func filter(ids: [ID]) -> Query<Self> {
         Query(Self.self).filter(ids: ids)
     }

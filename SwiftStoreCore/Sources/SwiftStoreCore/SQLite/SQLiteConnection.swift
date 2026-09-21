@@ -543,7 +543,8 @@ public final class SQLiteConnection {
     /// Execute type-safe SQL
     @discardableResult
     public func execute(_ sql: SQL) throws -> Int {
-        try execute(sql.sql, values: sql.values)
+        try sql.validate()
+        return try execute(sql.sql, values: sql.values)
     }
 
     /// Execute SQL and return entities (used by Query builder)
@@ -571,7 +572,8 @@ public final class SQLiteConnection {
 
     /// Query using type-safe SQL
     public func query(_ sql: SQL) throws -> [Row] {
-        try query(sql.sql, values: sql.values)
+        try sql.validate()
+        return try query(sql.sql, values: sql.values)
     }
 
     /// Query single row using raw SQL string
@@ -592,7 +594,8 @@ public final class SQLiteConnection {
 
     /// Query single row using type-safe SQL
     public func queryOne(_ sql: SQL) throws -> Row? {
-        try queryOne(sql.sql, values: sql.values)
+        try sql.validate()
+        return try queryOne(sql.sql, values: sql.values)
     }
 
     /// Query scalar value using raw SQL string
@@ -618,7 +621,8 @@ public final class SQLiteConnection {
 
     /// Query scalar value using type-safe SQL
     public func queryScalar<T>(_ sql: SQL, type: T.Type = T.self) throws -> T? {
-        try queryScalar(sql.sql, values: sql.values, type: type)
+        try sql.validate()
+        return try queryScalar(sql.sql, values: sql.values, type: type)
     }
 
     // MARK: - Entity CRUD Operations
@@ -648,58 +652,32 @@ public final class SQLiteConnection {
 // MARK: - Identifiable Entity Extensions
 
 public extension SQLiteConnection {
-    /// Get entity by ID (only available for entities with id field)
-    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws -> E? where E.ID: SQLiteValueComparable {
-        // Use explicit column names from entity definition to ensure correct ordering
-        // This is critical for migrations where ALTER TABLE ADD COLUMN appends at the end
-        let columnList = E.columns.filter { $0.generatedAs == nil }.map { $0.name }.joined(separator: ", ")
-        let sql: SQL = "SELECT \(raw: columnList) FROM \(E.self) WHERE id = \(try id.sqliteEncode())"
-        let stmt = try prepareAndBind(sql.sql, values: sql.values)
-
-        guard try stmt.step() else {
-            return nil
-        }
-
-        return try decoder.decode(E.self, from: stmt)
+    /// Get an entity by its declared identity, including single and composite SyncKey IDs.
+    func get<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws -> E? {
+        try Query(E.self).filter(id: id).first(self)
     }
 
-    /// Update an existing entity (only available for entities with id field)
-    /// If updated_at is unchanged, the trigger will set it automatically
-    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID: SQLiteValueComparable {
+    /// Update non-key columns; identity columns are taken from entity metadata.
+    func update<E: EntityProtocol & Identifiable>(_ entity: E) throws {
         var values = try encoder.encode(entity)
-        values.removeValue(forKey: "id")
-
-        let columns = values.keys.sorted()
-        let setClause = columns.map { "\($0) = ?" }.joined(separator: ", ")
-
-        let sql = "UPDATE \(E.tableName) SET \(setClause) WHERE id = ?"
-        let stmt = try prepare(sql)
-
-        for (index, column) in columns.enumerated() {
-            if let value = values[column] {
-                try value.bind(to: stmt, at: Int32(index + 1))
+        for key in E.syncKeyColumns { values.removeValue(forKey: key) }
+        let query = Query(E.self).filter(id: entity.id)
+        guard !values.isEmpty else {
+            guard try query.exists(self) else {
+                throw StoreError.entityNotFound(try E.sqliteIdentityValues(for: entity.id).first ?? .null)
             }
+            return
         }
-        let idValue = try entity.id.sqliteEncode()
-
-        // Bind ID
-        try stmt.bind(Int32(columns.count + 1), idValue)
-
-        try stmt.step()
-
-        if changes == 0 {
-            throw StoreError.entityNotFound(idValue)
+        if try query.updateAll(self, values) == 0 {
+            throw StoreError.entityNotFound(try E.sqliteIdentityValues(for: entity.id).first ?? .null)
         }
     }
 
-    /// Delete an entity (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws where E.ID: SQLiteValueComparable {
+    func delete<E: EntityProtocol & Identifiable>(_ entity: E) throws {
         try delete(E.self, id: entity.id)
     }
 
-    /// Delete entity by ID (only available for entities with id field)
-    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws where E.ID: SQLiteValueComparable {
-        let sql: SQL = "DELETE FROM \(E.self) WHERE id = \(try id.sqliteEncode())"
-        try execute(sql)
+    func delete<E: EntityProtocol & Identifiable>(_ type: E.Type, id: E.ID) throws {
+        _ = try Query(E.self).filter(id: id).deleteAll(self)
     }
 }

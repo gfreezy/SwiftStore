@@ -4,31 +4,51 @@ import Foundation
 public struct Predicate<T>: Sendable {
     public let sql: String
     public let values: [SQLiteValue]
+    let validationError: StoreError?
 
     public init(sql: String, values: [SQLiteValue] = []) {
+        self.validationError = nil
         self.sql = sql
         self.values = values
     }
 
+    init(resolving body: () throws -> Self) {
+        do { self = try body() }
+        catch {
+            self.sql = ""
+            self.values = []
+            self.validationError = error as? StoreError ?? .invalidSchema(String(describing: error))
+        }
+    }
+
+    func validate() throws {
+        if let validationError { throw validationError }
+    }
+
     /// Combine predicates with AND
     public func and(_ other: Predicate<T>) -> Predicate<T> {
-        Predicate(
-            sql: "(\(self.sql)) AND (\(other.sql))",
-            values: self.values + other.values
-        )
+        Predicate(resolving: {
+            try self.validate()
+            try other.validate()
+            return Predicate(sql: "(\(self.sql)) AND (\(other.sql))", values: self.values + other.values)
+        })
     }
 
     /// Combine predicates with OR
     public func or(_ other: Predicate<T>) -> Predicate<T> {
-        Predicate(
-            sql: "(\(self.sql)) OR (\(other.sql))",
-            values: self.values + other.values
-        )
+        Predicate(resolving: {
+            try self.validate()
+            try other.validate()
+            return Predicate(sql: "(\(self.sql)) OR (\(other.sql))", values: self.values + other.values)
+        })
     }
 
     /// Negate predicate
     public var not: Predicate<T> {
-        Predicate(sql: "NOT (\(self.sql))", values: values)
+        Predicate(resolving: {
+            try self.validate()
+            return Predicate(sql: "NOT (\(self.sql))", values: values)
+        })
     }
 }
 
@@ -50,20 +70,13 @@ public prefix func ! <T>(predicate: Predicate<T>) -> Predicate<T> {
 }
 
 
-/// Helper to convert KeyPath to column name
-public func columnName<T, V>(for keyPath: KeyPath<T, V>) -> String {
-    // This is a simplified implementation
-    // In production, this would use reflection or code generation
-    let keyPathString = String(describing: keyPath)
-
-    // Extract property name from KeyPath string representation
-    // e.g., \User.name -> name
-    if let dotIndex = keyPathString.lastIndex(of: ".") {
-        let propertyName = String(keyPathString[keyPathString.index(after: dotIndex)...])
-        return propertyName.camelCaseToSnakeCase()
+/// Resolve a declared column without depending on KeyPath's debugging representation.
+public func columnName<T, V>(for keyPath: KeyPath<T, V>) throws -> String {
+    guard let entity = T.self as? any EntityProtocol.Type,
+          let name = entity.columnName(for: keyPath) else {
+        throw StoreError.invalidSchema("Unmapped SQLite key path on \(T.self)")
     }
-
-    return keyPathString.camelCaseToSnakeCase()
+    return name
 }
 
 // MARK: - Dynamic Member Lookup for Predicate Building
@@ -77,7 +90,7 @@ public struct Column<T, V> {
     }
 
     public var name: String {
-        columnName(for: keyPath)
+        get throws { try columnName(for: keyPath) }
     }
 }
 
@@ -95,76 +108,105 @@ public struct Columns<T>: Sendable {
 // MARK: - Column-based operators
 
 public func == <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) = ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) = ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func == <T, V: SQLiteValueComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
-    if let value = rhs {
-        return Predicate(sql: "\(lhs.name) = ?", values: [value.sqliteValue])
-    } else {
-        return Predicate(sql: "\(lhs.name) IS NULL", values: [])
-    }
+    Predicate(resolving: {
+        if let value = rhs {
+            return Predicate(sql: "\(try lhs.name) = ?", values: [value.sqliteValue])
+        } else {
+            return Predicate(sql: "\(try lhs.name) IS NULL", values: [])
+        }
+    })
 }
 
 public func != <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) != ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) != ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func != <T, V: SQLiteValueComparable>(lhs: Column<T, V?>, rhs: V?) -> Predicate<T> {
-    if let value = rhs {
-        return Predicate(sql: "\(lhs.name) != ?", values: [value.sqliteValue])
-    } else {
-        return Predicate(sql: "\(lhs.name) IS NOT NULL", values: [])
-    }
+    Predicate(resolving: {
+        if let value = rhs {
+            return Predicate(sql: "\(try lhs.name) != ?", values: [value.sqliteValue])
+        } else {
+            return Predicate(sql: "\(try lhs.name) IS NOT NULL", values: [])
+        }
+    })
 }
 
 public func < <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) < ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) < ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func < <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) < ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) < ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) <= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) <= ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) <= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) <= ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func > <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) > ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) > ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func > <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) > ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) > ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) >= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) >= ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: Column<T, V?>, rhs: V) -> Predicate<T> {
-    Predicate(sql: "\(lhs.name) >= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        return Predicate(sql: "\(try lhs.name) >= ?", values: [rhs.sqliteValue])
+    })
 }
 
 /// IN operator for Column
 public func ~= <T, V: SQLiteValueComparable>(lhs: Column<T, V>, rhs: [V]) -> Predicate<T> {
-    guard !rhs.isEmpty else {
-        return Predicate(sql: "0 = 1", values: [])
-    }
-    let placeholders = rhs.map { _ in "?" }.joined(separator: ", ")
-    let values = rhs.map { $0.sqliteValue }
-    return Predicate(sql: "\(lhs.name) IN (\(placeholders))", values: values)
+    Predicate(resolving: {
+        let column = try lhs.name
+        guard !rhs.isEmpty else {
+            return Predicate(sql: "0 = 1", values: [])
+        }
+        let placeholders = rhs.map { _ in "?" }.joined(separator: ", ")
+        let values = rhs.map { $0.sqliteValue }
+        return Predicate(sql: "\(column) IN (\(placeholders))", values: values)
+    })
 }
 
 // MARK: - Column extensions for string operations
 
 public extension Column where V == String {
     func like(_ pattern: String) -> Predicate<T> {
-        Predicate(sql: "\(name) LIKE ?", values: [.text(pattern)])
+        Predicate(resolving: {
+            return Predicate(sql: "\(try name) LIKE ?", values: [.text(pattern)])
+        })
     }
 
     func contains(_ substring: String) -> Predicate<T> {
@@ -182,7 +224,9 @@ public extension Column where V == String {
 
 public extension Column where V == String? {
     func like(_ pattern: String) -> Predicate<T> {
-        Predicate(sql: "\(name) LIKE ?", values: [.text(pattern)])
+        Predicate(resolving: {
+            return Predicate(sql: "\(try name) LIKE ?", values: [.text(pattern)])
+        })
     }
 
     func contains(_ substring: String) -> Predicate<T> {
@@ -202,10 +246,12 @@ public extension Column where V == String? {
 
 public extension Column where V: SQLiteValueComparable & Comparable {
     func between(_ lower: V, and upper: V) -> Predicate<T> {
-        Predicate(
-            sql: "\(name) BETWEEN ? AND ?",
-            values: [lower.sqliteValue, upper.sqliteValue]
-        )
+        Predicate(resolving: {
+            return Predicate(
+                sql: "\(try name) BETWEEN ? AND ?",
+                values: [lower.sqliteValue, upper.sqliteValue]
+            )
+        })
     }
 
     func `in`(_ values: [V]) -> Predicate<T> {
@@ -213,12 +259,15 @@ public extension Column where V: SQLiteValueComparable & Comparable {
     }
 
     func notIn(_ values: [V]) -> Predicate<T> {
-        guard !values.isEmpty else {
-            return Predicate(sql: "1 = 1", values: [])
-        }
-        let placeholders = values.map { _ in "?" }.joined(separator: ", ")
-        let sqliteValues = values.map { $0.sqliteValue }
-        return Predicate(sql: "\(name) NOT IN (\(placeholders))", values: sqliteValues)
+        Predicate(resolving: {
+            let column = try name
+            guard !values.isEmpty else {
+                return Predicate(sql: "1 = 1", values: [])
+            }
+            let placeholders = values.map { _ in "?" }.joined(separator: ", ")
+            let sqliteValues = values.map { $0.sqliteValue }
+            return Predicate(sql: "\(column) NOT IN (\(placeholders))", values: sqliteValues)
+        })
     }
 }
 
@@ -226,92 +275,122 @@ public extension Column where V: SQLiteValueComparable & Comparable {
 
 public extension Column {
     var isNull: Predicate<T> {
-        Predicate(sql: "\(name) IS NULL", values: [])
+        Predicate(resolving: {
+            return Predicate(sql: "\(try name) IS NULL", values: [])
+        })
     }
 
     var isNotNull: Predicate<T> {
-        Predicate(sql: "\(name) IS NOT NULL", values: [])
+        Predicate(resolving: {
+            return Predicate(sql: "\(try name) IS NOT NULL", values: [])
+        })
     }
 }
 
 // MARK: - Operator overloads for building predicates
 
 public func == <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) = ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) = ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func == <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    if let value = rhs {
-        return Predicate(sql: "\(column) = ?", values: [value.sqliteValue])
-    } else {
-        return Predicate(sql: "\(column) IS NULL", values: [])
-    }
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        if let value = rhs {
+            return Predicate(sql: "\(column) = ?", values: [value.sqliteValue])
+        } else {
+            return Predicate(sql: "\(column) IS NULL", values: [])
+        }
+    })
 }
 
 public func != <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) != ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) != ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func != <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V?>, rhs: V?) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    if let value = rhs {
-        return Predicate(sql: "\(column) != ?", values: [value.sqliteValue])
-    } else {
-        return Predicate(sql: "\(column) IS NOT NULL", values: [])
-    }
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        if let value = rhs {
+            return Predicate(sql: "\(column) != ?", values: [value.sqliteValue])
+        } else {
+            return Predicate(sql: "\(column) IS NOT NULL", values: [])
+        }
+    })
 }
 
 public func < <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func > <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
+    })
 }
 
 // MARK: - Optional comparison operators
 
 public func < <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) < ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func <= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) <= ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func > <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) > ?", values: [rhs.sqliteValue])
+    })
 }
 
 public func >= <T, V: SQLiteValueComparable & Comparable>(lhs: KeyPath<T, V?>, rhs: V) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        return Predicate(sql: "\(column) >= ?", values: [rhs.sqliteValue])
+    })
 }
 
 // MARK: - String specific predicates
 
 public extension KeyPath where Value == String {
     func like(_ pattern: String) -> Predicate<Root> {
-        let column = columnName(for: self)
-        return Predicate(sql: "\(column) LIKE ?", values: [.text(pattern)])
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            return Predicate(sql: "\(column) LIKE ?", values: [.text(pattern)])
+        })
     }
 
     func contains(_ substring: String) -> Predicate<Root> {
@@ -329,8 +408,10 @@ public extension KeyPath where Value == String {
 
 public extension KeyPath where Value == String? {
     func like(_ pattern: String) -> Predicate<Root> {
-        let column = columnName(for: self)
-        return Predicate(sql: "\(column) LIKE ?", values: [.text(pattern)])
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            return Predicate(sql: "\(column) LIKE ?", values: [.text(pattern)])
+        })
     }
 
     func contains(_ substring: String) -> Predicate<Root> {
@@ -349,14 +430,16 @@ public extension KeyPath where Value == String? {
 // MARK: - IN predicate
 
 public func ~= <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: [V]) -> Predicate<T> {
-    let column = columnName(for: lhs)
-    guard !rhs.isEmpty else {
-        // Empty array - always false
-        return Predicate(sql: "0 = 1", values: [])
-    }
-    let placeholders = rhs.map { _ in "?" }.joined(separator: ", ")
-    let values = rhs.map { $0.sqliteValue }
-    return Predicate(sql: "\(column) IN (\(placeholders))", values: values)
+    Predicate(resolving: {
+        let column = try columnName(for: lhs)
+        guard !rhs.isEmpty else {
+            // Empty array - always false
+            return Predicate(sql: "0 = 1", values: [])
+        }
+        let placeholders = rhs.map { _ in "?" }.joined(separator: ", ")
+        let values = rhs.map { $0.sqliteValue }
+        return Predicate(sql: "\(column) IN (\(placeholders))", values: values)
+    })
 }
 
 // MARK: - BETWEEN predicate
@@ -364,11 +447,13 @@ public func ~= <T, V: SQLiteValueComparable>(lhs: KeyPath<T, V>, rhs: [V]) -> Pr
 public extension KeyPath where Value: SQLiteValueComparable & Comparable {
     /// Create a BETWEEN predicate
     func between(_ lower: Value, and upper: Value) -> Predicate<Root> {
-        let column = columnName(for: self)
-        return Predicate(
-            sql: "\(column) BETWEEN ? AND ?",
-            values: [lower.sqliteValue, upper.sqliteValue]
-        )
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            return Predicate(
+                sql: "\(column) BETWEEN ? AND ?",
+                values: [lower.sqliteValue, upper.sqliteValue]
+            )
+        })
     }
 }
 
@@ -380,14 +465,16 @@ public extension KeyPath where Value: SQLiteValueComparable {
 
     /// NOT IN predicate
     func notIn(_ values: [Value]) -> Predicate<Root> {
-        let column = columnName(for: self)
-        guard !values.isEmpty else {
-            // Empty array - always true
-            return Predicate(sql: "1 = 1", values: [])
-        }
-        let placeholders = values.map { _ in "?" }.joined(separator: ", ")
-        let sqliteValues = values.map { $0.sqliteValue }
-        return Predicate(sql: "\(column) NOT IN (\(placeholders))", values: sqliteValues)
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            guard !values.isEmpty else {
+                // Empty array - always true
+                return Predicate(sql: "1 = 1", values: [])
+            }
+            let placeholders = values.map { _ in "?" }.joined(separator: ", ")
+            let sqliteValues = values.map { $0.sqliteValue }
+            return Predicate(sql: "\(column) NOT IN (\(placeholders))", values: sqliteValues)
+        })
     }
 }
 
@@ -395,12 +482,55 @@ public extension KeyPath where Value: SQLiteValueComparable {
 
 public extension KeyPath {
     var isNull: Predicate<Root> {
-        let column = columnName(for: self)
-        return Predicate(sql: "\(column) IS NULL", values: [])
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            return Predicate(sql: "\(column) IS NULL", values: [])
+        })
     }
 
     var isNotNull: Predicate<Root> {
-        let column = columnName(for: self)
-        return Predicate(sql: "\(column) IS NOT NULL", values: [])
+        Predicate(resolving: {
+            let column = try columnName(for: self)
+            return Predicate(sql: "\(column) IS NOT NULL", values: [])
+        })
+    }
+}
+
+// MARK: - Entity identity metadata
+
+extension Predicate where T: EntityProtocol {
+    static func identities(_ ids: [Any]) -> Self {
+        Predicate(resolving: {
+            let predicates = ids.map { identity($0) }
+            for predicate in predicates { try predicate.validate() }
+            guard !predicates.isEmpty else { return Predicate(sql: "0 = 1") }
+            let values = predicates.flatMap { $0.values }
+            if T.syncKeyColumns.count == 1 {
+                // Retain IN for single keys so large ID lists do not create deep OR expressions.
+                let column = T.syncKeyColumns[0]
+                let placeholders = values.map { _ in "?" }.joined(separator: ", ")
+                var terms = values.isEmpty ? [] : ["\(column) IN (\(placeholders))"]
+                if predicates.contains(where: { $0.values.isEmpty }) {
+                    terms.append("\(column) IS NULL")
+                }
+                return Predicate(sql: "(" + terms.joined(separator: " OR ") + ")", values: values)
+            }
+            return Predicate(sql: "(" + predicates.map { "(\($0.sql))" }.joined(separator: " OR ") + ")", values: values)
+        })
+    }
+
+    static func identity(_ id: Any) -> Self {
+        Predicate(resolving: {
+            let values = try T.sqliteIdentityValues(for: id)
+            let columns = T.syncKeyColumns
+            guard !columns.isEmpty, columns.count == values.count,
+                  columns.allSatisfy({ name in T.columns.contains { $0.name == name } }) else {
+                throw StoreError.invalidSchema("Invalid identity metadata for \(T.self)")
+            }
+            let terms = zip(columns, values).map { column, value in
+                value == .null ? "\(column) IS NULL" : "\(column) = ?"
+            }
+            return Predicate(sql: terms.joined(separator: " AND "), values: values.filter { $0 != .null })
+        })
     }
 }

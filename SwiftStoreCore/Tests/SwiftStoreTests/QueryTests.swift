@@ -643,7 +643,7 @@ struct QueryBuilderTests {
         let query = Query(TestUser.self)
             .distinct()
 
-        let (sql, _) = query.buildSQL()
+        let (sql, _) = try query.buildSQL()
         #expect(sql.contains("DISTINCT"))
     }
 

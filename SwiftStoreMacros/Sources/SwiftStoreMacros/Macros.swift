@@ -16,7 +16,7 @@
 /// - Note: Readonly entities can only be used with ConnectionManager in readonly mode
 /// - Parameter sync: Whether the entity participates in CloudKit sync (default: true).
 ///   Set false for local-only storage; schema, CRUD and writable field requirements are unchanged.
-@attached(member, names: named(tableName), named(columns), named(sqliteEncode), named(sqliteDecode), named(indexes), named(fullTextIndexes), named(__swiftstore_validateFullTextColumns), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly), named(isSyncEnabled), named(init))
+@attached(member, names: named(tableName), named(columns), named(columnName), named(sqliteIdentityValues), named(sqliteEncode), named(sqliteDecode), named(indexes), named(fullTextIndexes), named(__swiftstore_validateFullTextColumns), named(syncKeyColumns), named(id), named(SyncKeyID), named(isReadonly), named(isSyncEnabled), named(init))
 @attached(extension, conformances: EntityProtocol, Encodable, Decodable, Identifiable, Sendable, Equatable, Hashable, names: named(CodingKeys), named(init), named(_decodeNested), named(_decodeNestedIfPresent))
 public macro Entity(tableName: String? = nil, readonly: Bool = false, sync: Bool = true) = #externalMacro(module: "SwiftStoreMacrosImpl", type: "EntityMacro")
 

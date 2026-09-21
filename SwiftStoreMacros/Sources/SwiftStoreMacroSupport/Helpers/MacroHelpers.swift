@@ -130,6 +130,12 @@ enum MacroHelpers {
         joinLines(assignments, separator: "\n", indent: spaces)
     }
 
+    /// Embedded JSON uses Swift property names; only SQL column names use snake_case.
+    static func embeddedJSONPath(for components: [String]) -> String? {
+        guard components.count > 1 else { return nil }
+        return "$." + components.dropFirst().joined(separator: ".")
+    }
+
     // MARK: - String Case Conversion
 
     /// Convert camelCase to snake_case

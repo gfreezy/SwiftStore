@@ -12,20 +12,28 @@ import Foundation
 public struct SQL: ExpressibleByStringInterpolation, Sendable {
     public let sql: String
     public let values: [SQLiteValue]
+    let validationError: StoreError?
 
     public init(stringLiteral value: String) {
+        self.validationError = nil
         self.sql = value
         self.values = []
     }
 
     public init(stringInterpolation: StringInterpolation) {
+        self.validationError = stringInterpolation.validationError
         self.sql = stringInterpolation.sql
         self.values = stringInterpolation.values
+    }
+
+    func validate() throws {
+        if let validationError { throw validationError }
     }
 
     public struct StringInterpolation: StringInterpolationProtocol {
         var sql: String = ""
         var values: [SQLiteValue] = []
+        var validationError: StoreError?
 
         public init(literalCapacity: Int, interpolationCount: Int) {
             sql.reserveCapacity(literalCapacity)
@@ -43,12 +51,13 @@ public struct SQL: ExpressibleByStringInterpolation, Sendable {
 
         /// Interpolate KeyPath as column name: `\(\.name)` or `\(\User.name)`
         public mutating func appendInterpolation<T, V>(_ keyPath: KeyPath<T, V>) {
-            sql += columnName(for: keyPath)
+            do { sql += try columnName(for: keyPath) }
+            catch { validationError = error as? StoreError ?? .invalidSchema(String(describing: error)) }
         }
 
         /// Interpolate Column as column name: `\($0.name)`
         public mutating func appendInterpolation<T, V>(_ column: Column<T, V>) {
-            sql += column.name
+            appendInterpolation(column.keyPath)
         }
 
         /// Interpolate raw string (NOT parameterized - use with caution)
@@ -170,20 +179,18 @@ public struct Row: Sendable {
     /// Access column by KeyPath, returns non-optional typed value
     /// Crashes if column is missing or value cannot be extracted
     public subscript<T, V: SQLiteValueDecodable>(keyPath: KeyPath<T, V>) -> V {
-        let column = columnName(for: keyPath)
-        guard let value = data[column] else {
-            fatalError("Column '\(column)' not found")
-        }
         do {
+            let column = try columnName(for: keyPath)
+            guard let value = data[column] else { fatalError("Column '\(column)' not found") }
             return try V(from: value)
         } catch {
-            fatalError("Column '\(column)' cannot be extracted as \(V.self): \(error)")
+            fatalError("Cannot read SQLite column on \(T.self): \(error)")
         }
     }
 
     /// Access optional column by KeyPath, returns optional typed value
     public subscript<T, V: SQLiteValueDecodable>(keyPath: KeyPath<T, V?>) -> V? {
-        let column = columnName(for: keyPath)
+        guard let column = try? columnName(for: keyPath) else { return nil }
         guard let value = data[column] else { return nil }
         if case .null = value { return nil }
         return try? V(from: value)
@@ -191,14 +198,14 @@ public struct Row: Sendable {
 
     /// Access column by KeyPath, returns optional typed value
     public func get<T, V: SQLiteValueDecodable>(_ keyPath: KeyPath<T, V>) -> V? {
-        let column = columnName(for: keyPath)
+        guard let column = try? columnName(for: keyPath) else { return nil }
         guard let value = data[column] else { return nil }
         return try? V(from: value)
     }
 
     /// Access optional column by KeyPath, returns optional typed value
     public func get<T, V: SQLiteValueDecodable>(_ keyPath: KeyPath<T, V?>) -> V? {
-        let column = columnName(for: keyPath)
+        guard let column = try? columnName(for: keyPath) else { return nil }
         guard let value = data[column] else { return nil }
         return try? V(from: value)
     }

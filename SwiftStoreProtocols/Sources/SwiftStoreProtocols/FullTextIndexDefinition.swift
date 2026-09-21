@@ -7,7 +7,7 @@ public enum FullTextTokenizer: String, Codable, Sendable {
     case trigram
 }
 
-/// One text projection in an external-content view. JSON paths follow Embedded's snake_case keys.
+/// One text projection in an external-content view. JSON paths follow Embedded's original Swift property names.
 public struct FullTextColumn: Codable, Sendable, Equatable {
     public let name: String
     public let column: String

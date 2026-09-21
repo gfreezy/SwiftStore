@@ -160,6 +160,9 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             }
             """
 
+        let fieldMapping = generateColumnMapping(properties: properties, indexes: indexInfos, syncKey: syncKeyInfo)
+        let identityValues = generateIdentityValues(syncKey: syncKeyInfo)
+
         // Generate syncKeyColumns property
         let syncKeyColumnsStr = syncKeyColumns.map { "\"\($0)\"" }.joined(separator: ", ")
         let syncKeyColumnsDecl: DeclSyntax = """
@@ -179,7 +182,7 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let memberwiseInitDecl = EmbeddedMacro.generateMemberWiseInit(properties: properties)
 
         var result: [DeclSyntax] = [
-            tableNameDecl, columnsDecl, encodeDecl, decodeDecl, syncKeyColumnsDecl, isReadonlyDecl, isSyncEnabledDecl,
+            tableNameDecl, columnsDecl, fieldMapping, identityValues, encodeDecl, decodeDecl, syncKeyColumnsDecl, isReadonlyDecl, isSyncEnabledDecl,
             memberwiseInitDecl,
         ]
 
@@ -253,6 +256,62 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         // for proper fault-tolerant decoding. Add @Embedded to your nested structs.
 
         return result
+    }
+
+    /// Resolve actual KeyPath values; never inspect their debug descriptions.
+    private static func generateColumnMapping(
+        properties: [PropertyInfo], indexes: [IndexMarkerParser.IndexInfo],
+        syncKey: SyncKeyMarkerParser.SyncKeyInfo?
+    ) -> DeclSyntax {
+        var mappings = properties.map { ($0.name, $0.columnName) }
+        for index in indexes {
+            for column in index.virtualColumns {
+                let path = column.keypathComponents.joined(separator: ".")
+                if !mappings.contains(where: { $0.0 == path }) {
+                    mappings.append((path, column.columnName))
+                }
+            }
+        }
+        if let syncKey {
+            if syncKey.propertyNames.count == 1 {
+                mappings.append(("id", syncKey.columns[0]))
+            } else {
+                for (property, column) in zip(syncKey.propertyNames, syncKey.columns) {
+                    mappings.append(("id." + property, column))
+                }
+            }
+        }
+        var checks = mappings.map { path, column in
+            let escaped = path.split(separator: ".").map { "`\($0)`" }.joined(separator: ".")
+            return "if keyPath == \\Self.\(escaped) { return \(String(reflecting: column)) }"
+        }
+        if syncKey == nil || syncKey?.columns.count == 1 {
+            let column = syncKey?.columns.first ?? "id"
+            checks.append("if keyPath == _swiftstoreIdentityKeyPath(Self.self) { return \(String(reflecting: column)) }")
+        }
+        checks.append("return nil")
+        return """
+            public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                \(raw: checks.joined(separator: "\n"))
+            }
+            """
+    }
+
+    private static func generateIdentityValues(syncKey: SyncKeyMarkerParser.SyncKeyInfo?) -> DeclSyntax {
+        let components: [String]
+        if let syncKey, syncKey.propertyNames.count > 1 {
+            components = syncKey.propertyNames.map { "try id.`\($0)`.sqliteEncode()" }
+        } else {
+            components = ["try id.sqliteEncode()"]
+        }
+        return """
+            public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                guard let id = value as? Self.ID else {
+                    throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                }
+                return [\(raw: components.joined(separator: ", "))]
+            }
+            """
     }
 
     /// Generate the sqliteEncode() method

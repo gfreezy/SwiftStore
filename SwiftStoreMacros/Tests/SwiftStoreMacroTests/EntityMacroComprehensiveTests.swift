@@ -64,6 +64,50 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ]
                 }
 
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`name` {
+                        return "name"
+                    }
+                    if keyPath == \\Self.`count` {
+                        return "count"
+                    }
+                    if keyPath == \\Self.`score` {
+                        return "score"
+                    }
+                    if keyPath == \\Self.`tags` {
+                        return "tags"
+                    }
+                    if keyPath == \\Self.`settings` {
+                        return "settings"
+                    }
+                    if keyPath == \\Self.`profile` {
+                        return "profile"
+                    }
+                    if keyPath == \\Self.`metadata` {
+                        return "metadata"
+                    }
+                    if keyPath == \\Self.`createdAt` {
+                        return "created_at"
+                    }
+                    if keyPath == \\Self.`updatedAt` {
+                        return "updated_at"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
+                }
+
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
                     var result: [String: SQLiteValue] = [:]
                     result["id"] = try self.id.sqliteEncode()
@@ -293,6 +337,35 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ]
                 }
 
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`email` {
+                        return "email"
+                    }
+                    if keyPath == \\Self.`name` {
+                        return "name"
+                    }
+                    if keyPath == \\Self.`createdAt` {
+                        return "created_at"
+                    }
+                    if keyPath == \\Self.`updatedAt` {
+                        return "updated_at"
+                    }
+                    if keyPath == \\Self.`id` {
+                        return "email"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "email"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
+                }
+
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
                     var result: [String: SQLiteValue] = [:]
                     result["email"] = try self.email.sqliteEncode()
@@ -443,6 +516,35 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
                         ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
+                }
+
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`sku` {
+                        return "sku"
+                    }
+                    if keyPath == \\Self.`name` {
+                        return "name"
+                    }
+                    if keyPath == \\Self.`createdAt` {
+                        return "created_at"
+                    }
+                    if keyPath == \\Self.`updatedAt` {
+                        return "updated_at"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
                 }
 
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
@@ -603,6 +705,29 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                     ]
                 }
 
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`key` {
+                        return "key"
+                    }
+                    if keyPath == \\Self.`value` {
+                        return "value"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
+                }
+
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
                     var result: [String: SQLiteValue] = [:]
                     result["id"] = try self.id.sqliteEncode()
@@ -706,6 +831,29 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "data", type: .text),
                         ColumnDefinition(name: "expires_at", type: .real, nullable: true)
                     ]
+                }
+
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`data` {
+                        return "data"
+                    }
+                    if keyPath == \\Self.`expiresAt` {
+                        return "expires_at"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
                 }
 
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
@@ -814,6 +962,32 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "created_at", type: .real, nullable: true),
                         ColumnDefinition(name: "modified_at", type: .real, nullable: true)
                     ]
+                }
+
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`name` {
+                        return "name"
+                    }
+                    if keyPath == \\Self.`createdAt` {
+                        return "created_at"
+                    }
+                    if keyPath == \\Self.`modifiedAt` {
+                        return "modified_at"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
                 }
 
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
@@ -925,6 +1099,29 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "theme", type: .text, defaultValue: "'light'"),
                         ColumnDefinition(name: "font_size", type: .integer, defaultValue: "14")
                     ]
+                }
+
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`theme` {
+                        return "theme"
+                    }
+                    if keyPath == \\Self.`fontSize` {
+                        return "font_size"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
                 }
 
                 public func sqliteEncode() throws -> [String: SQLiteValue] {
@@ -1057,6 +1254,32 @@ final class EntityMacroComprehensiveTests: XCTestCase {
                         ColumnDefinition(name: "created_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))"),
                         ColumnDefinition(name: "updated_at", type: .real, defaultValue: "(COALESCE(unixepoch('subsec'), CAST(strftime('%s', 'now') AS REAL) + CAST(substr(strftime('%f', 'now'), 3) AS REAL)))")
                     ]
+                }
+
+                public static func columnName(for keyPath: AnyKeyPath) -> String? {
+                    if keyPath == \\Self.`id` {
+                        return "id"
+                    }
+                    if keyPath == \\Self.`name` {
+                        return "name"
+                    }
+                    if keyPath == \\Self.`createdAt` {
+                        return "created_at"
+                    }
+                    if keyPath == \\Self.`updatedAt` {
+                        return "updated_at"
+                    }
+                    if keyPath == _swiftstoreIdentityKeyPath(Self.self) {
+                        return "id"
+                    }
+                    return nil
+                }
+
+                public static func sqliteIdentityValues(for value: Any) throws -> [SQLiteValue] {
+                    guard let id = value as? Self.ID else {
+                        throw StoreError.invalidSchema("Invalid identity type for \\(Self.self)")
+                    }
+                    return [try id.sqliteEncode()]
                 }
 
                 public func sqliteEncode() throws -> [String: SQLiteValue] {

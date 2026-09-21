@@ -28,6 +28,10 @@ public typealias SQLiteCodable = SQLiteEncodable & SQLiteDecodable
 /// Note: Entities using @Entity macro will automatically get optimized SQLiteCodable implementations.
 public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
     static var tableName: String { get }
+    /// Explicit property-to-column mapping, generated from the same fields as the schema.
+    static func columnName(for keyPath: AnyKeyPath) -> String?
+    /// Values in syncKeyColumns order. A computed Identifiable.id need not be a stored column.
+    static func sqliteIdentityValues(for id: Any) throws -> [SQLiteValue]
     static var columns: [ColumnDefinition] { get }
     static var indexes: [IndexDefinition] { get }
     static var fullTextIndexes: [FullTextIndexDefinition] { get }
@@ -39,8 +43,23 @@ public protocol EntityProtocol: Codable, SQLiteCodable, Sendable {
 
 /// Default implementations
 public extension EntityProtocol {
+    static func columnName(for keyPath: AnyKeyPath) -> String? { nil }
+
+    static func sqliteIdentityValues(for id: Any) throws -> [SQLiteValue] {
+        guard syncKeyColumns.count == 1, let value = id as? any SQLiteValueEncodable else {
+            throw StoreError.invalidSchema("\(Self.self) must declare an identity codec for its key columns")
+        }
+        return [try value.sqliteEncode()]
+    }
+
     static var indexes: [IndexDefinition] { [] }
     static var fullTextIndexes: [FullTextIndexDefinition] { [] }
     static var isReadonly: Bool { false }
     static var isSyncEnabled: Bool { !isReadonly }
+}
+
+/// Register the protocol accessor as well as the concrete stored-property key path.
+/// Their debug descriptions and runtime representations can differ after optimization.
+public func _swiftstoreIdentityKeyPath<E: Identifiable>(_ type: E.Type) -> AnyKeyPath {
+    \E.id
 }
