@@ -32,8 +32,19 @@ public struct FullTextSchema {
     }
     private func projection(_ field: FullTextColumn, alias: String) -> String {
         let column = "\(alias).\(q(field.column))"
+        if let paths = field.arrayPaths {
+            return arrayProjection(field, paths: paths, column: column)
+        }
         return field.jsonPath.map { "json_extract(\(column), \(literal($0)))" } ?? column
     }
+    private func arrayProjection(_ field: FullTextColumn, paths: [String], column: String) -> String {
+        // Persist a versioned scalar function call; unlike json_each, it is usable
+        // when FTS5 opens the external-content view with SQLITE_PREPARE_NO_VTAB.
+        let rule = paths + [field.jsonPath ?? "$"]
+        let encoded = String(decoding: try! JSONEncoder().encode(rule), as: UTF8.self)
+        return "\(FullTextJSONFunction.name)(\(column), \(literal(encoded)))"
+    }
+
     private func rowID(_ alias: String) -> String {
         "(SELECT fts_id FROM \(q(mappingName)) WHERE \(keyMatch(alias)))"
     }
@@ -115,7 +126,8 @@ public struct FullTextSchema {
             }
             for field in index.columns {
                 guard let column = table.columns.first(where: { $0.name == field.column }), column.type.uppercased() == "TEXT",
-                      field.jsonPath.map({ $0.hasPrefix("$.") && !$0.contains("\0") }) ?? true else {
+                      field.jsonPath.map({ $0.hasPrefix("$.") && !$0.contains("\0") }) ?? true,
+                      field.arrayPaths.map({ !$0.isEmpty && field.jsonPath != nil && FullTextJSONFunction.components($0 + [field.jsonPath!]) != nil }) ?? true else {
                     throw fail("\(field.name) must reference a text column or JSON text property")
                 }
             }

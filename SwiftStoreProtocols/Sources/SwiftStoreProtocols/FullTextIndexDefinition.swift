@@ -12,11 +12,14 @@ public struct FullTextColumn: Codable, Sendable, Equatable {
     public let name: String
     public let column: String
     public let jsonPath: String?
+    /// Array paths, relative to the column and then to each preceding element.
+    public let arrayPaths: [String]?
 
-    public init(name: String, column: String, jsonPath: String? = nil) {
+    public init(name: String, column: String, jsonPath: String? = nil, arrayPaths: [String]? = nil) {
         self.name = name
         self.column = column
         self.jsonPath = jsonPath
+        self.arrayPaths = arrayPaths
     }
 }
 
@@ -48,3 +51,21 @@ public struct FullTextIndexDefinition: Codable, Sendable, Equatable {
 // Used by the declaration macro to type-check the leaves of nested key paths.
 public func _validateFullTextColumn<T>(_ keyPath: KeyPath<T, String>) {}
 public func _validateFullTextColumn<T>(_ keyPath: KeyPath<T, String?>) {}
+
+// Declaration markers only. The macro reads these expressions; their return value is the
+// array key path so ordinary key paths and recursive markers share a contextual root type.
+extension PartialKeyPath {
+    public static func each<Element>(_ array: KeyPath<Root, [Element]>,
+                                     fields: PartialKeyPath<Element>...) -> PartialKeyPath<Root> { array }
+    public static func each<Element>(_ array: KeyPath<Root, [Element]?>,
+                                     fields: PartialKeyPath<Element>...) -> PartialKeyPath<Root> { array }
+}
+
+// Unexecuted closures emitted by the macro let Swift validate every array and text leaf.
+public func _validateFullTextFields<Root>(_ root: Root.Type, fields: (Root) -> Void) {}
+public func _validateFullTextEach<Root, Element>(_ root: Root, _ path: KeyPath<Root, [Element]>,
+                                                fields: (Element) -> Void) {}
+public func _validateFullTextEach<Root, Element>(_ root: Root, _ path: KeyPath<Root, [Element]?>,
+                                                fields: (Element) -> Void) {}
+public func _validateFullTextColumn<Root>(_ root: Root, _ path: KeyPath<Root, String>) {}
+public func _validateFullTextColumn<Root>(_ root: Root, _ path: KeyPath<Root, String?>) {}

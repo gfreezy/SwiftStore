@@ -130,7 +130,11 @@ private final class MetadataVisitor: SyntaxVisitor {
                     arg.label.map { ($0.text, arg.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue) }
                 })
                 guard let fieldName = args["name"] ?? nil, let column = args["column"] ?? nil else { return nil }
-                return FullTextColumn(name: fieldName, column: column, jsonPath: args["jsonPath"] ?? nil)
+                let arrays = call.arguments.first(where: { $0.label?.text == "arrayPaths" })?
+                    .expression.as(ArrayExprSyntax.self)?.elements.compactMap {
+                        $0.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue
+                    }
+                return FullTextColumn(name: fieldName, column: column, jsonPath: args["jsonPath"] ?? nil, arrayPaths: arrays)
             } ?? []
             let keys = arguments["keyColumns"]?.as(ArrayExprSyntax.self)?.elements.compactMap {
                 $0.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue

@@ -125,6 +125,9 @@ public final class SQLiteConnection {
             throw StoreError.queryFailed("Failed to open database: \(message)")
         }
 
+        // Register on every connection, including read pools and schema verification databases.
+        try FullTextJSONFunction.register(on: db!)
+
         // Apply performance pragmas
         try applyOptions(options)
     }

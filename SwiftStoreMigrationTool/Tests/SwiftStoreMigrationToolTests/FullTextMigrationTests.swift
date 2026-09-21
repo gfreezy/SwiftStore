@@ -20,6 +20,19 @@ struct FTSMigrationArticle {
     var updatedAt: Date = Date()
 }
 
+@Embedded
+struct FTSArrayLeaf { var text: String; var translation: String? }
+@Embedded
+struct FTSArrayGroup { var leaves: [FTSArrayLeaf]? }
+@Entity(tableName: "fts_array_migration")
+struct FTSArrayMigration {
+    #FullTextIndex<Self>(.each(\.groups, fields: .each(\.leaves, fields: \.text, \.translation)))
+    var id: UUIDV7 = UUIDV7()
+    var groups: [FTSArrayGroup]
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
 private final class ExecuteSQLVisitor: SyntaxVisitor {
     var statements: [String] = []
     init() { super.init(viewMode: .sourceAccurate) }
@@ -138,6 +151,45 @@ struct FullTextMigrationTests {
         #expect(try VersionedMigrator(connection: db, migrations: [one, failing]).pendingMigrationIDs() == ["002"])
     }
 
+    @Test("Array source metadata, snapshots and upgrade rebuilds agree")
+    func arrayMigration() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("Model.swift")
+        try #"""
+        @Embedded struct FTSArrayLeaf { var text: String; var translation: String? }
+        @Embedded struct FTSArrayGroup { var leaves: [FTSArrayLeaf]? }
+        @Entity(tableName: "fts_array_migration") struct FTSArrayMigration {
+            #FullTextIndex<Self>(.each(\.groups, fields: .each(\.leaves, fields: \.text, \.translation)))
+            var id: UUIDV7 = UUIDV7()
+            var groups: [FTSArrayGroup]
+            var createdAt: Date = Date()
+            var updatedAt: Date = Date()
+        }
+        """#.write(to: file, atomically: true, encoding: .utf8)
+        let target = SchemaSnapshot(entities: [FTSArrayMigration.self])
+        #expect(try EntitySourceSchema.extract(files: [file]) == target)
+        #expect(try SchemaSnapshot.decode(target.json()) == target)
+        let table = target.tables[0]
+        let old = SchemaSnapshot(tables: [TableSchema(name: table.name, columns: table.columns,
+            indexes: table.indexes, triggers: table.triggers)])
+        let one = try migration("001", from: .empty, to: old)
+        let two = try migration("002", from: old, to: target)
+        let db = try SQLiteConnection(path: ":memory:")
+        try VersionedMigrator(connection: db, migrations: [one]).migrate()
+        try FTSArrayMigration(groups: [.init(leaves: [.init(text: "existingbody", translation: "existingtranslation")])]).insert(db)
+        try VersionedMigrator(connection: db, migrations: [one, two]).migrate()
+        #expect(try FTSArrayMigration.search("existingbody").count(db) == 1)
+        #expect(try FTSArrayMigration.search("existingtranslation").count(db) == 1)
+        try target.verify(on: db)
+        try VersionedMigrator(connection: db, migrations: [one, two]).migrate()
+        let migrations = directory.appendingPathComponent("Migrations")
+        try MigrationTool.generate(id: "001_initial", target: old, directory: migrations)
+        try MigrationTool.generate(id: "002_arrays", target: target, directory: migrations)
+        _ = try MigrationTool.check(target: target, directory: migrations)
+    }
+
     @Test("Invalid full-text declarations fail source extraction with diagnostics")
     func invalidDeclarations() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -151,6 +203,10 @@ struct FullTextMigrationTests {
             #"#FullTextIndex<Self>(\.title, tokenizer: .unknown)"#,
             #"#FullTextIndex<Self>(\.body.text[0])"#,
             #"#FullTextIndex<Self>()"#,
+            #"#FullTextIndex<Self>(.each(\.body, fields:))"#,
+            #"#FullTextIndex<Self>(.each(\.body))"#,
+            #"#FullTextIndex<Self>(.each(\.body, other: \.text))"#,
+            #"#FullTextIndex<Self>(.each(\.body, fields: \.text[0]))"#,
             #"#FullTextIndex<Self>(\.title, name: "sqlite_reserved")"#,
             #"#FullTextIndex<Self>(\.title) #FullTextIndex<Self>(\.title)"#
         ]

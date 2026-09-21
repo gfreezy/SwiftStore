@@ -219,6 +219,56 @@ let matches = try Article.matching("title: swift OR content__body: index*")
     .all(connection)
 ```
 
+Array fields use `.each(arrayKeyPath, fields: ...)`. Swift infers the element type, so field
+key paths do not need explicit type names. Combine ordinary fields, multiple element fields
+and nested arrays in one index:
+
+```swift
+@Embedded
+struct Paragraph {
+    var text: String
+    var translation: String?
+}
+
+@Embedded
+struct Chapter {
+    var title: String
+    var paragraphs: [Paragraph]?
+}
+
+@Entity
+struct Book {
+    #FullTextIndex<Self>(
+        \.title,
+        .each(\.chapters, fields: \.title,
+            .each(\.paragraphs, fields: \.text, \.translation)),
+        name: "book_search"
+    )
+    var id: UUIDV7 = UUIDV7()
+    var title: String
+    var chapters: [Chapter]
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+```
+
+Each text leaf has its own FTS column, such as `chapters__paragraphs__text` and
+`chapters__paragraphs__translation`; use these names with `matching` to restrict a query.
+Array paths may start inside an Embedded property, for example `.each(\.content.blocks,
+fields: \.text)`. Both `[Element]` and `[Element]?` are supported. Leaves must be `String`
+or `String?`; array subscripts, optional chaining and indexing whole JSON objects are not supported.
+
+Text is concatenated with newlines in array order. Empty/missing/null arrays and non-text JSON
+leaves contribute no text; unselected metadata is not indexed. Phrases may span adjacent array
+elements in the same FTS column. The original JSON stays unchanged, and no extra persisted
+search-text field is needed. Existing triggers maintain projections for local and remote writes.
+Array traversal uses the pure scalar function `swiftstore_fts_text_v1`, registered automatically
+on every SwiftStore connection. Views, triggers, rebuilds and integrity checks share the same
+extraction logic. Each invocation parses the JSON once; multiple indexed leaves may invoke it
+separately. Ordinary SQLite tools can read the original business tables, but must register the
+same function to read dependent views, rebuild indexes or execute writes that invoke these
+triggers. Keep the function's versioned semantics stable for released migration histories.
+
 After adding, changing or removing an index, generate and apply a
 [migration](docs/versioned-migrations.md). `check` detects declarations without corresponding
 migrations. Existing data is indexed during migration; later writes maintain indexes automatically.

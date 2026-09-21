@@ -148,6 +148,8 @@ public macro Default(_ value: OptionalNil) = #externalMacro(module: "SwiftStoreM
 
 
 /// Index String/String? fields, including nested Embedded properties, with local FTS5 storage.
+/// Arrays use `.each(\.items, fields: \.text, \.translation)`; `.each` can nest.
+/// Each String/String? leaf is a separate FTS column, concatenated in array order.
 /// Additional indexes on the same Entity need explicit names. Default tokenizer: unicode61.
 @freestanding(declaration)
 public macro FullTextIndex<T: EntityProtocol>(_ keyPaths: PartialKeyPath<T>..., name: String? = nil,

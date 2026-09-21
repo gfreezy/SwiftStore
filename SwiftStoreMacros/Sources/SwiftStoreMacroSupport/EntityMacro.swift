@@ -235,7 +235,8 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             let definitions = fullTextIndexes.map { index in
                 let fields = index.columns.map { field in
                     "FullTextColumn(name: \(String(reflecting: field.name)), column: \(String(reflecting: field.column))" +
-                    (field.jsonPath.map { ", jsonPath: \(String(reflecting: $0))" } ?? "") + ")"
+                    (field.jsonPath.map { ", jsonPath: \(String(reflecting: $0))" } ?? "") +
+                    (field.arrayPaths.map { ", arrayPaths: [" + $0.map { String(reflecting: $0) }.joined(separator: ", ") + "]" } ?? "") + ")"
                 }.joined(separator: ", ")
                 let keys = index.keyColumns.map { String(reflecting: $0) }.joined(separator: ", ")
                 return "FullTextIndexDefinition(name: \(String(reflecting: index.name)), columns: [\(fields)], keyColumns: [\(keys)], tokenizer: .\(index.tokenizer.rawValue))"
@@ -244,12 +245,10 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
             let markers = structDecl.memberBlock.members.compactMap { $0.decl.as(MacroExpansionDeclSyntax.self) }
                 .filter { $0.macroName.text == "FullTextIndex" }
             let arguments: [LabeledExprSyntax] = markers.flatMap { Array($0.arguments) }
-            let checks = arguments.filter { $0.label == nil }.map { argument -> String in
-                    let path = argument.expression.trimmedDescription
-                    let explicit = path.hasPrefix("\\.") ? "\\Self" + path.dropFirst() : path
-                    return "_validateFullTextColumn(\(explicit))"
-                }.joined(separator: "\n")
-            result.append("private static func __swiftstore_validateFullTextColumns() {\n\(raw: checks)\n}")
+            let checks = try arguments.filter { $0.label == nil }.map {
+                try FullTextMarkerParser.validation($0.expression)
+            }.joined(separator: "\n")
+            result.append("private static func __swiftstore_validateFullTextColumns() {\n_validateFullTextFields(Self.self) { root in\n\(raw: checks)\n}\n}")
         }
 
         // Note: Nested types (non-primitive Codable types) should conform to Embedded protocol

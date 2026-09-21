@@ -3,11 +3,15 @@ import Testing
 import SwiftStoreCore
 @testable import SwiftStoreChangeTracker
 
+@Embedded
+private struct FTSSyncedBlock { var text: String; var translation: String? }
+
 @Entity(tableName: "fts_synced_note")
 private struct FTSSyncedNote {
-    #FullTextIndex<Self>(\.text)
+    #FullTextIndex<Self>(\.text, .each(\.blocks, fields: \.text, \.translation))
     var id: UUIDV7 = UUIDV7()
     var text: String
+    var blocks: [FTSSyncedBlock] = []
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 }
@@ -30,7 +34,7 @@ struct FullTextSyncTests {
         try trackerB.start()
         // An unrelated local record makes the integer mappings different on device B.
         try FTSSyncedNote(text: "local only").insert(b)
-        var note = FTSSyncedNote(text: "shared searchable")
+        var note = FTSSyncedNote(text: "shared searchable", blocks: [.init(text: "arraybody", translation: "arraytranslation")])
         try note.insert(a)
         let logsA = try ChangeLog.all(trackerA.connection)
         #expect(logsA.count == 1)
@@ -45,12 +49,16 @@ struct FullTextSyncTests {
         #expect(idA != idB)
         #expect(try Query(FTSSyncedNote.self).search("shared").all(b).map(\.id) == [note.id])
         #expect(try ChangeLog.all(trackerB.connection).count == 1)
+        #expect(try Query(FTSSyncedNote.self).search("arraytranslation").count(b) == 1)
+        note.blocks = [.init(text: "replacementbody", translation: nil)]
         note.text = "updated remotely"
         try note.update(a)
         try b.withWriteSource(.remote) { try note.update(b) }
         #expect(try Query(FTSSyncedNote.self).search("shared").count(b) == 0)
         #expect(try Query(FTSSyncedNote.self).search("remotely").count(b) == 1)
         #expect(try b.queryScalar(idSQL, values: [.blob(note.id.data)], type: Int.self) == idB)
+        #expect(try Query(FTSSyncedNote.self).search("arraytranslation").count(b) == 0)
+        #expect(try Query(FTSSyncedNote.self).search("replacementbody").count(b) == 1)
         try b.withWriteSource(.remote) { try note.delete(b) }
         #expect(try Query(FTSSyncedNote.self).search("remotely").count(b) == 0)
         #expect(try b.queryScalar(idSQL, values: [.blob(note.id.data)], type: Int.self) == nil)
