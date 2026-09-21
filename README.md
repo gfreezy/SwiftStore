@@ -446,5 +446,5 @@ Upload counts confirmed local changelog events, including edits coalesced into o
 and changes resolved by a newer server version. Totals can grow when new edits arrive during sync.
 Download counts fetched records after local persistence succeeds; its total is unknown until
 CloudKit finishes fetching. Failures do not emit a successful completion. Progress is per sync
-cycle, and callers joining an in-flight cycle receive its current progress. Callbacks should only
+cycle. Only the caller starting a cycle receives progress; concurrent callers await its result. Callbacks should only
 report state; do not await another sync on the same connection from a callback.

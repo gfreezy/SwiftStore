@@ -19,7 +19,7 @@ actor CloudKitEngineTransport: CloudKitDriver {
     private var lastSavedState: Data?
     private var starting: Task<Void, Error>?
     private var active: Task<SyncResult, Error>?
-    private let progressObservers = SyncProgressObservers()
+    private var onProgress: SyncProgressHandler?
     private var uploadStart: Int64 = 0
     private var downloadedCount = 0
     private var scheduled: Task<Void, Never>?
@@ -39,26 +39,12 @@ actor CloudKitEngineTransport: CloudKitDriver {
 
     func sync(progress: SyncProgressHandler? = nil) async throws -> SyncResult {
         guard !stopped else { throw CancellationError() }
-        let observer = await progressObservers.add(progress, replay: active != nil)
-        do {
-            let result = try await syncCycle()
-            await progressObservers.remove(observer)
-            return result
-        } catch {
-            await progressObservers.remove(observer)
-            throw error
-        }
-    }
-
-    private func syncCycle() async throws -> SyncResult {
         if let active { return try await active.value }
+        onProgress = progress
         uploadBlocked = false
-        let task = Task {
-            await self.progressObservers.reset()
-            return try await self.runCycle()
-        }
+        let task = Task { try await self.runCycle() }
         active = task
-        defer { active = nil }
+        defer { active = nil; onProgress = nil }
         do { let result = try await task.value; lastError = nil; return result }
         catch { lastError = error; throw error }
     }
@@ -120,9 +106,9 @@ actor CloudKitEngineTransport: CloudKitDriver {
     }
 
     private func reportUpload(complete: Bool = false) async {
-        guard await progressObservers.hasObservers,
+        guard let onProgress,
               let value = try? await store.cloudUploadProgress(after: uploadStart, session: session) else { return }
-        await progressObservers.send(SyncProgress(direction: .upload, completedCount: value.completedCount,
+        await onProgress(SyncProgress(direction: .upload, completedCount: value.completedCount,
             totalCount: value.totalCount, isComplete: complete))
     }
 
@@ -140,12 +126,12 @@ actor CloudKitEngineTransport: CloudKitDriver {
         guard self.engine === engine else { throw lastError ?? CancellationError() }
         if let cycleFailure { throw cycleFailure }
         await reportUpload(complete: true)
-        await progressObservers.send(SyncProgress(direction: .download, completedCount: 0, totalCount: nil))
+        await onProgress?(SyncProgress(direction: .download, completedCount: 0, totalCount: nil))
         try await engine.fetchChanges()
         try Task.checkCancellation()
         guard self.engine === engine else { throw lastError ?? CancellationError() }
         if let cycleFailure { throw cycleFailure }
-        await progressObservers.send(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: downloadedCount, isComplete: true))
+        await onProgress?(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: downloadedCount, isComplete: true))
         return SyncResult(pulledCount: totals.applied - before.applied, pushedCount: totals.pushed - before.pushed,
             conflictCount: totals.conflicts - before.conflicts, state: try await store.cloudSyncState(session: session))
     }
@@ -222,7 +208,7 @@ actor CloudKitEngineTransport: CloudKitDriver {
                 // stateUpdate can safely include these downloaded records.
                 totals.applied += try await store.applyCloudRecords(records, checkpoint: nil, session: session)
                 downloadedCount += records.count
-                await progressObservers.send(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: nil))
+                await onProgress?(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: nil))
             case .sentRecordZoneChanges(let sent):
                 guard var current = work else { return }
                 var results: [CKRecord.ID: Result<CKRecord, Error>] = [:]

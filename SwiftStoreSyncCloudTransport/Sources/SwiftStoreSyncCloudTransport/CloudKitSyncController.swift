@@ -58,24 +58,3 @@ package actor CloudKitSyncController {
     deinit { accountObserver?.cancel() }
 }
 
-/// Keeps observers attached to a shared in-flight cycle. Callbacks should only report progress;
-/// they must not await another sync on the same connection.
-actor SyncProgressObservers {
-    private var handlers: [UUID: SyncProgressHandler] = [:]
-    private var latest: SyncProgress?
-    func add(_ handler: SyncProgressHandler?, replay: Bool) async -> UUID {
-        let id = UUID()
-        if let handler {
-            handlers[id] = handler
-            if replay, let latest { await handler(latest) }
-        }
-        return id
-    }
-    func remove(_ id: UUID) { handlers[id] = nil }
-    func reset() { latest = nil }
-    var hasObservers: Bool { !handlers.isEmpty }
-    func send(_ value: SyncProgress) async {
-        latest = value
-        for handler in Array(handlers.values) { await handler(value) }
-    }
-}
