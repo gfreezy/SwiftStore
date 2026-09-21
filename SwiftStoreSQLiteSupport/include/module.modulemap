@@ -1,0 +1,4 @@
+module SwiftStoreSQLiteSupport {
+    header "SwiftStoreSQLiteSupport.h"
+    export *
+}
