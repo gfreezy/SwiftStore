@@ -232,11 +232,20 @@ public struct EntityMacro: MemberMacro, ExtensionMacro {
         let fullTextIndexes = try FullTextMarkerParser.parse(from: structDecl.memberBlock.members,
             tableName: tableName, keyColumns: syncKeyColumns, properties: properties)
         if !fullTextIndexes.isEmpty {
-            let definitions = fullTextIndexes.map { index in
-                let fields = index.columns.map { field in
-                    "FullTextColumn(name: \(String(reflecting: field.name)), column: \(String(reflecting: field.column))" +
-                    (field.jsonPath.map { ", jsonPath: \(String(reflecting: $0))" } ?? "") +
-                    (field.arrayPaths.map { ", arrayPaths: [" + $0.map { String(reflecting: $0) }.joined(separator: ", ") + "]" } ?? "") + ")"
+            let definitions: String = fullTextIndexes.map { index -> String in
+                let fields: String = index.columns.map { field -> String in
+                    var arguments = [
+                        "name: \(String(reflecting: field.name))",
+                        "column: \(String(reflecting: field.column))"
+                    ]
+                    if let path = field.jsonPath {
+                        arguments.append("jsonPath: \(String(reflecting: path))")
+                    }
+                    if let paths = field.arrayPaths {
+                        let literals = paths.map { String(reflecting: $0) }.joined(separator: ", ")
+                        arguments.append("arrayPaths: [\(literals)]")
+                    }
+                    return "FullTextColumn(" + arguments.joined(separator: ", ") + ")"
                 }.joined(separator: ", ")
                 let keys = index.keyColumns.map { String(reflecting: $0) }.joined(separator: ", ")
                 return "FullTextIndexDefinition(name: \(String(reflecting: index.name)), columns: [\(fields)], keyColumns: [\(keys)], tokenizer: .\(index.tokenizer.rawValue))"
