@@ -356,12 +356,12 @@ open class ConnectionManager: @unchecked Sendable {
     /// Send a bounded changelog batch sequence, then fetch CloudKit changes.
     /// - Returns: Sync result with statistics
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
-    public func sync() async throws -> SyncResult {
+    public func sync(progress: SyncProgressHandler? = nil) async throws -> SyncResult {
         try await waitForMigration()
         guard let writer else {
             throw ConnectionManagerError.readonlyMode("Cannot sync in readonly mode.")
         }
-        return try await writer.sync()
+        return try await writer.sync(progress: progress)
     }
 
     /// Get current sync state
@@ -463,7 +463,7 @@ public actor WritableConnectionActor {
         await controller.localChangesAvailable()
     }
 
-    func sync() async throws -> SyncResult { automaticSyncStopped = false; return try await cloudController().sync() }
+    func sync(progress: SyncProgressHandler?) async throws -> SyncResult { automaticSyncStopped = false; return try await cloudController().sync(progress: progress) }
     var syncState: SyncState? { try? syncManager?.state() }
     var lastSyncError: Error? { get async { await controller?.lastError } }
 
@@ -508,6 +508,7 @@ extension WritableConnectionActor: CloudSyncStore {
         try await committedWriter(session).saveCheckpoint(checkpoint)
     }
     package func markCloudZoneCreated(session: UUID) async throws { try await committedWriter(session).markZoneCreated() }
+    package func cloudUploadProgress(after sequence: Int64, session: UUID) async throws -> SyncProgress { try await committedWriter(session).uploadProgress(after: sequence) }
     package func cloudSyncState(session: UUID) async throws -> SyncState { try await committedWriter(session).state() }
 }
 
@@ -536,5 +537,6 @@ private final class WeakCloudWriter: CloudSyncStore, @unchecked Sendable {
         try await owner().saveCloudCheckpoint(checkpoint, session: session)
     }
     func markCloudZoneCreated(session: UUID) async throws { try await owner().markCloudZoneCreated(session: session) }
+    func cloudUploadProgress(after sequence: Int64, session: UUID) async throws -> SyncProgress { try await owner().cloudUploadProgress(after: sequence, session: session) }
     func cloudSyncState(session: UUID) async throws -> SyncState { try await owner().cloudSyncState(session: session) }
 }

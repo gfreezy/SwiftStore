@@ -11,6 +11,9 @@ actor CloudKitOperationsTransport: CloudKitDriver {
     private let session: UUID
     private let batchSize: Int
     private var active: Task<SyncResult, Error>?
+    private let progressObservers = SyncProgressObservers()
+    private var uploadStart: Int64 = 0
+    private var downloadedCount = 0
     private var scheduled: Task<Void, Never>?
     private var stopped = false
     private var blocked = false
@@ -23,11 +26,26 @@ actor CloudKitOperationsTransport: CloudKitDriver {
         self.session = session; self.batchSize = batchSize
     }
 
-    func sync() async throws -> SyncResult {
+    func sync(progress: SyncProgressHandler? = nil) async throws -> SyncResult {
         guard !stopped else { throw CancellationError() }
+        let observer = await progressObservers.add(progress, replay: active != nil)
+        do {
+            let result = try await syncCycle()
+            await progressObservers.remove(observer)
+            return result
+        } catch {
+            await progressObservers.remove(observer)
+            throw error
+        }
+    }
+
+    private func syncCycle() async throws -> SyncResult {
         if let active { return try await active.value }
         blocked = false
-        let task = Task { try await self.runCycle() }
+        let task = Task {
+            await self.progressObservers.reset()
+            return try await self.runCycle()
+        }
         active = task
         defer { active = nil }
         do { let result = try await task.value; lastError = nil; return result }
@@ -82,6 +100,13 @@ actor CloudKitOperationsTransport: CloudKitDriver {
         try check()
     }
 
+    private func reportUpload(complete: Bool = false) async {
+        guard await progressObservers.hasObservers,
+              let value = try? await store.cloudUploadProgress(after: uploadStart, session: session) else { return }
+        await progressObservers.send(SyncProgress(direction: .upload, completedCount: value.completedCount,
+            totalCount: value.totalCount, isComplete: complete))
+    }
+
     private func runCycle() async throws -> SyncResult {
         try await NTPClient.requireAccurateTime(toleranceMs: settings.toleranceMs)
         let account = try await client.accountID()
@@ -90,6 +115,9 @@ actor CloudKitOperationsTransport: CloudKitDriver {
         try await client.prepareZone(create: !initial.didCreateZone)
         try await verifyAccount(account)
         if !initial.didCreateZone { try await store.markCloudZoneCreated(session: session) }
+        uploadStart = initial.state.pushCursor
+        downloadedCount = 0
+        await reportUpload()
         var pushed = 0, conflicts = 0, applied = 0
         while let batch = try await store.nextCloudBatch(limit: batchSize, session: session) {
             try check()
@@ -97,6 +125,7 @@ actor CloudKitOperationsTransport: CloudKitDriver {
             defer { work.cleanAssets() }
             var counts = try await store.commitCloudBatch(batch, decisions: Array(work.decisions.values), session: session)
             pushed += counts.pushed; conflicts += counts.conflicts; applied += counts.applied
+            await reportUpload()
             var conflictsInARow = 0
             while !work.isComplete && !counts.batchComplete {
                 try check()
@@ -108,6 +137,7 @@ actor CloudKitOperationsTransport: CloudKitDriver {
                 let failure = try work.receive(results)
                 counts = try await store.commitCloudBatch(batch, decisions: Array(work.decisions.values), session: session)
                 pushed += counts.pushed; conflicts += counts.conflicts; applied += counts.applied
+                await reportUpload()
                 if let failure { throw failure }
                 guard records.allSatisfy({ results[$0.recordID] != nil }) else {
                     throw CloudKitTransportError.encodingFailed("CloudKit omitted a per-record save result")
@@ -118,6 +148,8 @@ actor CloudKitOperationsTransport: CloudKitDriver {
                 }
             }
         }
+        await reportUpload(complete: true)
+        await progressObservers.send(SyncProgress(direction: .download, completedCount: 0, totalCount: nil))
         var token = initial.checkpoint.data
         var resetOnce = false
         while true {
@@ -139,6 +171,8 @@ actor CloudKitOperationsTransport: CloudKitDriver {
             }
             applied += try await store.applyCloudRecords(records,
                 checkpoint: CloudCheckpoint(driver: .operations, data: page.token), session: session)
+            downloadedCount += records.count
+            await progressObservers.send(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: page.moreComing ? nil : downloadedCount, isComplete: !page.moreComing))
             token = page.token
             if !page.moreComing { break }
         }

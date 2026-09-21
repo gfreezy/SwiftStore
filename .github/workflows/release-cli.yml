@@ -46,6 +46,9 @@ jobs:
           test "$(uname -m)" = arm64
           swift --version
 
+      - name: Verify CloudKit synchronization and progress
+        run: swift test --filter CloudKitDriversTests
+
       - name: Build release binary
         run: swift build -c release --product swiftstore
 

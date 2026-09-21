@@ -36,6 +36,16 @@ package final class SyncManager {
     }
     package func latestSequence() throws -> Int64 { try reader.latestSequence() }
     package func state() throws -> SyncState { try persistence.load() }
+    package func uploadProgress(after sequence: Int64) throws -> SyncProgress {
+        let cursor = try state().pushCursor
+        let excluded = localEntityNames.sorted()
+        let filter = excluded.isEmpty ? "" : " AND entity_type NOT IN (" + Array(repeating: "?", count: excluded.count).joined(separator: ",") + ")"
+        let values: [SQLiteValue] = [.integer(sequence)] + excluded.map { .text($0) }
+        let total: Int = try connection.queryScalar("SELECT COUNT(*) FROM __swiftstore_change_log WHERE seq > ?" + filter, values: values) ?? 0
+        let completed: Int = try connection.queryScalar("SELECT COUNT(*) FROM __swiftstore_change_log WHERE seq > ?" + filter + " AND seq <= ?", values: values + [.integer(cursor)]) ?? 0
+        return SyncProgress(direction: .upload, completedCount: completed, totalCount: total)
+    }
+
     package func abandonBatch() { activeBatch = nil; decisions = [:] }
 
     package func bind(accountID: String, scope: String, driver: CloudDriverKind) throws -> CloudStoreState {

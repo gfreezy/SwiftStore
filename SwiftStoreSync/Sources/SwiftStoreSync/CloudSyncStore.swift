@@ -110,5 +110,6 @@ package protocol CloudSyncStore: Sendable {
     func applyCloudRecords(_ records: [CloudRecord], checkpoint: CloudCheckpoint?, session: UUID) async throws -> Int
     func saveCloudCheckpoint(_ checkpoint: CloudCheckpoint, session: UUID) async throws
     func markCloudZoneCreated(session: UUID) async throws
+    func cloudUploadProgress(after sequence: Int64, session: UUID) async throws -> SyncProgress
     func cloudSyncState(session: UUID) async throws -> SyncState
 }

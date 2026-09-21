@@ -428,3 +428,23 @@ CloudKit driver tests use a simulated network service with real SQLite persisten
 ## License
 
 MIT
+
+### Synchronization progress
+
+`ConnectionManager.sync(progress:)` optionally reports upload and download progress:
+
+```swift
+let result = try await database.sync { progress in
+    await MainActor.run {
+        // progress.direction: .upload or .download
+        // progress.completedCount, progress.totalCount, progress.isComplete
+    }
+}
+```
+
+Upload counts confirmed local changelog events, including edits coalesced into one server record
+and changes resolved by a newer server version. Totals can grow when new edits arrive during sync.
+Download counts fetched records after local persistence succeeds; its total is unknown until
+CloudKit finishes fetching. Failures do not emit a successful completion. Progress is per sync
+cycle, and callers joining an in-flight cycle receive its current progress. Callbacks should only
+report state; do not await another sync on the same connection from a callback.

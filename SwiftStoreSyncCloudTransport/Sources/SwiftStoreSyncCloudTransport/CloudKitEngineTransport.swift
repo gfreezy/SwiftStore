@@ -19,6 +19,9 @@ actor CloudKitEngineTransport: CloudKitDriver {
     private var lastSavedState: Data?
     private var starting: Task<Void, Error>?
     private var active: Task<SyncResult, Error>?
+    private let progressObservers = SyncProgressObservers()
+    private var uploadStart: Int64 = 0
+    private var downloadedCount = 0
     private var scheduled: Task<Void, Never>?
     private var stopped = false
     private var cycleFailure: Error?
@@ -34,11 +37,26 @@ actor CloudKitEngineTransport: CloudKitDriver {
         self.session = session; self.batchSize = batchSize
     }
 
-    func sync() async throws -> SyncResult {
+    func sync(progress: SyncProgressHandler? = nil) async throws -> SyncResult {
         guard !stopped else { throw CancellationError() }
+        let observer = await progressObservers.add(progress, replay: active != nil)
+        do {
+            let result = try await syncCycle()
+            await progressObservers.remove(observer)
+            return result
+        } catch {
+            await progressObservers.remove(observer)
+            throw error
+        }
+    }
+
+    private func syncCycle() async throws -> SyncResult {
         if let active { return try await active.value }
         uploadBlocked = false
-        let task = Task { try await self.runCycle() }
+        let task = Task {
+            await self.progressObservers.reset()
+            return try await self.runCycle()
+        }
         active = task
         defer { active = nil }
         do { let result = try await task.value; lastError = nil; return result }
@@ -101,20 +119,33 @@ actor CloudKitEngineTransport: CloudKitDriver {
         if !zoneCreated { engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: config.zoneID))]) }
     }
 
+    private func reportUpload(complete: Bool = false) async {
+        guard await progressObservers.hasObservers,
+              let value = try? await store.cloudUploadProgress(after: uploadStart, session: session) else { return }
+        await progressObservers.send(SyncProgress(direction: .upload, completedCount: value.completedCount,
+            totalCount: value.totalCount, isComplete: complete))
+    }
+
     private func runCycle() async throws -> SyncResult {
         cycleFailure = nil
         let before = totals
         try await ensureStarted()
+        uploadStart = try await store.cloudSyncState(session: session).pushCursor
+        downloadedCount = 0
+        await reportUpload()
         try await stage()
         guard let engine else { throw lastError ?? CloudKitTransportError.notStarted }
         try await engine.sendChanges()
         try Task.checkCancellation()
         guard self.engine === engine else { throw lastError ?? CancellationError() }
         if let cycleFailure { throw cycleFailure }
+        await reportUpload(complete: true)
+        await progressObservers.send(SyncProgress(direction: .download, completedCount: 0, totalCount: nil))
         try await engine.fetchChanges()
         try Task.checkCancellation()
         guard self.engine === engine else { throw lastError ?? CancellationError() }
         if let cycleFailure { throw cycleFailure }
+        await progressObservers.send(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: downloadedCount, isComplete: true))
         return SyncResult(pulledCount: totals.applied - before.applied, pushedCount: totals.pushed - before.pushed,
             conflictCount: totals.conflicts - before.conflicts, state: try await store.cloudSyncState(session: session))
     }
@@ -190,6 +221,8 @@ actor CloudKitEngineTransport: CloudKitDriver {
                 // Await the writer commit before returning to the SDK. A following
                 // stateUpdate can safely include these downloaded records.
                 totals.applied += try await store.applyCloudRecords(records, checkpoint: nil, session: session)
+                downloadedCount += records.count
+                await progressObservers.send(SyncProgress(direction: .download, completedCount: downloadedCount, totalCount: nil))
             case .sentRecordZoneChanges(let sent):
                 guard var current = work else { return }
                 var results: [CKRecord.ID: Result<CKRecord, Error>] = [:]
@@ -208,6 +241,7 @@ actor CloudKitEngineTransport: CloudKitDriver {
                 work = current
                 let counts = try await store.commitCloudBatch(current.batch, decisions: Array(current.decisions.values), session: session)
                 add(counts)
+                await reportUpload()
                 if let failure {
                     cycleFailure = failure; lastError = failure
                     let code = (failure as? CKError)?.code

@@ -71,6 +71,7 @@ actor DriverStore: CloudSyncStore {
     }
     func saveCloudCheckpoint(_ checkpoint: CloudCheckpoint, session: UUID) throws { try manager.saveCheckpoint(checkpoint) }
     func markCloudZoneCreated(session: UUID) throws { try manager.markZoneCreated() }
+    func cloudUploadProgress(after sequence: Int64, session: UUID) throws -> SyncProgress { try manager.uploadProgress(after: sequence) }
     func cloudSyncState(session: UUID) throws -> SyncState { try manager.state() }
 }
 
@@ -154,6 +155,42 @@ struct CloudKitDriversTests {
             payload: delete ? nil : String(decoding: try JSONEncoder().encode(note), as: UTF8.self), deviceId: UUIDV7(),
             logicalClock: 0, createdAt: note.updatedAt)
         return try change.makeCKRecord(zoneID: zone, recordType: "Change", assetThreshold: 700_000)
+    }
+
+    @Test("Progress counts coalesced changes and resets for the next cycle")
+    func syncProgress() async throws {
+        try await accurateTime {
+            let service = CloudServiceFixture(), store = try DriverStore()
+            let transport = driver(store, service)
+            let note = try await store.insert("first")
+            try await store.edit(note, title: "second", time: 20_000)
+            let events = ProgressEvents()
+            _ = try await transport.sync(progress: { await events.append($0) })
+            let values = await events.values
+            #expect(values.first == SyncProgress(direction: .upload, completedCount: 0, totalCount: 2))
+            #expect(values.contains(SyncProgress(direction: .upload, completedCount: 2, totalCount: 2, isComplete: true)))
+            #expect(values.contains(SyncProgress(direction: .download, completedCount: 0, totalCount: nil)))
+            #expect(values.last == SyncProgress(direction: .download, completedCount: 1, totalCount: 1, isComplete: true))
+            let next = ProgressEvents()
+            _ = try await transport.sync(progress: { await next.append($0) })
+            #expect(await next.values.first == SyncProgress(direction: .upload, completedCount: 0, totalCount: 0))
+            #expect(await next.values.last == SyncProgress(direction: .download, completedCount: 0, totalCount: 0, isComplete: true))
+        }
+    }
+
+    @Test("Failed uploads never report completion")
+    func failedSyncProgress() async throws {
+        try await accurateTime {
+            let service = CloudServiceFixture(), store = try DriverStore()
+            _ = try await store.insert("first")
+            await service.loseNextResponse()
+            let events = ProgressEvents()
+            do {
+                _ = try await driver(store, service).sync(progress: { await events.append($0) })
+                Issue.record("Expected the lost response to fail sync")
+            } catch {}
+            #expect(await events.values.allSatisfy { $0.direction == .upload && $0.completedCount == 0 && !$0.isComplete })
+        }
     }
 
     @Test("Two clients converge after offline edits, ties and deletion without upload echoes")
@@ -316,4 +353,9 @@ struct CloudKitDriversTests {
             await driver.stop()
         }
     }
+}
+
+private actor ProgressEvents {
+    var values: [SyncProgress] = []
+    func append(_ value: SyncProgress) { values.append(value) }
 }
