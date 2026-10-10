@@ -259,7 +259,9 @@ actor CloudKitEngineTransport: CloudKitDriver {
             lastError = error; cycleFailure = error
             self.engine = nil; delegate.transport = nil
             let oldWork = work; work = nil
-            Task {
+            // CKSyncEngine marks delegate callbacks with task-local state.
+            // An ordinary Task inherits it and cancelOperations then traps.
+            Task.detached {
                 await engine.cancelOperations()
                 oldWork?.cleanAssets()
             }
