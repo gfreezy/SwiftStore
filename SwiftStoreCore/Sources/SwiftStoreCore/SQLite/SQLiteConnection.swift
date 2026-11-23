@@ -122,6 +122,7 @@ public final class SQLiteConnection {
         guard result == SQLITE_OK else {
             let message = String(cString: sqlite3_errmsg(db))
             sqlite3_close(db)
+            db = nil
             throw StoreError.queryFailed("Failed to open database: \(message)")
         }
 

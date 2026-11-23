@@ -5,12 +5,23 @@ import SwiftStoreConnectionQueue
 
 private final class AdditionalSetupManager: ConnectionManager, @unchecked Sendable {
     private let lock = NSLock()
-    private var finished = false
-    var setupFinished: Bool { lock.withLock { finished } }
+    private var completedSetups = 0
+    private let setupStarted = AsyncStream<Void>.makeStream()
+    var setupCount: Int { lock.withLock { completedSetups } }
+
+    func waitForSetupStart() async -> Bool {
+        var events = setupStarted.stream.makeAsyncIterator()
+        return await events.next() != nil
+    }
+
+    func finishSetupObservation() {
+        setupStarted.continuation.finish()
+    }
 
     override func performAdditionalSetup() async throws {
+        setupStarted.continuation.yield(())
         try await Task.sleep(for: .milliseconds(30))
-        lock.withLock { finished = true }
+        lock.withLock { completedSetups += 1 }
     }
 }
 
@@ -84,9 +95,9 @@ struct VersionedConnectionTests {
             entities: [ConnectionSyncNote.self], migrations: history())
         async let first: Void = manager.waitForMigration()
         async let second: Void = manager.waitForMigration()
-        async let read: Bool = manager.read { _ in manager.setupFinished }
+        async let read: Bool = manager.read { _ in manager.setupCount == 1 }
         _ = try await (first, second)
-        #expect(manager.setupFinished)
+        #expect(manager.setupCount == 1)
         #expect(try await read)
         try await manager.waitForMigration()
     }
@@ -101,6 +112,46 @@ struct VersionedConnectionTests {
         #expect(try await manager.read { try $0.tableExists("connection_sync_note") })
     }
 
+    @Test("Access before manual migration starts fails without preventing setup")
+    func manualSetupNotStarted() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self])
+
+        await #expect(throws: ConnectionManagerError.self) { try await manager.waitForMigration() }
+        await #expect(throws: ConnectionManagerError.self) { try await manager.read { _ in } }
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+
+        let migrations = history()
+        #expect(try await manager.previewMigrations(migrations) == ["001"])
+        await #expect(throws: ConnectionManagerError.self) { try await manager.waitForMigration() }
+        try await manager.migrate(migrations: migrations)
+        #expect(try await manager.read { try $0.tableExists("connection_sync_note") })
+    }
+
+    @Test("Concurrent manual migration calls and reads share one setup task")
+    func concurrentManualSetup() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try AdditionalSetupManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self])
+        let migrations = history()
+
+        async let first: Void = {
+            defer { manager.finishSetupObservation() }
+            try await manager.migrate(migrations: migrations)
+        }()
+        try #require(await manager.waitForSetupStart())
+        async let second: Void = manager.migrate(migrations: migrations)
+        async let read: Int = manager.read { _ in manager.setupCount }
+        #expect(try await read == 1)
+        _ = try await (first, second)
+
+        try await manager.waitForMigration()
+        #expect(manager.setupCount == 1)
+    }
+
     @Test("Preview can be followed by migration and normal read/write")
     func previewAndApply() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -112,6 +163,26 @@ struct VersionedConnectionTests {
         try await manager.write { try $0.insert(ConnectionSyncNote(title: "ready")) }
         #expect(try await manager.read { try $0.queryScalar("SELECT COUNT(*) FROM connection_sync_note", type: Int.self) } == 1)
         #expect(try await manager.previewMigrations(history()).isEmpty)
+    }
+
+    @Test("Manual migration can retry a failed writer open")
+    func retryWriterOpen() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = directory.appendingPathComponent("store.sqlite")
+        let migrations = history()
+        let manager = try ConnectionManager(path: database.path, entities: [ConnectionSyncNote.self])
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+
+        try FileManager.default.createDirectory(at: database, withIntermediateDirectories: true)
+        await #expect(throws: StoreError.self) { try await manager.previewMigrations(migrations) }
+        await #expect(throws: StoreError.self) { try await manager.migrate(migrations: migrations) }
+
+        try FileManager.default.removeItem(at: database)
+        try await manager.migrate(migrations: migrations)
+        let writer = try await manager.write { ObjectIdentifier($0) }
+        #expect(try await manager.write { ObjectIdentifier($0) } == writer)
+        #expect(try await manager.read { try $0.tableExists("connection_sync_note") })
     }
 
     @Test("A local store maintains updated_at without enabling sync")

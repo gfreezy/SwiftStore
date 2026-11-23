@@ -222,7 +222,9 @@ let manager = try ConnectionManager(
 )
 ```
 
-`ConnectionManager` with `migrations:` starts migration automatically from its synchronous initializer. Reads, writes and sync wait for migration, tracking initialization, and `performAdditionalSetup()`. Optionally call `try await manager.waitForMigration()` to await the same completion explicitly. Migration/setup errors propagate to these waiting operations; `init` throws only synchronous opening/configuration errors. Failed migration SQL rolls back as usual. Concurrent and repeated waits share the same completion result. Automatic migration has no fixed setup timeout, so large migrations can finish. Readonly mode cannot use this initializer. The optional `adoptingBaseline:` argument has the same behavior as on `migrate`. To preview first, keep using the initializer without `migrations:`, then call `previewMigrations` and `migrate` separately.
+`ConnectionManager` with `migrations:` starts migration automatically from its synchronous initializer. Reads, writes, sync, and `waitForMigration()` await the same setup task, which includes change tracking initialization and both `performAdditionalSetup` hooks. The initializer validates configuration; errors opening the database or running setup propagate to callers awaiting the task. Failed migration SQL rolls back as usual. There is no fixed setup timeout. Readonly mode cannot use this initializer and skips setup. The optional `adoptingBaseline:` argument has the same behavior as on `migrate`.
+
+To preview first, use the initializer without `migrations:` and call `previewMigrations` followed by `migrate`. Until the manual setup task starts, attempts to access the writable database through `read`, `write`, `sync`, or `waitForMigration()` immediately throw `ConnectionManagerError.invalidConfiguration`. This does not prevent a subsequent `migrate` call.
 
 For direct connections:
 

@@ -43,6 +43,13 @@ public struct SyncOptions: Sendable {
         self.deviceId = deviceId; self.schemaVersion = schemaVersion; self.cloudKit = cloudKit
         self.syncConfiguration = syncConfiguration
     }
+
+    fileprivate func validateLimits() throws {
+        guard (1...200).contains(syncConfiguration.batchSize), cloudKit.ntpToleranceMs > 0,
+              cloudKit.assetThreshold > 0 else {
+            throw ConnectionManagerError.invalidConfiguration("Invalid CloudKit sync limits")
+        }
+    }
 }
 
 /// Connection options for ConnectionManager
@@ -53,7 +60,7 @@ public struct ConnectionOptions: Sendable {
     public var synchronous: Int
     /// Cache size in KB (negative value means KB, positive means pages)
     public var cacheSize: Int
-    /// Maximum number of read connections in the pool
+    /// Maximum number of read connections in the pool; must be at least one.
     public var maxReadConnections: Int
 
     public init(
@@ -80,28 +87,18 @@ public struct ConnectionOptions: Sendable {
     }
 }
 
-/// Manages database connections with a single writer and multiple readers.
+/// Opens database connections on demand, with a single writer and a bounded pool of readers.
 /// This ensures thread-safety and optimal performance using SQLite's WAL mode.
-/// Thread safety is handled by the internal actor instances.
 open class ConnectionManager: @unchecked Sendable {
     public let path: String
     public let options: ConnectionOptions
-    // Configured only during initialization, before the manager escapes to callers.
-    private var setupSignal = AsyncSignal(timeout: .seconds(10))
-    private let migrationStarted = Lock<Bool>(false)
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
     private let cloudSubscriptionID: String?
+    private let pool: ConnectionPool
+    private let setupTask = Mutex<Task<Void, Error>?>(nil)
 
-    private let writer: WritableConnectionActor?
-    private let readers: [ReaderEntry]
-
-    private struct ReaderEntry: Sendable {
-        let actor: ConnectionActor
-        let isInUse: Mutex<Bool>
-    }
-
-    /// Initialize with database path and options
+    /// Validate configuration without opening the database.
     /// - Parameters:
     ///   - path: Path to the database file
     ///   - entities: Entity types to manage
@@ -113,6 +110,10 @@ open class ConnectionManager: @unchecked Sendable {
         options: ConnectionOptions = .init(),
         syncConfig: SyncOptions? = nil
     ) throws {
+        guard options.maxReadConnections > 0 else {
+            throw ConnectionManagerError.invalidConfiguration("maxReadConnections must be at least one.")
+        }
+
         // Validate: readonly mode cannot be used with sync
         if options.readonly && syncConfig != nil {
             throw ConnectionManagerError.invalidConfiguration(
@@ -135,49 +136,13 @@ open class ConnectionManager: @unchecked Sendable {
                 "Readonly entities can only be used with readonly connection. Readonly entities found: \(names)")
         }
 
+        try syncConfig?.validateLimits()
         self.path = path
         self.options = options
         self.entities = entities
         self.syncEnabled = syncConfig != nil
         self.cloudSubscriptionID = syncConfig?.cloudKit.subscriptionID
-
-        // Compute WAL mode: enabled when not readonly or when sync is enabled
-        // WAL provides better concurrent read performance even in write mode
-        let walMode = !options.readonly
-
-        // Ensure directory exists for main database
-        let directoryPath = (path as NSString).deletingLastPathComponent
-        if !directoryPath.isEmpty {
-            try FileManager.default.createDirectory(
-                atPath: directoryPath,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-        }
-
-        // Create writer connection only if not readonly
-        if options.readonly {
-            self.writer = nil
-        } else {
-            var writeOptions = options.toSQLiteOptions(walMode: walMode)
-            // Sync acknowledgement durability must include the business write and its log.
-            if syncConfig != nil { writeOptions.synchronous = 2 }
-            let writerConn = try SQLiteConnection(path: path, options: writeOptions)
-            self.writer = try WritableConnectionActor(connection: writerConn, entities: entities, syncConfig: syncConfig)
-        }
-
-        // Create reader connections
-        var readerEntries: [ReaderEntry] = []
-        let readOptions = options.toSQLiteOptions(walMode: walMode)
-        for _ in 0..<options.maxReadConnections {
-            let conn = try SQLiteConnection(path: path, options: readOptions)
-            readerEntries.append(
-                ReaderEntry(
-                    actor: ConnectionActor(connection: conn),
-                    isInUse: Mutex<Bool>(false)
-                ))
-        }
-        self.readers = readerEntries
+        self.pool = ConnectionPool(path: path, options: options, entities: entities, syncConfig: syncConfig)
     }
 
     /// Initialize synchronously and automatically start applying committed migrations.
@@ -196,13 +161,11 @@ open class ConnectionManager: @unchecked Sendable {
             throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
         }
         try self.init(path: path, entities: entities, options: options, syncConfig: syncConfig)
-        // Automatic setup is already scheduled, so the missing-migrate watchdog is unnecessary.
-        // Large migrations must not permanently fail waiting callers after ten seconds.
-        setupSignal = AsyncSignal()
-        migrationStarted.withLock { $0 = true }
-        Task {
-            do { try await applyMigrations(migrations, adoptingBaseline: baselineID) }
-            catch { /* applyMigrations records the failure in setupSignal for all callers. */ }
+        setupTask.withLock { task in
+            task = Task {
+                let writer = try pool.openWriter()
+                try await applyMigrations(migrations, adoptingBaseline: baselineID, using: writer)
+            }
         }
     }
 
@@ -211,56 +174,46 @@ open class ConnectionManager: @unchecked Sendable {
     /// Supply adoptingBaseline to adopt a later version instead; fresh databases run all steps.
     /// Use previewMigrations for a read-only preview; preview does not complete setup.
     public func migrate(migrations: [StoreMigration], adoptingBaseline baselineID: String? = nil) async throws {
-        guard !options.readonly else {
-            throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
+        let task = try setupTask.withLock { task -> Task<Void, Error> in
+            if let task { return task }
+            let writer = try pool.openWriter(readonlyMessage: "Cannot migrate in readonly mode.")
+            let started = Task { try await applyMigrations(migrations, adoptingBaseline: baselineID, using: writer) }
+            task = started
+            return started
         }
-        let shouldRun = migrationStarted.withLock { started -> Bool in
-            if started { return false }
-            started = true
-            return true
-        }
-        guard shouldRun else {
-            try await setupSignal.wait()
-            return
-        }
-        try await applyMigrations(migrations, adoptingBaseline: baselineID)
+        try await task.value
     }
 
-    private func applyMigrations(_ migrations: [StoreMigration], adoptingBaseline baselineID: String?) async throws {
-        do {
-            try await _write { connection in
-                let expected = SchemaSnapshot(entities: self.entities)
-                guard migrations.last?.target == expected else {
-                    throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities")
-                }
-                let runner = VersionedMigrator(connection: connection, migrations: migrations)
-                if let baselineID = baselineID ?? migrations.first?.id {
-                    guard migrations.contains(where: { $0.id == baselineID }) else {
-                        throw VersionedMigrationError.invalidHistory("Unknown baseline ID: \(baselineID)")
-                    }
-                    do {
-                        _ = try runner.pendingMigrationIDs()
-                    } catch VersionedMigrationError.baselineRequired {
-                        try runner.adoptBaseline(through: baselineID)
-                    }
-                }
-                try runner.migrate()
+    private func applyMigrations(_ migrations: [StoreMigration], adoptingBaseline baselineID: String?,
+                                 using writer: WritableConnectionActor) async throws {
+        try await writer.run { connection in
+            let expected = SchemaSnapshot(entities: self.entities)
+            guard migrations.last?.target == expected else {
+                throw VersionedMigrationError.invalidHistory("Latest migration does not match registered entities")
             }
-            try await writer?.startTracking()
-            try await _write { connection in
-                try self.performAdditionalSetup(connection: connection)
+            let runner = VersionedMigrator(connection: connection, migrations: migrations)
+            if let baselineID = baselineID ?? migrations.first?.id {
+                guard migrations.contains(where: { $0.id == baselineID }) else {
+                    throw VersionedMigrationError.invalidHistory("Unknown baseline ID: \(baselineID)")
+                }
+                do {
+                    _ = try runner.pendingMigrationIDs()
+                } catch VersionedMigrationError.baselineRequired {
+                    try runner.adoptBaseline(through: baselineID)
+                }
             }
-            try await performAdditionalSetup()
-            await setupSignal.signal()
-        } catch {
-            await setupSignal.signal(result: .failure(error))
-            throw error
+            try runner.migrate()
         }
+        try await writer.startTracking()
+        try await writer.run { connection in
+            try self.performAdditionalSetup(connection: connection)
+        }
+        try await performAdditionalSetup()
     }
 
     /// Does not execute migration bodies, write history, or release the setup gate.
     public func previewMigrations(_ migrations: [StoreMigration]) async throws -> [String] {
-        try await _write({ connection in
+        try await pool.openWriter().run({ connection in
             try VersionedMigrator(connection: connection, migrations: migrations).pendingMigrationIDs()
         }, transaction: false)
     }
@@ -283,21 +236,17 @@ open class ConnectionManager: @unchecked Sendable {
     }
 
     /// Optionally wait for migrations, sync tracking and additional setup to complete.
+    /// Readonly managers do not require setup.
     /// read, write and sync already wait automatically. Repeated and concurrent calls share
     /// the same result. Migration/setup failures are thrown to all current and future callers.
+    /// Throws `ConnectionManagerError.invalidConfiguration` if writable setup has not started.
     public func waitForMigration() async throws {
-        try await setupSignal.wait()
-    }
-
-    /// Internal write that bypasses waitForMigration (used by migrate to avoid deadlock)
-    private func _write<T: Sendable>(
-        isolation: isolated (any Actor)? = #isolation,
-        _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
-    ) async throws -> T {
-        guard let writer else {
-            throw ConnectionManagerError.readonlyMode("Cannot write in readonly mode.")
+        guard !options.readonly else { return }
+        guard let task = setupTask.value() else {
+            throw ConnectionManagerError.invalidConfiguration(
+                "Migration has not started. Pass migrations at initialization or call migrate(migrations:) first.")
         }
-        return try await writer.run(block, transaction: transaction)
+        try await task.value
     }
 
     /// Execute a block with the write connection.
@@ -308,39 +257,18 @@ open class ConnectionManager: @unchecked Sendable {
         _ block: @Sendable (SQLiteConnection) throws -> T, transaction: Bool = true
     ) async throws -> T {
         try await waitForMigration()
-        return try await _write(block, transaction: transaction)
+        return try await pool.openWriter().run(block, transaction: transaction)
     }
 
     /// Execute a block with one of the read connections.
     /// Multiple read operations can happen concurrently.
-    /// Uses a pool pattern to find an available reader.
+    /// Reuses an idle reader, grows the pool up to its limit, or queues behind a busy reader.
     public func read<T: Sendable>(
         isolation: isolated (any Actor)? = #isolation,
         _ block: @Sendable (SQLiteConnection) throws -> T
     ) async throws -> T {
         try await waitForMigration()
-        // Try to find a reader that is not in use
-        for reader in readers {
-            let found = reader.isInUse.withLock { isInUse in
-                if !isInUse {
-                    isInUse = true
-                    return true
-                }
-                return false
-            }
-
-            if found {
-                defer { reader.isInUse.withLock { $0 = false } }
-                return try await reader.actor.run(block)
-            }
-        }
-
-        // Fallback: if all are in use, pick one and wait (using round-robin-ish behavior via actor serialization)
-        // This ensures we always provide a connection even if under heavy load.
-        let randomReader = readers.randomElement()!
-        randomReader.isInUse.withLock { $0 = true }
-        defer { randomReader.isInUse.withLock { $0 = false } }
-        return try await randomReader.actor.run(block)
+        return try await pool.read(block)
     }
 
     // MARK: - Sync Convenience Methods
@@ -360,16 +288,13 @@ open class ConnectionManager: @unchecked Sendable {
     /// - Throws: `ConnectionManagerError.readonlyMode` if in readonly mode
     public func sync(progress: SyncProgressHandler? = nil) async throws -> SyncResult {
         try await waitForMigration()
-        guard let writer else {
-            throw ConnectionManagerError.readonlyMode("Cannot sync in readonly mode.")
-        }
-        return try await writer.sync(progress: progress)
+        return try await pool.openWriter(readonlyMessage: "Cannot sync in readonly mode.").sync(progress: progress)
     }
 
     /// Get current sync state
     public var syncState: SyncState? {
         get async {
-            await writer?.syncState
+            await pool.cachedWriter?.syncState
         }
     }
 
@@ -377,30 +302,17 @@ open class ConnectionManager: @unchecked Sendable {
     @discardableResult
     public func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) -> Bool {
         guard let id = CKNotification(fromRemoteNotificationDictionary: userInfo)?.subscriptionID,
-              id == cloudSubscriptionID, let writer else { return false }
+              id == cloudSubscriptionID, let writer = pool.cachedWriter else { return false }
         // Parse the non-Sendable UIKit dictionary on the caller's executor.
         Task { [weak writer] in _ = await writer?.handleCloudNotification(id) }
         return true
     }
 
-    public var lastSyncError: Error? { get async { await writer?.lastSyncError } }
+    public var lastSyncError: Error? { get async { await pool.cachedWriter?.lastSyncError } }
 
     /// Suspend automatic syncing while continuing to track local writes.
     public func stopSync() async {
-        await writer?.stopSync()
-    }
-}
-
-/// Internal actor to serialize access to a single SQLite connection (read-only)
-actor ConnectionActor {
-    let connection: SQLiteConnection
-
-    init(connection: SQLiteConnection) {
-        self.connection = connection
-    }
-
-    func run<T>(_ block: @Sendable (SQLiteConnection) throws -> T) throws -> T {
-        try block(connection)
+        await pool.stopSync()
     }
 }
 
@@ -412,16 +324,17 @@ public actor WritableConnectionActor {
     private var controller: CloudKitSyncController?
     private var session = UUID()
     private var trackingReady = false
-    private var automaticSyncStopped = false
+    private var automaticSyncStopped: Bool
     private var lastSignaledSequence: Int64 = 0
     package var cloudSessionID: UUID { session }
     private var transactionWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(connection: SQLiteConnection, entities: [any EntityProtocol.Type], syncConfig: SyncOptions?) throws {
+    init(connection: SQLiteConnection, entities: [any EntityProtocol.Type], syncConfig: SyncOptions?,
+         automaticSyncStopped: Bool = false) throws {
         self.connection = connection; syncOptions = syncConfig
+        self.automaticSyncStopped = automaticSyncStopped
         if let config = syncConfig {
-            guard (1...200).contains(config.syncConfiguration.batchSize), config.cloudKit.ntpToleranceMs > 0,
-                  config.cloudKit.assetThreshold > 0 else { throw ConnectionManagerError.invalidConfiguration("Invalid CloudKit sync limits") }
+            try config.validateLimits()
             syncManager = try SyncManager(connection: connection, deviceID: config.deviceId, entities: entities,
                 schemaVersion: config.schemaVersion)
         } else { syncManager = nil }
