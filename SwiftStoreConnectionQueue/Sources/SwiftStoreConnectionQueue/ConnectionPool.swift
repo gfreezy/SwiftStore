@@ -38,6 +38,19 @@ final class ConnectionPool: Sendable {
     }
 
     func openWriter(readonlyMessage: String = "Cannot write in readonly mode.") throws -> WritableConnectionActor {
+        do {
+            return try openWriterForSetup(readonlyMessage: readonlyMessage)
+        } catch let failure as DatabaseOpenFailure {
+            throw failure.underlying
+        }
+    }
+
+    /// Only directory creation and opening the SQLite connection are retryable during deferred setup.
+    struct DatabaseOpenFailure: Error {
+        let underlying: any Error
+    }
+
+    func openWriterForSetup(readonlyMessage: String = "Cannot write in readonly mode.") throws -> WritableConnectionActor {
         guard !options.readonly else {
             throw ConnectionManagerError.readonlyMode(readonlyMessage)
         }
@@ -47,15 +60,19 @@ final class ConnectionPool: Sendable {
             case .open(let writer):
                 return writer
             case .unopened(let syncStopped):
-                let directoryPath = (path as NSString).deletingLastPathComponent
-                if !directoryPath.isEmpty {
-                    try FileManager.default.createDirectory(atPath: directoryPath, withIntermediateDirectories: true)
+                let connection: SQLiteConnection
+                do {
+                    let directoryPath = (path as NSString).deletingLastPathComponent
+                    if !directoryPath.isEmpty {
+                        try FileManager.default.createDirectory(atPath: directoryPath, withIntermediateDirectories: true)
+                    }
+                    var writeOptions = options.toSQLiteOptions(walMode: true)
+                    // Sync acknowledgement durability must include the business write and its log.
+                    if syncConfig != nil { writeOptions.synchronous = 2 }
+                    connection = try SQLiteConnection(path: path, options: writeOptions)
+                } catch {
+                    throw DatabaseOpenFailure(underlying: error)
                 }
-
-                var writeOptions = options.toSQLiteOptions(walMode: true)
-                // Sync acknowledgement durability must include the business write and its log.
-                if syncConfig != nil { writeOptions.synchronous = 2 }
-                let connection = try SQLiteConnection(path: path, options: writeOptions)
                 let writer = try WritableConnectionActor(connection: connection, entities: entities,
                     syncConfig: syncConfig, automaticSyncStopped: syncStopped)
                 state.writer = .open(writer)

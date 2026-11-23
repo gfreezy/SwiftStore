@@ -90,13 +90,26 @@ public struct ConnectionOptions: Sendable {
 /// Opens database connections on demand, with a single writer and a bounded pool of readers.
 /// This ensures thread-safety and optimal performance using SQLite's WAL mode.
 open class ConnectionManager: @unchecked Sendable {
+    public enum Initialization: Sendable {
+        /// Start opening the writer and running setup from the initializer.
+        case immediate
+        /// Start setup on first access. A failed database open can be retried on the next access.
+        case onFirstUse
+    }
+
+    private enum SetupState {
+        case manual
+        case onFirstUse([StoreMigration], baselineID: String?)
+        case started(Task<Void, Error>)
+    }
+
     public let path: String
     public let options: ConnectionOptions
     public let entities: [any EntityProtocol.Type]
     public let syncEnabled: Bool
     private let cloudSubscriptionID: String?
     private let pool: ConnectionPool
-    private let setupTask = Mutex<Task<Void, Error>?>(nil)
+    private let setup = Mutex<SetupState>(.manual)
 
     /// Validate configuration without opening the database.
     /// - Parameters:
@@ -157,15 +170,50 @@ open class ConnectionManager: @unchecked Sendable {
         syncConfig: SyncOptions? = nil,
         adoptingBaseline baselineID: String? = nil
     ) throws {
+        try self.init(path: path, entities: entities, migrations: migrations, options: options,
+                      syncConfig: syncConfig, adoptingBaseline: baselineID, initialization: .immediate)
+    }
+
+    /// Choose when to open the database and apply the supplied migration history.
+    /// With `.onFirstUse`, read, write, sync or waitForMigration starts one shared attempt.
+    /// After the writer opens, migration and additional setup failures remain cached.
+    public convenience init(
+        path: String,
+        entities: [any EntityProtocol.Type],
+        migrations: [StoreMigration],
+        options: ConnectionOptions = .init(),
+        syncConfig: SyncOptions? = nil,
+        adoptingBaseline baselineID: String? = nil,
+        initialization: Initialization
+    ) throws {
         guard !options.readonly else {
             throw ConnectionManagerError.readonlyMode("Cannot migrate in readonly mode.")
         }
         try self.init(path: path, entities: entities, options: options, syncConfig: syncConfig)
-        setupTask.withLock { task in
-            task = Task {
-                let writer = try pool.openWriter()
-                try await applyMigrations(migrations, adoptingBaseline: baselineID, using: writer)
+        setup.withLock { state in
+            switch initialization {
+            case .immediate:
+                state = .started(startSetup(migrations, baselineID: baselineID, initialization: .immediate))
+            case .onFirstUse:
+                state = .onFirstUse(migrations, baselineID: baselineID)
             }
+        }
+    }
+
+    private func startSetup(_ migrations: [StoreMigration], baselineID: String?,
+                            initialization: Initialization) -> Task<Void, Error> {
+        Task {
+            let writer: WritableConnectionActor
+            do {
+                writer = try pool.openWriterForSetup()
+            } catch let failure as ConnectionPool.DatabaseOpenFailure {
+                if initialization == .onFirstUse {
+                    // Only the task that encountered the open failure can rearm setup.
+                    setup.withLock { $0 = .onFirstUse(migrations, baselineID: baselineID) }
+                }
+                throw failure.underlying
+            }
+            try await applyMigrations(migrations, adoptingBaseline: baselineID, using: writer)
         }
     }
 
@@ -174,14 +222,29 @@ open class ConnectionManager: @unchecked Sendable {
     /// Supply adoptingBaseline to adopt a later version instead; fresh databases run all steps.
     /// Use previewMigrations for a read-only preview; preview does not complete setup.
     public func migrate(migrations: [StoreMigration], adoptingBaseline baselineID: String? = nil) async throws {
-        let task = try setupTask.withLock { task -> Task<Void, Error> in
-            if let task { return task }
-            let writer = try pool.openWriter(readonlyMessage: "Cannot migrate in readonly mode.")
-            let started = Task { try await applyMigrations(migrations, adoptingBaseline: baselineID, using: writer) }
-            task = started
-            return started
+        try await migrationTask(manualMigrations: migrations, baselineID: baselineID).value
+    }
+
+    private func migrationTask(manualMigrations: [StoreMigration]? = nil,
+                               baselineID: String? = nil) throws -> Task<Void, Error> {
+        try setup.withLock { state in
+            let task: Task<Void, Error>
+            switch state {
+            case .started(let started):
+                return started
+            case .onFirstUse(let migrations, let configuredBaseline):
+                task = startSetup(migrations, baselineID: configuredBaseline, initialization: .onFirstUse)
+            case .manual:
+                guard let manualMigrations else {
+                    throw ConnectionManagerError.invalidConfiguration(
+                        "Migration has not started. Pass migrations at initialization or call migrate(migrations:) first.")
+                }
+                let writer = try pool.openWriter(readonlyMessage: "Cannot migrate in readonly mode.")
+                task = Task { try await applyMigrations(manualMigrations, adoptingBaseline: baselineID, using: writer) }
+            }
+            state = .started(task)
+            return task
         }
-        try await task.value
     }
 
     private func applyMigrations(_ migrations: [StoreMigration], adoptingBaseline baselineID: String?,
@@ -239,14 +302,10 @@ open class ConnectionManager: @unchecked Sendable {
     /// Readonly managers do not require setup.
     /// read, write and sync already wait automatically. Repeated and concurrent calls share
     /// the same result. Migration/setup failures are thrown to all current and future callers.
-    /// Throws `ConnectionManagerError.invalidConfiguration` if writable setup has not started.
+    /// Starts deferred setup. In manual mode, throws if migrate has not been called.
     public func waitForMigration() async throws {
         guard !options.readonly else { return }
-        guard let task = setupTask.value() else {
-            throw ConnectionManagerError.invalidConfiguration(
-                "Migration has not started. Pass migrations at initialization or call migrate(migrations:) first.")
-        }
-        try await task.value
+        try await migrationTask().value
     }
 
     /// Execute a block with the write connection.

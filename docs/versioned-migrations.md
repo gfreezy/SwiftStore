@@ -222,7 +222,9 @@ let manager = try ConnectionManager(
 )
 ```
 
-`ConnectionManager` with `migrations:` starts migration automatically from its synchronous initializer. Reads, writes, sync, and `waitForMigration()` await the same setup task, which includes change tracking initialization and both `performAdditionalSetup` hooks. The initializer validates configuration; errors opening the database or running setup propagate to callers awaiting the task. Failed migration SQL rolls back as usual. There is no fixed setup timeout. Readonly mode cannot use this initializer and skips setup. The optional `adoptingBaseline:` argument has the same behavior as on `migrate`.
+`ConnectionManager` with `migrations:` starts migration immediately by default. To defer opening a protected database, add `initialization: .onFirstUse` to the initializer. The first `read`, `write`, `sync`, or `waitForMigration()` starts setup using the supplied migration history and baseline. Concurrent callers share that attempt. If opening the SQLite writer fails in this mode, callers receive the original error. A later operation can retry on the same manager when the file becomes available.
+
+After the writer opens, callers share one setup result, including failures in migration, change tracking, or either `performAdditionalSetup` hook. Failed migration SQL rolls back as usual. There is no fixed setup timeout. Readonly mode skips setup and uses the initializer without migrations. The optional `adoptingBaseline:` argument has the same behavior as on `migrate`.
 
 To preview first, use the initializer without `migrations:` and call `previewMigrations` followed by `migrate`. Until the manual setup task starts, attempts to access the writable database through `read`, `write`, `sync`, or `waitForMigration()` immediately throw `ConnectionManagerError.invalidConfiguration`. This does not prevent a subsequent `migrate` call.
 

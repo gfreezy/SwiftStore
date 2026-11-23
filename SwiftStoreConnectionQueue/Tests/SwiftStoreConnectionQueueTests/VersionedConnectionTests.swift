@@ -53,27 +53,102 @@ struct VersionedConnectionTests {
         #expect(try await reopened.previewMigrations(migrations).isEmpty)
     }
 
-    @Test("Automatic migration failure reaches explicit waiters and database operations with rollback")
-    func failedInitialization() async throws {
+    @Test("Automatic migration failure reaches explicit waiters and database operations with rollback",
+          arguments: [ConnectionManager.Initialization.immediate, .onFirstUse])
+    func failedInitialization(initialization: ConnectionManager.Initialization) async throws {
         enum Failure: Error { case intentional }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("store.sqlite").path
+        let attempts = Mutex(0)
         let migrations = history() + [StoreMigration(id: "002", target: history()[0].target) { db in
+            attempts.withLock { $0 += 1 }
             try db.insert(ConnectionSyncNote(title: "rolled back"))
             throw Failure.intentional
         }]
-        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: migrations)
+        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+            migrations: migrations, initialization: initialization)
         await #expect(throws: Failure.self) { try await manager.waitForMigration() }
         await #expect(throws: Failure.self) { try await manager.waitForMigration() }
         await #expect(throws: Failure.self) { try await manager.read { try $0.tableExists("connection_sync_note") } }
         await #expect(throws: Failure.self) { try await manager.write { try $0.insert(ConnectionSyncNote(title: "blocked")) } }
         await #expect(throws: Failure.self) { _ = try await manager.sync() }
+        #expect(attempts.value() == 1)
         let db = try SQLiteConnection(path: path)
         #expect(try !db.tableExists("connection_sync_note"))
         #expect(try !db.tableExists("__swiftstore_migrations"))
         let recovered = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self], migrations: history())
         #expect(try await recovered.read { try $0.tableExists("connection_sync_note") })
+    }
+
+    @Test("First-use initialization leaves the database directory untouched until a read")
+    func deferOpenUntilFirstRead() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = try ConnectionManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self], migrations: history(), initialization: .onFirstUse)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+        #expect(try await manager.read { try $0.tableExists("connection_sync_note") })
+    }
+
+    enum FirstAccess: CaseIterable { case read, write, sync, wait }
+
+    @Test("All first-use entry points propagate an open failure and can later access the original store",
+          arguments: FirstAccess.allCases)
+    func retryDeferredOpen(firstAccess: FirstAccess) async throws {
+        let files = FileManager.default
+        let directory = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let database = directory.appendingPathComponent("store.sqlite")
+        let backup = directory.appendingPathComponent("original.sqlite")
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: directory) }
+        let migrations = history()
+        do {
+            let db = try SQLiteConnection(path: backup.path)
+            try VersionedMigrator(connection: db, migrations: migrations).migrate()
+            try db.insert(ConnectionSyncNote(title: "existing row"))
+        }
+        // A directory at the file path makes SQLite fail to open, even with elevated privileges.
+        try files.createDirectory(at: database, withIntermediateDirectories: false)
+        let manager = try ConnectionManager(path: database.path, entities: [ConnectionSyncNote.self],
+            migrations: migrations, initialization: .onFirstUse)
+        do {
+            switch firstAccess {
+            case .read: try await manager.read { _ in }
+            case .write: try await manager.write { _ in }
+            case .sync: _ = try await manager.sync()
+            case .wait: try await manager.waitForMigration()
+            }
+            Issue.record("Expected the original SQLite open error")
+        } catch StoreError.queryFailed(let message) {
+            #expect(message.contains("Failed to open database"))
+        }
+        try files.removeItem(at: database)
+        try files.moveItem(at: backup, to: database)
+        #expect(try await manager.read { try $0.queryScalar("SELECT title FROM connection_sync_note", type: String.self) } == "existing row")
+        let writer = try await manager.write { ObjectIdentifier($0) }
+        #expect(try await manager.write { ObjectIdentifier($0) } == writer)
+    }
+
+    @Test("Concurrent first use shares one migration and waits for additional setup")
+    func concurrentFirstUse() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attempts = Mutex(0)
+        let migrations = history() + [StoreMigration(id: "002", target: history()[0].target) { _ in
+            attempts.withLock { $0 += 1 }
+        }]
+        let manager = try AdditionalSetupManager(path: directory.appendingPathComponent("store.sqlite").path,
+            entities: [ConnectionSyncNote.self], migrations: migrations, initialization: .onFirstUse)
+        async let read = manager.read { _ in manager.setupCount }
+        async let write = manager.write { _ in manager.setupCount }
+        async let wait: Void = manager.waitForMigration()
+        // An explicit migrate must also join the history reserved by the initializer.
+        async let migrate: Void = manager.migrate(migrations: [])
+        let counts = try await (read, write, wait, migrate)
+        #expect(counts.0 == 1 && counts.1 == 1)
+        #expect(attempts.value() == 1)
+        #expect(manager.setupCount == 1)
     }
 
     @Test("Readonly migration initialization fails before opening the database")

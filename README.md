@@ -393,15 +393,15 @@ let users = try await manager.read { connection in
 }
 ```
 
-Passing `migrations:` automatically starts migration from the synchronous initializer. Reads, writes, sync, and `waitForMigration()` all await the same setup task and propagate its result, with no fixed timeout. To preview first, omit `migrations:` and call `previewMigrations` followed by `migrate`. In manual mode, attempting access before `migrate` starts throws immediately; the error does not prevent a later migration.
+Passing `migrations:` starts setup immediately by default. For a database that may be protected at app launch, pass `initialization: .onFirstUse`. The first `read`, `write`, `sync`, or `waitForMigration()` then starts setup. Concurrent callers await the same attempt. If the writer cannot open, the call throws the original error and the next operation on the same manager can retry. Once the writer opens, callers share the migration and additional setup result.
+
+To preview first, omit `migrations:` and call `previewMigrations` followed by `migrate`. In manual mode, access before `migrate` starts throws immediately. You can still start migration later.
 
 Subclass `ConnectionManager` and override `performAdditionalSetup(connection:) throws` to seed data using the supplied writer connection. It runs in a transaction after change tracking starts, so writes to registered entities and their changelog commit or roll back together when sync is configured. Make seeds idempotent: this hook also runs when reopening an already migrated database. See [database setup](docs/versioned-migrations.md#database-setup-after-migration).
 
-The writer opens when migration or migration preview first needs it. Readers open on demand:
-the pool reuses idle readers and grows only when existing readers are busy. Failed opens are
-not cached: the next read can retry a reader open, and a manual `migrate` can retry if opening
-its writer failed before setup started. Migration and additional setup errors still propagate
-to all waiters.
+The writer opens when migration or migration preview first needs it. Readers open on demand.
+The pool reuses idle readers and grows only when existing readers are busy. A failed reader
+open can be retried on the next read, and a manual `migrate` can retry opening its writer.
 
 Use `ConnectionOptions` to configure the maximum reader count (at least one), cache size and SQLite synchronous mode.
 A raw `SQLiteConnection` must not be used concurrently.

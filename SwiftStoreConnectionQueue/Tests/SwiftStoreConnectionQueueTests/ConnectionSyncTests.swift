@@ -128,6 +128,29 @@ struct ConnectionSyncTests {
         #expect(try db.queryScalar("SELECT COUNT(*) FROM __swiftstore_migrations", type: Int.self) == 1)
     }
 
+    @Test("First-use setup retains sync initialization errors after SQLite opens")
+    func deferredSyncSetupFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("business.sqlite").path
+        let db = try SQLiteConnection(path: path)
+        try db.execute("CREATE TABLE __swiftstore_cloud_state (unrelated TEXT)")
+        let schema = snapshot
+        let migrations = [StoreMigration(id: "001", target: schema) { db in
+            for sql in schema.creationStatements { try db.execute(sql) }
+        }]
+        let manager = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+            migrations: migrations, syncConfig: options(), initialization: .onFirstUse)
+        await #expect(throws: StoreError.self) { try await manager.waitForMigration() }
+
+        try db.execute("DROP TABLE __swiftstore_cloud_state")
+        await #expect(throws: StoreError.self) { try await manager.read { _ in } }
+        let reopened = try ConnectionManager(path: path, entities: [ConnectionSyncNote.self],
+            migrations: migrations, syncConfig: options(), initialization: .onFirstUse)
+        try await reopened.waitForMigration()
+    }
+
     @Test("Public CloudKit configuration stores its log and FULL durability in the business database")
     func sameDatabase() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
